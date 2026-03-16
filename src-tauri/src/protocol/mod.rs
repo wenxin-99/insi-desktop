@@ -342,7 +342,7 @@ async fn handle_execute_action(
                 let result = json!({
                     "actionId": action_id,
                     "success": true,
-                    "error": null::<String>,
+                    "error": serde_json::Value::Null,
                     "clipboardText": clip_text,
                 });
                 if let Err(e) = client.emit("client_action_result", result).await {

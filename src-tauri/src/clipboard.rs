@@ -3,6 +3,9 @@
 //! 跨平台剪贴板操作，供 desktop.clipboard_read / clipboard_write 使用。
 //! 使用 arboard crate 实现。
 
+use std::io::Write;
+use std::process::Stdio;
+
 /// 读取剪贴板文字内容
 pub fn read_clipboard() -> Result<String, String> {
     use std::process::Command;

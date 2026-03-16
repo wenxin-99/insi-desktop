@@ -43,8 +43,7 @@ pub fn read_clipboard() -> Result<String, String> {
 
 /// 写入文字到剪贴板
 pub fn write_clipboard(text: &str) -> Result<(), String> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     #[cfg(target_os = "windows")]
     {

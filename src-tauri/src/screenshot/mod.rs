@@ -38,13 +38,13 @@ pub fn get_primary_monitor() -> Result<(u32, u32, f64), String> {
     let monitors = Monitor::all().map_err(|e| format!("获取显示器列表失败: {}", e))?;
     let primary = monitors
         .into_iter()
-        .find(|m| m.is_primary())
+        .find(|m| m.is_primary().unwrap_or(false))
         .or_else(|| Monitor::all().ok().and_then(|m| m.into_iter().next()))
         .ok_or_else(|| "未找到显示器".to_string())?;
 
-    let width = primary.width();
-    let height = primary.height();
-    let scale = primary.scale_factor();
+    let width = primary.width().unwrap_or(1920);
+    let height = primary.height().unwrap_or(1080);
+    let scale = primary.scale_factor().unwrap_or(1.0) as f64;
 
     Ok((width, height, scale))
 }
@@ -54,7 +54,7 @@ pub fn capture_screen(quality: u8) -> Result<CaptureResult, String> {
     let monitors = Monitor::all().map_err(|e| format!("获取显示器失败: {}", e))?;
     let primary = monitors
         .into_iter()
-        .find(|m| m.is_primary())
+        .find(|m| m.is_primary().unwrap_or(false))
         .or_else(|| Monitor::all().ok().and_then(|m| m.into_iter().next()))
         .ok_or_else(|| "未找到显示器".to_string())?;
 
@@ -93,7 +93,7 @@ pub fn capture_region(region: &CaptureRegion, quality: u8) -> Result<CaptureResu
     let monitors = Monitor::all().map_err(|e| format!("获取显示器失败: {}", e))?;
     let primary = monitors
         .into_iter()
-        .find(|m| m.is_primary())
+        .find(|m| m.is_primary().unwrap_or(false))
         .or_else(|| Monitor::all().ok().and_then(|m| m.into_iter().next()))
         .ok_or_else(|| "未找到显示器".to_string())?;
 

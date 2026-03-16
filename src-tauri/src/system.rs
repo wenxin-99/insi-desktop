@@ -39,13 +39,13 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
         .enumerate()
         .map(|(i, m)| MonitorInfo {
             index: i as u32,
-            name: m.name().to_string(),
-            width: m.width(),
-            height: m.height(),
-            x: m.x(),
-            y: m.y(),
-            scale: m.scale_factor(),
-            primary: m.is_primary(),
+            name: m.name().unwrap_or_default(),
+            width: m.width().unwrap_or(0),
+            height: m.height().unwrap_or(0),
+            x: m.x().unwrap_or(0),
+            y: m.y().unwrap_or(0),
+            scale: m.scale_factor().unwrap_or(1.0) as f64,
+            primary: m.is_primary().unwrap_or(false),
         })
         .collect())
 }
@@ -54,7 +54,7 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
 pub fn capture_monitor(index: usize, quality: u8) -> Result<crate::screenshot::CaptureResult, String> {
     use xcap::Monitor;
     use base64::Engine;
-    use image::{DynamicImage, GenericImageView, codecs::webp::WebPEncoder, ImageEncoder};
+    use image::{DynamicImage, codecs::webp::WebPEncoder, ImageEncoder};
     use std::io::Cursor;
 
     let monitors = Monitor::all().map_err(|e| format!("获取显示器失败: {}", e))?;
@@ -116,14 +116,14 @@ pub fn get_active_window() -> Result<ActiveWindowInfo, String> {
     let focused = windows.first().ok_or("未找到活跃窗口")?;
 
     Ok(ActiveWindowInfo {
-        app_name: focused.app_name().to_string(),
-        window_title: focused.title().to_string(),
-        pid: focused.pid(),
+        app_name: focused.app_name().unwrap_or_default(),
+        window_title: focused.title().unwrap_or_default(),
+        pid: focused.pid().unwrap_or(0),
         bounds: Some(WindowBounds {
-            x: focused.x(),
-            y: focused.y(),
-            width: focused.width(),
-            height: focused.height(),
+            x: focused.x().unwrap_or(0),
+            y: focused.y().unwrap_or(0),
+            width: focused.width().unwrap_or(0),
+            height: focused.height().unwrap_or(0),
         }),
     })
 }
@@ -138,9 +138,9 @@ pub fn list_windows() -> Result<Vec<WindowListItem>, String> {
         .iter()
         .enumerate()
         .map(|(i, w)| WindowListItem {
-            app_name: w.app_name().to_string(),
-            title: w.title().to_string(),
-            pid: w.pid(),
+            app_name: w.app_name().unwrap_or_default(),
+            title: w.title().unwrap_or_default(),
+            pid: w.pid().unwrap_or(0),
             focused: i == 0,
         })
         .collect())
@@ -346,7 +346,6 @@ pub fn move_file(source: &str, destination: &str) -> Result<u32, String> {
 
 /// 创建 zip 归档
 pub fn create_archive(sources: &[String], output: &str) -> Result<(), String> {
-    use std::io::Write;
     use std::process::Command;
 
     let out_path = expand_home(output);

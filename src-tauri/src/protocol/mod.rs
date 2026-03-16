@@ -109,7 +109,7 @@ async fn try_connect(
         .auth(json!({ "token": token }))
         .on("server_message", move |payload: Payload, client: Client| {
             let st = state_for_msg.clone();
-            async move {
+            Box::pin(async move {
                 if let Payload::Text(values) = payload {
                     if let Some(first) = values.first() {
                         if let Ok(msg) = serde_json::from_value::<ServerMessage>(first.clone()) {
@@ -117,16 +117,16 @@ async fn try_connect(
                         }
                     }
                 }
-            }
+            })
         })
         .on("error", |err, _| {
-            async move {
+            Box::pin(async move {
                 log::error!("[Protocol] Socket.IO error: {:?}", err);
-            }
+            })
         })
         .on("open", move |_, client: Client| {
             let st = state_clone.clone();
-            async move {
+            Box::pin(async move {
                 log::info!("[Protocol] Connected! Sending client_auth...");
                 *st.connection_status.write() = ConnectionStatus::Connected;
 
@@ -156,7 +156,7 @@ async fn try_connect(
                 {
                     log::error!("[Protocol] Failed to send client_auth: {}", e);
                 }
-            }
+            })
         })
         .connect()
         .await

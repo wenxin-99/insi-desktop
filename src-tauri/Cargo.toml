@@ -29,7 +29,7 @@ parking_lot = "0.12"
 dirs = "5"
 
 # WebSocket (Socket.IO 兼容)
-rust-socketio = { version = "0.6", features = ["async"] }
+rust_socketio = { version = "0.6", features = ["async"] }
 tokio-tungstenite = "0.24"
 url = "2"
 

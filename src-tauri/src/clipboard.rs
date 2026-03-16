@@ -1,3 +1,5 @@
+use std::io::Write;
+use std::process::Stdio;
 //! 剪贴板读写
 //!
 //! 跨平台剪贴板操作，供 desktop.clipboard_read / clipboard_write 使用。

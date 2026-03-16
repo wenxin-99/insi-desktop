@@ -34,7 +34,7 @@ tokio-tungstenite = "0.24"
 url = "2"
 
 # 截屏
-xcap = "0.0.14"
+xcap = "0.7"
 
 # 输入模拟
 enigo = { version = "0.2", features = ["serde"] }

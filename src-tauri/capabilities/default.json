@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicoverbruggen/tauri-plugin-shell/next/schemas/capabilities.json",
+  "identifier": "default",
+  "description": "Insi Desktop Agent capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "dialog:allow-open",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "notification:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
+  ]
+}

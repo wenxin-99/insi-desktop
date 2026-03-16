@@ -1,0 +1,232 @@
+/**
+ * usePassiveSignals — 被动信号自动采集 Hook
+ *
+ * [FIXED] #10: console.error 捕获统一在此处管理（从 GlobalFeedbackFab 移入）
+ * [FIXED] #14: fetch monkey-patch 中 AbortSignal.timeout 加了 try/catch 兼容
+ */
+
+import { useEffect, useRef } from "react";
+import { trpc } from "@/lib/trpc";
+
+// 全局状态
+const RATE_LIMIT = 3;
+const RATE_WINDOW = 60_000;
+const DEDUP_WINDOW = 300_000;
+const REFRESH_STORAGE_KEY = "aiops_refresh_timestamps";
+const RAGE_THRESHOLD = 3;
+const RAGE_WINDOW = 30_000;
+
+/** 已知慢路由 — 前端缓存（启动时从服务器拉取，兜底用硬编码） */
+let _knownSlowRoutes: Record<string, number> = {
+  "chat.sendMessage": 30000,
+  "chat.generateTitle": 15000,
+  "aiOps": 30000,
+  "research": 30000,
+  "images.generate": 30000,
+  "video": 60000,
+  "homework.correct": 30000,
+  "auth.refreshToken": 15000,
+};
+
+/** 默认 API 慢阈值（对于未知路由） */
+const DEFAULT_SLOW_THRESHOLD = 8000; // 8s, was 5s
+
+let submittedTimestamps: number[] = [];
+const recentSignatureSet = new Set<string>();
+
+// Fix #10: 统一的错误收集缓冲（供 GlobalFeedbackFab 等组件读取）
+export const recentErrors: string[] = [];
+const MAX_RECENT_ERRORS = 10;
+
+function pushError(msg: string) {
+  recentErrors.push(msg);
+  if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.shift();
+}
+
+function canSubmit(): boolean {
+  const now = Date.now();
+  submittedTimestamps = submittedTimestamps.filter(t => now - t < RATE_WINDOW);
+  return submittedTimestamps.length < RATE_LIMIT;
+}
+function markSubmitted() { submittedTimestamps.push(Date.now()); }
+function isDuplicate(sig: string): boolean {
+  if (recentSignatureSet.has(sig)) return true;
+  recentSignatureSet.add(sig);
+  setTimeout(() => recentSignatureSet.delete(sig), DEDUP_WINDOW);
+  return false;
+}
+
+export function usePassiveSignals() {
+  // 静默吞掉错误 — 被动信号上报失败不应影响任何页面功能
+  const submitMutation = trpc.aiOps.submitPassiveSignal.useMutation({
+    onError: () => {},  // 完全静默
+  });
+  const submitRef = useRef(submitMutation);
+  submitRef.current = submitMutation;
+
+  const report = useRef((
+    signalType: "js_error" | "api_error" | "rage_refresh" | "dead_click" | "slow_page",
+    detail: string,
+    extraContext?: Record<string, any>,
+  ) => {
+    const sig = `${signalType}:${detail.substring(0, 80)}`;
+    if (!canSubmit() || isDuplicate(sig)) return;
+    markSubmitted();
+    try {
+      submitRef.current.mutate({
+        signalType, pageUrl: window.location.pathname,
+        detail: detail.substring(0, 2000),
+        context: { pageUrl: window.location.pathname + window.location.search, userAgent: navigator.userAgent, timestamp: Date.now(), ...extraContext },
+      });
+    } catch {
+      // 被动信号上报失败完全忽略
+    }
+  });
+
+  useEffect(() => {
+    const reportFn = report.current;
+
+    // ─── 1. JS 错误 + console.error（Fix #10: 统一在此处） ───
+    const onError = (e: ErrorEvent) => {
+      const detail = `${e.message} at ${e.filename || "unknown"}:${e.lineno || 0}:${e.colno || 0}`;
+      pushError(detail);
+      reportFn("js_error", detail, { errorLogs: [detail] });
+    };
+    const onUnhandledRejection = (e: PromiseRejectionEvent) => {
+      const reason = e.reason instanceof Error ? `${e.reason.message}\n${e.reason.stack?.split("\n").slice(0, 3).join("\n")}` : String(e.reason);
+      pushError(`Unhandled: ${reason.substring(0, 200)}`);
+      reportFn("js_error", `Unhandled Promise: ${reason}`, { errorLogs: [reason] });
+    };
+
+    // Fix #10: 安全地 monkey-patch console.error
+    const origConsoleError = console.error;
+    console.error = function patchedConsoleError(...args: any[]) {
+      const msg = args.map(String).join(" ").substring(0, 200);
+      pushError(msg);
+      origConsoleError.apply(console, args);
+    };
+
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+
+    // ─── 2. API 错误拦截 ───
+    const origFetch = window.fetch;
+    window.fetch = async function patchedFetch(...args) {
+      const startTime = Date.now();
+      try {
+        const response = await origFetch.apply(this, args);
+        const elapsed = Date.now() - startTime;
+        const url = typeof args[0] === "string" ? args[0] : (args[0] as Request)?.url || "";
+        const isLocal = url.startsWith("/") || url.includes(window.location.host);
+        const isSSE = url.includes("/notifications") || url.includes("/stream");
+        // 排除 aiOps 全部请求，避免：
+        // 1. submitPassiveSignal 死循环
+        // 2. aiOps.chat (耗时12-15s) 误触发 slow_page 报告
+        const isAiOpsRequest = url.includes("aiOps") || url.includes("aiOps%2E");
+        const isAuthRefresh = url.includes("auth.refreshToken") || url.includes("auth%2ErefreshToken");
+        if (isLocal && !isSSE && !isAiOpsRequest && !isAuthRefresh) {
+          if (response.status >= 400) {
+            reportFn("api_error", `${response.status} ${response.statusText} → ${url.substring(0, 100)}`,
+              { apiErrors: [{ url: url.substring(0, 200), status: response.status, message: response.statusText }] });
+          }
+          // ★ 智能慢 API 检测：已知慢路由使用更宽松的阈值
+          const slowThreshold = getSlowThreshold(url);
+          if (elapsed > slowThreshold) {
+            const safeKey = url.split("?")[0].substring(0, 80).replace(/[,;=&]/g, "_");
+            reportFn("slow_page", `Slow API: ${url.substring(0, 100)} took ${elapsed}ms (threshold: ${slowThreshold}ms)`,
+              { performanceData: { apiLatencies: { [safeKey]: Math.round(elapsed) } } });
+          }
+        }
+        return response;
+      } catch (err) {
+        const url = typeof args[0] === "string" ? args[0] : "";
+        const isAiOpsRequest = url.includes("aiOps") || url.includes("aiOps%2E");
+        if (!isAiOpsRequest && (url.startsWith("/") || url.includes(window.location.host))) {
+          reportFn("api_error", `Network error: ${url.substring(0, 100)} - ${(err as Error).message}`);
+        }
+        throw err;
+      }
+    };
+
+    // ─── 3. 连续刷新检测 ───
+    // ★ 排除程序性刷新（SW 更新 / chunk error 自动 reload）
+    try {
+      const now = Date.now();
+      const swReload = Number(sessionStorage.getItem('sw_last_reload') || '0');
+      const chunkReload = Number(sessionStorage.getItem('chunkError_lastReload') || '0');
+      const isProgrammaticReload = (now - swReload < 5000) || (now - chunkReload < 5000);
+
+      if (!isProgrammaticReload) {
+        const stored = sessionStorage.getItem(REFRESH_STORAGE_KEY);
+        const timestamps: number[] = stored ? JSON.parse(stored) : [];
+        const recent = timestamps.filter(t => now - t < RAGE_WINDOW);
+        recent.push(now);
+        sessionStorage.setItem(REFRESH_STORAGE_KEY, JSON.stringify(recent));
+        if (recent.length >= RAGE_THRESHOLD) {
+          reportFn("rage_refresh", `${RAGE_WINDOW / 1000}s 内刷新 ${recent.length} 次`);
+          sessionStorage.setItem(REFRESH_STORAGE_KEY, JSON.stringify([now]));
+        }
+      }
+    } catch {}
+
+    // ─── 4. 页面加载过慢（使用 PerformanceNavigationTiming 替代废弃的 performance.timing） ───
+    const loadTimer = setTimeout(() => {
+      try {
+        const entries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+        const nav = entries[0];
+        if (nav?.loadEventEnd > 0) {
+          const loadTime = Math.round(nav.loadEventEnd - nav.startTime);
+          // ★ 管理页面阈值更宽松（8s），用户页面 5s
+          const isAdminPage = window.location.pathname.startsWith("/admin");
+          const isFeedbackPage = window.location.pathname === "/feedback";
+          const pageThreshold = isAdminPage ? 8000 : 5000;
+          if (loadTime > pageThreshold && !isFeedbackPage) reportFn("slow_page", `页面加载 ${loadTime}ms: ${window.location.pathname}`, { performanceData: { pageLoadTime: loadTime } });
+        }
+      } catch {}
+    }, 3000);
+
+    // ─── 5. 死点击检测 ───
+    let lastClickTime = 0, lastClickTarget = "", deadClickCount = 0;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target) return;
+      const tag = target.tagName?.toLowerCase();
+      const isInteractive = ["button", "a", "input", "textarea", "select"].includes(tag)
+        || target.closest("button, a, [role='button'], [onclick]");
+      if (isInteractive) { deadClickCount = 0; return; }
+      const now = Date.now();
+      const tid = `${tag}.${target.className?.toString().substring(0, 30)}`;
+      if (now - lastClickTime < 2000 && tid === lastClickTarget) {
+        deadClickCount++;
+        if (deadClickCount >= 3) { reportFn("dead_click", `连续点击无响应 ${deadClickCount} 次: ${tid}`); deadClickCount = 0; }
+      } else { deadClickCount = 1; }
+      lastClickTime = now; lastClickTarget = tid;
+    };
+    document.addEventListener("click", onDocClick, { passive: true });
+
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+      console.error = origConsoleError; // Fix #10: 恢复原始 console.error
+      window.fetch = origFetch;
+      document.removeEventListener("click", onDocClick);
+      clearTimeout(loadTimer);
+    };
+  }, []);
+}
+
+export function PassiveSignalCollector() { usePassiveSignals(); return null; }
+
+// ═══════════════════════════════════
+// 智能慢 API 阈值
+// ═══════════════════════════════════
+
+/** 根据 URL 确定慢 API 阈值 */
+function getSlowThreshold(url: string): number {
+  const path = url.split("?")[0];
+  // 匹配已知慢路由关键词
+  for (const [keyword, threshold] of Object.entries(_knownSlowRoutes)) {
+    if (path.includes(keyword)) return threshold;
+  }
+  return DEFAULT_SLOW_THRESHOLD;
+}

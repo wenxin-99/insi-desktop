@@ -1,0 +1,303 @@
+/**
+ * Admin AI-Ops Approvals
+ *
+ * 修复方案审批页面：
+ * - 待审批 Issue 列表
+ * - 修复方案 Diff 预览
+ * - 沙箱测试报告
+ * - 一键审批/拒绝
+ * - 完整流水线触发
+ */
+
+import { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { trpc } from "@/lib/trpc";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import {
+  ArrowLeft, CheckCircle, XCircle, Play, Shield, Code, TestTube,
+  GitBranch, Loader2, ChevronRight, AlertTriangle, RefreshCw, Rocket,
+} from "lucide-react";
+import { useLocation } from "wouter";
+
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  pending_approval: { label: "待审批", color: "text-amber-500" },
+  in_sandbox: { label: "沙箱测试中", color: "text-blue-500" },
+  deploying: { label: "部署中", color: "text-violet-500" },
+  monitoring: { label: "监控中", color: "text-cyan-500" },
+  testing: { label: "测试中", color: "text-blue-400" },
+  planning: { label: "方案生成中", color: "text-indigo-500" },
+  needs_human: { label: "需人工介入", color: "text-red-500" },
+  reproducing: { label: "复现中", color: "text-orange-400" },
+  verifying: { label: "验证中", color: "text-teal-500" },
+};
+
+export default function AdminAIOpsApprovals() {
+  const [, navigate] = useLocation();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [comment, setComment] = useState("");
+  const [pipelineIssueId, setPipelineIssueId] = useState<number | null>(null);
+
+  const { data: approvals, refetch, isLoading } = trpc.aiOps.getApprovals.useQuery();
+  const { data: issueDetail } = trpc.aiOps.getIssueDetail.useQuery(
+    { id: selectedId! }, { enabled: !!selectedId });
+
+  const trpcUtils = trpc.useUtils();
+  const refreshAll = () => { refetch(); if (selectedId) trpcUtils.aiOps.getIssueDetail.invalidate({ id: selectedId }); };
+
+  const approveMutation = trpc.aiOps.approveIssue.useMutation({
+    onSuccess: () => { toast.success("操作成功"); setSelectedId(null); setComment(""); refreshAll(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const pipelineMutation = trpc.aiOps.runFullPipeline.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refreshAll();
+      setPipelineIssueId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const verifyMutation = trpc.aiOps.verifyIssue.useMutation({
+    onSuccess: (data) => { toast.success(`验证完成: ${data.recommendation}`); refreshAll(); },
+    onError: (e) => toast.error(`验证失败: ${e.message}`),
+  });
+  const repairMutation = trpc.aiOps.generateRepair.useMutation({
+    onSuccess: (data) => { toast.success(`方案已生成: ${data.patches.length} 个补丁`); refreshAll(); },
+    onError: (e) => toast.error(`方案生成失败: ${e.message}`),
+  });
+  const sandboxMutation = trpc.aiOps.testInSandbox.useMutation({
+    onSuccess: (data) => { data.success ? toast.success("沙箱测试通过") : toast.error("沙箱测试有问题" + (data.error ? `：${data.error}` : "")); refreshAll(); },
+    onError: (e) => toast.error(`沙箱测试失败: ${e.message}`),
+  });
+
+  const selected = approvals?.find((a: any) => a.id === selectedId);
+  const plan = selected ? safeParse(selected.repair_plan) : null;
+  const diagnosis = selected ? safeParse(selected.diagnosis) : null;
+
+  return (
+    <DashboardLayout>
+      <div className="container max-w-6xl py-6 space-y-6">
+        {/* 头部 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/admin/ai-ops")} className="h-8 px-2">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Shield className="h-5 w-5 text-violet-500" />
+            <div>
+              <h1 className="text-xl font-bold">修复审批</h1>
+              <p className="text-xs text-muted-foreground">审查 AI 生成的修复方案 · 沙箱测试结果 · 一键部署</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />刷新
+          </Button>
+        </div>
+
+        {/* 列表 */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">
+              待处理 ({approvals?.length || 0})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />加载中
+              </div>
+            ) : !approvals?.length ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">暂无待审批方案</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {approvals.map((item: any) => {
+                  const p = safeParse(item.repair_plan);
+                  const st = STATUS_MAP[item.status] || { label: item.status, color: "" };
+                  return (
+                    <div key={item.id}
+                      className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => setSelectedId(item.id)}
+                    >
+                      <div className={`px-2 py-0.5 rounded text-xs font-bold border
+                        ${item.priority === "P0" ? "bg-red-500/10 border-red-500/30 text-red-600" :
+                          item.priority === "P1" ? "bg-orange-500/10 border-orange-500/30 text-orange-500" :
+                          "bg-gray-500/10 border-gray-500/30 text-gray-500"}`}
+                      >{item.priority}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{item.title}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {item.affected_module} · {p?.patches?.length || 0} 个补丁 · 风险: {p?.risk || "?"}
+                        </div>
+                      </div>
+                      <span className={`text-xs font-medium ${st.color}`}>{st.label}</span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 详情弹窗 */}
+        <Dialog open={!!selectedId} onOpenChange={() => setSelectedId(null)}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            {selected && (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline">{selected.priority}</Badge>
+                    <Badge variant="secondary">{selected.category}</Badge>
+                    <Badge variant="outline">{STATUS_MAP[selected.status]?.label || selected.status}</Badge>
+                  </div>
+                  <DialogTitle>#{selected.id} {selected.title}</DialogTitle>
+                </DialogHeader>
+
+                <div className="space-y-5 mt-2">
+                  {/* 方案摘要 */}
+                  {plan && (
+                    <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                        <Code className="h-4 w-4 text-violet-500" />修复方案
+                      </h4>
+                      <p className="text-sm mb-2">{plan.summary}</p>
+                      <div className="flex gap-4 text-xs text-muted-foreground">
+                        <span>风险: <strong className={plan.risk === "high" ? "text-red-500" : plan.risk === "medium" ? "text-amber-500" : "text-emerald-500"}>{plan.risk}</strong></span>
+                        <span>补丁: {plan.patches?.length || 0} 个</span>
+                        <span>置信度: {Math.round((plan.confidence || 0) * 100)}%</span>
+                      </div>
+                      {plan.reviewNotes && (
+                        <p className="text-xs text-muted-foreground mt-2 border-t pt-2">{plan.reviewNotes}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Diff 预览 */}
+                  {plan?.patches?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                        <GitBranch className="h-4 w-4" />代码变更
+                      </h4>
+                      <div className="space-y-3">
+                        {plan.patches.map((patch: any, i: number) => (
+                          <div key={i} className="border rounded-lg overflow-hidden">
+                            <div className="bg-muted/50 px-3 py-1.5 text-xs font-mono flex justify-between">
+                              <span>{patch.filePath}</span>
+                              <span className="text-muted-foreground">{patch.reason}</span>
+                            </div>
+                            <div className="grid grid-cols-2 divide-x text-xs font-mono">
+                              <div className="p-2 bg-red-500/5">
+                                <div className="text-[10px] text-red-500 mb-1">- 旧代码</div>
+                                <pre className="whitespace-pre-wrap text-muted-foreground leading-relaxed overflow-auto max-h-40">
+                                  {patch.oldCode?.substring(0, 500)}
+                                </pre>
+                              </div>
+                              <div className="p-2 bg-emerald-500/5">
+                                <div className="text-[10px] text-emerald-500 mb-1">+ 新代码</div>
+                                <pre className="whitespace-pre-wrap text-muted-foreground leading-relaxed overflow-auto max-h-40">
+                                  {patch.newCode?.substring(0, 500)}
+                                </pre>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 验证报告 */}
+                  {diagnosis?.verification && (
+                    <div>
+                      <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                        <TestTube className="h-4 w-4" />验证报告
+                      </h4>
+                      <div className="space-y-1">
+                        {diagnosis.verification.checks?.map((c: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-xs">
+                            <span className={c.status === "pass" ? "text-emerald-500" : c.status === "fail" ? "text-red-500" : "text-amber-500"}>
+                              {c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "⚠"}
+                            </span>
+                            <span className="font-medium w-20">{c.name}</span>
+                            <span className="text-muted-foreground">{c.detail}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 操作按钮 */}
+                  <div className="border-t pt-4 space-y-3">
+                    {/* 步骤按钮 */}
+                    <div className="flex gap-2 flex-wrap">
+                      <Button size="sm" variant="outline" disabled={verifyMutation.isPending}
+                        onClick={() => verifyMutation.mutate({ issueId: selected.id })}>
+                        {verifyMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <TestTube className="h-3 w-3 mr-1" />}
+                        验证问题
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={repairMutation.isPending}
+                        onClick={() => repairMutation.mutate({ issueId: selected.id })}>
+                        {repairMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Code className="h-3 w-3 mr-1" />}
+                        生成方案
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={sandboxMutation.isPending}
+                        onClick={() => sandboxMutation.mutate({ issueId: selected.id })}>
+                        {sandboxMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                        沙箱测试
+                      </Button>
+                      <Button size="sm" variant="secondary" disabled={pipelineMutation.isPending}
+                        onClick={() => pipelineMutation.mutate({ issueId: selected.id })}>
+                        {pipelineMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Rocket className="h-3 w-3 mr-1" />}
+                        一键流水线
+                      </Button>
+                    </div>
+
+                    {/* 审批区域 */}
+                    {selected.status === "pending_approval" && (
+                      <>
+                        <Textarea placeholder="审批备注（可选）..." value={comment}
+                          onChange={e => setComment(e.target.value)} rows={2} className="text-sm" />
+                        <div className="flex gap-2">
+                          <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                            disabled={approveMutation.isPending}
+                            onClick={() => approveMutation.mutate({ issueId: selected.id, decision: "approve", comment: comment || undefined })}>
+                            <CheckCircle className="h-4 w-4 mr-1.5" />批准部署
+                          </Button>
+                          <Button variant="destructive" className="flex-1"
+                            disabled={approveMutation.isPending}
+                            onClick={() => approveMutation.mutate({ issueId: selected.id, decision: "reject", comment: comment || undefined })}>
+                            <XCircle className="h-4 w-4 mr-1.5" />拒绝
+                          </Button>
+                        </div>
+                        {plan?.risk === "high" && (
+                          <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 rounded-lg p-2">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            此方案风险等级为 <strong>高</strong>，请仔细检查 Diff 后再决定
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function safeParse(v: any) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  try { return JSON.parse(v); } catch { return null; }
+}

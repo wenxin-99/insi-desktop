@@ -53,6 +53,6 @@
   },
   "plugins": {
     "shell": { "open": true },
-    "autostart": { "macOSExtraArgs": ["--flag1", "--flag2"] },
+    "autostart": { "macOSExtraArgs": ["--flag1", "--flag2"] }
   }
 }

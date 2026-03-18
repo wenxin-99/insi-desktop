@@ -1,0 +1,246 @@
+/**
+ * AutomationTaskCard — 聊天内嵌的自动化任务卡片
+ * 
+ * 负责：Socket.io 连接、步骤收集、状态管理
+ * 渲染交给 TaskProgress 子组件
+ */
+import { useState, useEffect, useRef, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
+
+import type { SandboxEvent, StepItem, TaskSummary, ContentInfo } from "./automationCard/types";
+import { classifyStep, formatStepContent } from "./automationCard/stepUtils";
+import { TaskProgress } from "./automationCard/TaskProgress";
+
+interface AutomationTaskCardProps {
+  taskId: number;
+  taskName: string;
+  siteName: string;
+}
+
+export function AutomationTaskCard({ taskId, taskName, siteName }: AutomationTaskCardProps) {
+  const [status, setStatus] = useState<string>("");
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState<string>("启动中...");
+  const [steps, setSteps] = useState<StepItem[]>([]);
+  const [thinking, setThinking] = useState<string>("");
+  const [isConnected, setIsConnected] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState<string>("");
+  const [taskSummary, setTaskSummary] = useState<TaskSummary | null>(null);
+  const [contentInfo, setContentInfo] = useState<ContentInfo | null>(null);
+  const [initialLoaded, setInitialLoaded] = useState(false);
+
+  const socketRef = useRef<Socket | null>(null);
+  const stepCountRef = useRef(0);
+  const startTimeRef = useRef(Date.now());
+
+  // 通用 fetch headers
+  const authHeaders = () => {
+    const token = localStorage.getItem("auth_token");
+    return token ? { Authorization: "Bearer " + token } : {};
+  };
+
+  // 初始化时从 API 加载任务状态（刷新后恢复）
+  useEffect(() => {
+    if (!taskId) return;
+    
+    const loadTaskState = async () => {
+      try {
+        const res = await fetch(`/api/automation/tasks/${taskId}`, {
+          credentials: "include",
+          headers: authHeaders(),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const task = data.task;
+          
+          if (task.status) setStatus(task.status);
+          if (task.progress != null) setProgress(task.progress);
+          
+          if (task.resultSummary) {
+            try { setTaskSummary(JSON.parse(task.resultSummary)); } catch {}
+          }
+          
+          if (data.contents?.length > 0) setContentInfo(data.contents[0]);
+          
+          if (data.steps?.length > 0) {
+            const restoredSteps: StepItem[] = data.steps.map((s: any, idx: number) => ({
+              id: idx + 1,
+              type: s.type || "action",
+              content: s.content || `步骤 #${s.stepNumber}`,
+              timestamp: new Date(s.createdAt).getTime(),
+              duration: s.durationMs ? (s.durationMs / 1000) : undefined,
+            }));
+            setSteps(restoredSteps);
+            stepCountRef.current = restoredSteps.length;
+          }
+          
+          if (["completed", "failed", "cancelled"].includes(task.status)) {
+            setCurrentStep(task.status === "completed" ? "任务完成" : "任务结束");
+          } else if (task.currentStep) {
+            setCurrentStep(task.currentStep);
+          }
+        }
+      } catch {}
+      finally { setInitialLoaded(true); }
+    };
+    
+    loadTaskState();
+  }, [taskId]);
+
+  // 添加步骤
+  const addStep = useCallback((event: SandboxEvent) => {
+    stepCountRef.current += 1;
+    const stepType = classifyStep(event);
+    const content = formatStepContent(event);
+    const elapsed = ((event.timestamp - startTimeRef.current) / 1000).toFixed(1);
+
+    setSteps(prev => {
+      if (prev.length > 0 && prev[prev.length - 1].content === content) return prev;
+      const newStep: StepItem = {
+        id: stepCountRef.current,
+        type: stepType,
+        content,
+        timestamp: event.timestamp,
+        duration: parseFloat(elapsed),
+      };
+      const updated = [...prev, newStep];
+      if (updated.length > 50) updated.splice(0, updated.length - 50);
+      return updated;
+    });
+  }, []);
+
+  // 加载任务完成数据
+  const loadCompletionData = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/automation/tasks/${taskId}`, {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const task = data.task;
+        if (task.status) setStatus(task.status);
+        if (task.progress != null) setProgress(task.progress);
+        if (task.resultSummary) {
+          try { setTaskSummary(JSON.parse(task.resultSummary)); } catch {}
+        }
+        if (data.contents?.length > 0) setContentInfo(data.contents[0]);
+      }
+    } catch {}
+  }, [taskId]);
+
+  // 处理沙箱事件
+  const handleSandboxEvent = useCallback((event: SandboxEvent) => {
+    switch (event.type) {
+      case "browser_screenshot":
+        setBrowserUrl(event.payload.url || "");
+        break;
+      case "browser_navigate":
+        setBrowserUrl(event.payload.url || "");
+        addStep(event);
+        break;
+      case "agent_thinking":
+        setThinking(event.payload.thought || "");
+        break;
+      case "agent_step":
+        setThinking("");
+        addStep(event);
+        break;
+      case "task_status":
+        setStatus(event.payload.status);
+        if (event.payload.message) setCurrentStep(event.payload.message);
+        if (["completed", "failed", "cancelled"].includes(event.payload.status)) {
+          loadCompletionData();
+        }
+        break;
+      case "task_progress":
+        setProgress(event.payload.progress || 0);
+        if (event.payload.currentStep) setCurrentStep(event.payload.currentStep);
+        break;
+      case "browser_loading":
+        setBrowserUrl(event.payload.url || "");
+        break;
+    }
+  }, [addStep, loadCompletionData]);
+
+  // 连接 Socket.io
+  useEffect(() => {
+    if (!taskId) return;
+
+    const socket = io({
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      setIsConnected(true);
+      socket.emit("join_task", taskId);
+    });
+
+    socket.on("disconnect", () => setIsConnected(false));
+
+    socket.on("sandbox_event", (event: SandboxEvent) => {
+      if (event.taskId !== taskId) return;
+      handleSandboxEvent(event);
+    });
+
+    return () => {
+      socket.emit("leave_task", taskId);
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [taskId, handleSandboxEvent]);
+
+  // 轮询任务状态（socket 备份）
+  useEffect(() => {
+    if (["completed", "failed", "cancelled"].includes(status)) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/automation/tasks/${taskId}`, {
+          credentials: "include",
+          headers: authHeaders(),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const task = data.task;
+          setStatus(task.status);
+          setProgress(task.progress || 0);
+          if (task.currentStep) setCurrentStep(task.currentStep);
+          if (["completed", "failed", "cancelled"].includes(task.status)) {
+            if (task.resultSummary) {
+              try { setTaskSummary(JSON.parse(task.resultSummary)); } catch {}
+            }
+            if (data.contents?.length > 0) setContentInfo(data.contents[0]);
+            clearInterval(interval);
+          }
+        }
+      } catch {}
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [taskId, status]);
+
+  return (
+    <TaskProgress
+      steps={steps}
+      taskId={taskId}
+      taskName={taskName}
+      siteName={siteName}
+      status={status}
+      isConnected={isConnected}
+      progress={progress}
+      currentStep={currentStep}
+      taskSummary={taskSummary}
+      contentInfo={contentInfo}
+      initialLoaded={initialLoaded}
+      thinking={thinking}
+      browserUrl={browserUrl}
+    />
+  );
+}

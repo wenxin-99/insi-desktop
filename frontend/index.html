@@ -1,97 +1,323 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Insi智能处理平台 - 作业批改、论文解析、学术研究助手 | Paper Insights</title>
-    <meta name="description" content="Paper Insights是一款智能Insi学术研究平台，提供作业智能批改、论文PDF解析、学术对话、数据可视化等功能。帮助学生和研究者提升学习效率，快速获取研究灵感。" />
-    <meta name="keywords" content="Insi作业批改,论文解析,学术研究,智能批改,PDF解析,学术对话,数据可视化,研究助手,论文分析,作业辅导" />
-    <meta name="author" content="Paper Insights" />
-    <meta name="robots" content="index, follow" />
-    
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Insi智能处理平台 - 作业批改、论文解析、学术研究助手" />
-    <meta property="og:description" content="Paper Insights提供作业智能批改、论文PDF解析、学术对话等Insi功能，帮助学生和研究者提升学习效率。" />
-    <meta property="og:site_name" content="Paper Insights" />
-    
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Insi智能处理平台 - 作业批改、论文解析、学术研究助手" />
-    <meta name="twitter:description" content="Paper Insights提供作业智能批改、论文PDF解析、学术对话等Insi功能，帮助学生和研究者提升学习效率。" />
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#2563eb">
-    <meta name="mobile-web-app-capable" content="yes">    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Insights">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">    <!-- Schema.org Structured Data (JSON-LD) -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "Organization",
-      "name": "Paper Insights",
-      "alternateName": "Insi智能处理平台",
-      "url": "https://insights.ren/",
-      "logo": "https://insights.ren/logo.png",
-      "description": "Paper Insights是一款智能Insi学术研究平台，提供作业智能批改、论文PDF解析、学术对话、数据可视化等功能。",
-      "sameAs": [
-        "https://mpsboring.com"
-      ]
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Insi Desktop Agent</title>
+  <style>
+    :root {
+      --bg: #0e1117;
+      --bg-card: #161b22;
+      --bg-input: #0d1117;
+      --border: #30363d;
+      --border-focus: #58a6ff;
+      --text: #e6edf3;
+      --text-dim: #8b949e;
+      --text-muted: #484f58;
+      --accent: #58a6ff;
+      --accent-glow: rgba(88, 166, 255, 0.15);
+      --green: #3fb950;
+      --green-glow: rgba(63, 185, 80, 0.12);
+      --yellow: #d29922;
+      --red: #f85149;
+      --red-glow: rgba(248, 81, 73, 0.12);
+      --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Liberation Mono', monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      --radius: 8px;
     }
-    </script>
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "Paper Insights",
-      "url": "https://ai.mpsboring.com",
-      "description": "Insi智能处理平台 - 作业批改、论文解析、学术研究助手",
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": {
-          "@type": "EntryPoint",
-          "urlTemplate": "https://insights.ren/search?q={search_term_string}"
-        },
-        "query-input": "required name=search_term_string"
-      }
-    }
-    </script>
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Paper Insights",
-      "applicationCategory": "EducationalApplication",
-      "operatingSystem": "Web Browser",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "CNY"
-      },
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "4.8",
-        "ratingCount": "1000"
-      },
-      "description": "提供作业智能批改、论文PDF解析、学术对话等AI功能"
-    }
-    </script>    
-    <!-- THIS IS THE START OF A COMMENT BLOCK, BLOCK TO BE DELETED: Google Fonts here, example:
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    THIS IS THE END OF A COMMENT BLOCK, BLOCK TO BE DELETED -->
-  </head>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .titlebar {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+    .titlebar span {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      font-family: var(--mono);
+    }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 38px);
+      padding: 14px;
+      gap: 10px;
+    }
+
+    /* ── 状态卡片 ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: all 0.3s;
+      flex-shrink: 0;
+    }
+    .dot.on  { background: var(--green);  box-shadow: 0 0 8px var(--green);  animation: pulse 2s infinite; }
+    .dot.mid { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1s infinite; }
+    .dot.err { background: var(--red);    box-shadow: 0 0 6px var(--red); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    .status-text { font-size: 13px; font-weight: 600; }
+    .tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .info-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      font-family: var(--mono);
+    }
+    .info-value {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      margin-top: 1px;
+    }
+
+    /* ── 登录表单 ── */
+    .login { display: flex; flex-direction: column; gap: 10px; }
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      letter-spacing: .3px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .field label {
+      display: block;
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      margin-bottom: 4px;
+    }
+    .field input {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-size: 12px;
+      font-family: var(--mono);
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .field input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .field input::placeholder { color: var(--text-muted); }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all .15s;
+      font-family: var(--sans);
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover:not(:disabled) { background: #79b8ff; }
+    .btn-danger { background: 0; color: var(--red); border-color: var(--border); }
+    .btn-danger:hover:not(:disabled) { background: var(--red-glow); border-color: var(--red); }
+    .btn-ghost { background: 0; color: var(--text-dim); border-color: var(--border); }
+    .btn-ghost:hover:not(:disabled) { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+
+    /* ── 已连接标识 ── */
+    .conn-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--green-glow);
+      border: 1px solid rgba(63,185,80,.25);
+      border-radius: var(--radius);
+      font-size: 12px;
+      color: var(--green);
+      font-weight: 500;
+    }
+
+    /* ── 日志 ── */
+    .log-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .log-head {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .log-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.7;
+    }
+    .log-body::-webkit-scrollbar { width: 4px; }
+    .log-body::-webkit-scrollbar-track { background: 0; }
+    .log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .log-entry { padding: 1px 6px; border-radius: 3px; color: var(--text-dim); }
+    .log-entry:hover { background: rgba(255,255,255,.03); }
+    .log-time { color: var(--text-muted); margin-right: 6px; }
+    .log-entry.info  .log-msg { color: var(--accent); }
+    .log-entry.ok    .log-msg { color: var(--green); }
+    .log-entry.warn  .log-msg { color: var(--yellow); }
+    .log-entry.error .log-msg { color: var(--red); }
+
+    .empty-log {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--sans);
+    }
+
+    /* ── 底栏 ── */
+    .bar { display: flex; gap: 8px; }
+    .bar .btn { flex: 1; }
+
+    .fade { animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+
+    .hide { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="titlebar"><span>Insi Agent</span></div>
+
+  <div class="app">
+    <!-- 状态 -->
+    <div class="card">
+      <div class="status-row">
+        <div class="status-indicator">
+          <div class="dot" id="dot"></div>
+          <span class="status-text" id="stxt">未连接</span>
+        </div>
+        <span class="tag" id="ver">v-</span>
+      </div>
+      <div class="info-grid">
+        <div><span class="info-label">Platform</span><div class="info-value" id="iPlatform">-</div></div>
+        <div><span class="info-label">Screen</span><div class="info-value" id="iScreen">-</div></div>
+      </div>
+    </div>
+
+    <!-- 登录 (未连接) -->
+    <div class="card login" id="loginBox">
+      <div class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        连接到服务端
+      </div>
+      <div class="field">
+        <label>AUTH TOKEN</label>
+        <input type="password" id="inToken" placeholder="粘贴你的 Token…" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label>SERVER URL（可选）</label>
+        <input type="text" id="inServer" placeholder="https://insights.ren" autocomplete="off" spellcheck="false" />
+      </div>
+      <button class="btn btn-primary" id="btnConnect" onclick="doLogin()">连接</button>
+    </div>
+
+    <!-- 已连接提示 -->
+    <div class="conn-badge fade hide" id="connBadge">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <span id="connMsg">已连接，等待任务指令…</span>
+    </div>
+
+    <!-- 日志 -->
+    <div class="card log-card">
+      <div class="log-head">
+        <span class="section-title" style="margin:0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          活动日志
+        </span>
+        <span class="tag" id="logCnt">0</span>
+      </div>
+      <div class="log-body" id="logBody">
+        <div class="empty-log" id="emptyLog">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          等待连接…
+        </div>
+      </div>
+    </div>
+
+    <!-- 底栏 -->
+    <div class="bar">
+      <button class="btn btn-ghost" id="btnTest" onclick="doTest()" disabled>截屏测试</button>
+      <button class="btn btn-danger hide" id="btnDisconn" onclick="doDisconnect()">断开连接</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
 </html>

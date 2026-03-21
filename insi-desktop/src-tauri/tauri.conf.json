@@ -20,11 +20,12 @@
         "center": true,
         "visible": true,
         "decorations": true,
-        "skipTaskbar": false
+        "skipTaskbar": false,
+        "closable": true
       }
     ],
     "trayIcon": {
-      "iconPath": "icons/tray-icon.png",
+      "iconPath": "icons/icon.ico",
       "iconAsTemplate": true,
       "tooltip": "Insi Desktop Agent"
     },

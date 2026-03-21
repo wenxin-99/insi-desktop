@@ -240,6 +240,17 @@ fn main() {
                 })
                 .build(app)?;
 
+            // ── 关闭窗口时隐藏到托盘（不退出） ──
+            let main_window = app.get_webview_window("main").unwrap();
+            let win_clone = main_window.clone();
+            main_window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = win_clone.hide();
+                    log::info!("[Main] Window hidden to tray");
+                }
+            });
+
             // ── 启动 WebSocket 连接线程 ──
             let state_ws = state_for_ws.clone();
             tauri::async_runtime::spawn(async move {

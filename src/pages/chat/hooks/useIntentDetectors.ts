@@ -143,9 +143,11 @@ export function useIntentDetectors(state: ChatStateReturn) {
   const _detectResearchIntent = (textToSend: string, effectiveFiles: any[]): boolean => {
     // ★ 收紧：仅显式"深度研究/调研报告"关键词触发（轻量搜索由后端 LLM 自动判断）
     const explicitResearchKeywords = [
-      '深度研究', '帮我研究', '深入研究', '帮我调研', '做个调研', '做个研究',
-      '进行研究', '开展研究', '生成研究报告', '写个报告', '研究报告',
-      '调研报告', '市场调研', '行业分析报告', '竞品分析报告',
+      '深度研究', '深度调研', '深入研究', '深入调研', '详细调研', '全面调研', '全面研究',
+      '帮我研究', '帮我调研', '做个调研', '做个研究', '做一个调研', '做一个研究',
+      '进行研究', '进行调研', '开展研究', '开展调研',
+      '生成研究报告', '写个报告', '研究报告', '调研报告',
+      '市场调研', '行业分析报告', '竞品分析报告',
     ];
     const hasExplicitResearch = explicitResearchKeywords.some(kw => textToSend.toLowerCase().includes(kw.toLowerCase()));
 

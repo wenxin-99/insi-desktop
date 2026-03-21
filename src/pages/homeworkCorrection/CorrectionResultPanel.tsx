@@ -330,7 +330,7 @@ export function CorrectionResultPanel({ result, onReportError }: CorrectionResul
   const pieData = [
     { name: t("homework.results.correct"), value: result.correctCount, color: "#22c55e" },
     { name: t("homework.results.wrong"), value: result.wrongCount, color: "#ef4444" },
-  ];
+  ].filter(d => d.value > 0);
 
   const scoreLevelColor = SCORE_LEVEL_COLORS[result.scoreLevel] || "#888";
   const imageUrls: string[] = result.imageUrls ? JSON.parse(typeof result.imageUrls === "string" ? result.imageUrls : "[]") : [];
@@ -394,15 +394,27 @@ export function CorrectionResultPanel({ result, onReportError }: CorrectionResul
             {result.totalQuestions > 0 && (
               <div>
                 <h3 className="text-sm font-medium mb-4">{t("homework.results.accuracy")} 分布</h3>
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
                     <Pie
                       data={pieData}
                       cx="50%"
                       cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
+                      startAngle={90}
+                      endAngle={-270}
+                      labelLine={true}
+                      label={({ name, percent, x, y, midAngle }) => {
+                        const RADIAN = Math.PI / 180;
+                        const radius = 10;
+                        const nx = x + radius * Math.cos(-midAngle * RADIAN);
+                        const ny = y + radius * Math.sin(-midAngle * RADIAN);
+                        return (
+                          <text x={nx} y={ny} fill="#333" textAnchor={nx > 0 ? "start" : "end"} dominantBaseline="central" fontSize={12}>
+                            {`${name} ${(percent * 100).toFixed(0)}%`}
+                          </text>
+                        );
+                      }}
+                      outerRadius={75}
                       dataKey="value"
                     >
                       {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}

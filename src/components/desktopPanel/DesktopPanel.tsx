@@ -19,6 +19,7 @@ interface DesktopScreenshotData {
 
 interface DesktopPanelProps {
   isConnected: boolean;
+  isAuthorized?: boolean;
   connectionInfo: {
     platform: string;
     screenWidth: number;
@@ -31,6 +32,8 @@ interface DesktopPanelProps {
   progress: { current: number; total: number };
   steps: Array<{ tool: string; description: string; stepNumber: number; timestamp: number }>;
   onCancel: () => void;
+  onAuthorize?: () => void;
+  onRevoke?: () => void;
 }
 
 // ═══════════════════════════════════════════
@@ -151,12 +154,15 @@ function StepLog({
 
 export default function DesktopPanel({
   isConnected,
+  isAuthorized = false,
   connectionInfo,
   latestScreenshot,
   isOperating,
   progress,
   steps,
   onCancel,
+  onAuthorize,
+  onRevoke,
 }: DesktopPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -248,6 +254,72 @@ export default function DesktopPanel({
           >
             下载桌面客户端
           </a>
+        </div>
+      )}
+
+      {/* 已连接但未授权 → 显示授权按钮 */}
+      {isConnected && !isAuthorized && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 14px",
+            marginBottom: 12,
+            background: "var(--bg-secondary, #fffbe6)",
+            borderRadius: 8,
+            border: "1px solid #fadb14",
+            fontSize: 13,
+          }}
+        >
+          <span>⚠️ AI 桌面控制需要您的授权</span>
+          <button
+            onClick={onAuthorize}
+            style={{
+              padding: "5px 16px",
+              background: "#22c55e",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            ✓ 授权
+          </button>
+        </div>
+      )}
+
+      {/* 已授权 → 显示状态 + 撤销 */}
+      {isConnected && isAuthorized && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 14px",
+            marginBottom: 12,
+            background: "var(--bg-secondary, #f0fdf4)",
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ color: "#16a34a" }}>✓ 已授权 AI 控制桌面</span>
+          <button
+            onClick={onRevoke}
+            style={{
+              padding: "3px 10px",
+              background: "transparent",
+              color: "var(--text-tertiary, #999)",
+              border: "1px solid var(--border-color, #e0e0e0)",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            撤销
+          </button>
         </div>
       )}
 

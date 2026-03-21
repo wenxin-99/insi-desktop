@@ -47,17 +47,14 @@ export function useUserLocation(): string | null {
 }
 
 async function detectLocation(): Promise<LocationInfo | null> {
-  // 策略 1：国内 API（太平洋网，速度快）
+  // 策略 1：ip-api.com（支持 CORS，中文城市名，国内外通用）
   try {
-    const res = await fetch('https://whois.pconline.com.cn/ipJson.jsp?json=true', {
+    const res = await fetch('http://ip-api.com/json/?fields=city,regionName,countryCode&lang=zh-CN', {
       signal: AbortSignal.timeout(3000),
     });
-    const text = await res.text();
-    // 响应可能是 JSONP 或纯 JSON
-    const jsonStr = text.replace(/^[^{]*/, '').replace(/[^}]*$/, '');
-    const data = JSON.parse(jsonStr);
+    const data = await res.json();
     if (data.city) {
-      return { city: data.city, region: data.pro, country: 'CN' };
+      return { city: data.city, region: data.regionName, country: data.countryCode };
     }
   } catch {}
 

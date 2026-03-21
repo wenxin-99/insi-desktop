@@ -3,35 +3,50 @@
  *
  * [FIXED] #10: console.error 捕获统一在此处管理（从 GlobalFeedbackFab 移入）
  * [FIXED] #14: fetch monkey-patch 中 AbortSignal.timeout 加了 try/catch 兼容
+ * [OPTIMIZED] getSlowThreshold 精确匹配 tRPC 过程名，避免子串误匹配
+ * [OPTIMIZED] dead_click 排除文本内容区域
+ * [OPTIMIZED] 分类型限频，避免 js_error 消耗完 slow_page 配额
  */
 
 import { useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 
 // 全局状态
-const RATE_LIMIT = 3;
 const RATE_WINDOW = 60_000;
 const DEDUP_WINDOW = 300_000;
 const REFRESH_STORAGE_KEY = "aiops_refresh_timestamps";
 const RAGE_THRESHOLD = 3;
 const RAGE_WINDOW = 30_000;
 
-/** 已知慢路由 — 前端缓存（启动时从服务器拉取，兜底用硬编码） */
+/** 分类型限频（每类型每分钟最多上报次数） */
+const PER_TYPE_RATE_LIMITS: Record<string, number> = {
+  js_error: 2,
+  api_error: 2,
+  slow_page: 2,
+  dead_click: 1,
+  rage_refresh: 1,
+};
+
+/** 已知慢路由 — 前端缓存（启动时从服务器拉取，兜底用硬编码）
+ *  key 是 tRPC procedure 名（不含 /api/trpc/ 前缀），用精确匹配 */
 let _knownSlowRoutes: Record<string, number> = {
   "chat.sendMessage": 30000,
-  "chat.generateTitle": 15000,
-  "aiOps": 30000,
-  "research": 30000,
+  "chat.generateTitle": 8000,         // ★ 从 15000 降到 8000（匹配新的 5s 超时）
+  "aiOps.chat": 30000,
+  "aiOps.runFullPipeline": 60000,
+  "aiOps.runPipeline": 60000,
+  "aiOps.scanServerLogs": 30000,
+  "research.startTask": 30000,
   "images.generate": 30000,
-  "video": 60000,
+  "video.generate": 60000,
   "homework.correct": 30000,
   "auth.refreshToken": 15000,
 };
 
 /** 默认 API 慢阈值（对于未知路由） */
-const DEFAULT_SLOW_THRESHOLD = 8000; // 8s, was 5s
+const DEFAULT_SLOW_THRESHOLD = 8000; // 8s
 
-let submittedTimestamps: number[] = [];
+const perTypeTimestamps: Record<string, number[]> = {};
 const recentSignatureSet = new Set<string>();
 
 // Fix #10: 统一的错误收集缓冲（供 GlobalFeedbackFab 等组件读取）
@@ -43,12 +58,20 @@ function pushError(msg: string) {
   if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.shift();
 }
 
-function canSubmit(): boolean {
+/** 分类型限频检查 */
+function canSubmit(signalType: string): boolean {
   const now = Date.now();
-  submittedTimestamps = submittedTimestamps.filter(t => now - t < RATE_WINDOW);
-  return submittedTimestamps.length < RATE_LIMIT;
+  if (!perTypeTimestamps[signalType]) perTypeTimestamps[signalType] = [];
+  const stamps = perTypeTimestamps[signalType];
+  // 清理过期记录
+  perTypeTimestamps[signalType] = stamps.filter(t => now - t < RATE_WINDOW);
+  const limit = PER_TYPE_RATE_LIMITS[signalType] || 2;
+  return perTypeTimestamps[signalType].length < limit;
 }
-function markSubmitted() { submittedTimestamps.push(Date.now()); }
+function markSubmitted(signalType: string) {
+  if (!perTypeTimestamps[signalType]) perTypeTimestamps[signalType] = [];
+  perTypeTimestamps[signalType].push(Date.now());
+}
 function isDuplicate(sig: string): boolean {
   if (recentSignatureSet.has(sig)) return true;
   recentSignatureSet.add(sig);
@@ -70,8 +93,8 @@ export function usePassiveSignals() {
     extraContext?: Record<string, any>,
   ) => {
     const sig = `${signalType}:${detail.substring(0, 80)}`;
-    if (!canSubmit() || isDuplicate(sig)) return;
-    markSubmitted();
+    if (!canSubmit(signalType) || isDuplicate(sig)) return;
+    markSubmitted(signalType);
     try {
       submitRef.current.mutate({
         signalType, pageUrl: window.location.pathname,
@@ -98,11 +121,22 @@ export function usePassiveSignals() {
       reportFn("js_error", `Unhandled Promise: ${reason}`, { errorLogs: [reason] });
     };
 
-    // Fix #10: 安全地 monkey-patch console.error
+    // Fix #10: 安全地 monkey-patch console.error（过滤框架噪音）
     const origConsoleError = console.error;
+    const CONSOLE_ERROR_IGNORE = [
+      "Warning:",           // React dev warnings
+      "React does not recognize",
+      "Each child in a list",
+      "validateDOMNesting",
+      "ResizeObserver loop", // 浏览器布局引擎噪音
+      "Non-Error promise rejection", // Chrome 特有
+      "Failed to load resource", // 常见资源加载（已由 api_error 覆盖）
+    ];
     console.error = function patchedConsoleError(...args: any[]) {
       const msg = args.map(String).join(" ").substring(0, 200);
-      pushError(msg);
+      // 过滤框架噪音，只采集真正的应用错误
+      const isNoise = CONSOLE_ERROR_IGNORE.some(pattern => msg.includes(pattern));
+      if (!isNoise) pushError(msg);
       origConsoleError.apply(console, args);
     };
 
@@ -194,6 +228,16 @@ export function usePassiveSignals() {
       const isInteractive = ["button", "a", "input", "textarea", "select"].includes(tag)
         || target.closest("button, a, [role='button'], [onclick]");
       if (isInteractive) { deadClickCount = 0; return; }
+
+      // ★ 排除文本内容区域 — 用户点击文字选中/复制是正常行为，不是"死点击"
+      const isTextContent = ["p", "span", "h1", "h2", "h3", "h4", "h5", "h6", "li", "code", "pre", "em", "strong", "blockquote", "td", "th"].includes(tag)
+        || target.closest(".prose, .markdown-body, [class*='message'], [class*='Message'], [class*='chat-'], [class*='text-']");
+      if (isTextContent) return;
+
+      // ★ 如果用户正在选中文字，也不算死点击
+      const selection = window.getSelection();
+      if (selection && selection.toString().length > 0) return;
+
       const now = Date.now();
       const tid = `${tag}.${target.className?.toString().substring(0, 30)}`;
       if (now - lastClickTime < 2000 && tid === lastClickTarget) {
@@ -221,12 +265,36 @@ export function PassiveSignalCollector() { usePassiveSignals(); return null; }
 // 智能慢 API 阈值
 // ═══════════════════════════════════
 
-/** 根据 URL 确定慢 API 阈值 */
+/**
+ * 从 URL 中提取 tRPC 过程名并精确匹配阈值
+ *
+ * tRPC URL 格式:
+ *   /api/trpc/chat.sendMessage?batch=1   → "chat.sendMessage"
+ *   /api/trpc/chat.sendMessage,chat.generateTitle?batch=1 → "chat.sendMessage" (取第一个)
+ *   /api/trpc/chat%2EsendMessage         → "chat.sendMessage" (URL 编码)
+ */
 function getSlowThreshold(url: string): number {
   const path = url.split("?")[0];
-  // 匹配已知慢路由关键词
-  for (const [keyword, threshold] of Object.entries(_knownSlowRoutes)) {
-    if (path.includes(keyword)) return threshold;
+
+  // 提取 tRPC 过程名
+  const trpcMatch = path.match(/\/api\/trpc\/([^,/]+)/);
+  if (trpcMatch) {
+    const procedure = decodeURIComponent(trpcMatch[1]);
+    // ★ 精确匹配
+    if (_knownSlowRoutes[procedure] !== undefined) {
+      return _knownSlowRoutes[procedure];
+    }
+    // ★ 前缀匹配：如 "aiOps.chat" 匹配 "aiOps.chat" 但不匹配到 "chat.xxx"
+    for (const [key, threshold] of Object.entries(_knownSlowRoutes)) {
+      if (procedure.startsWith(key + ".") || procedure === key) {
+        return threshold;
+      }
+    }
   }
+
+  // 非 tRPC 路由：上传、SSE 等
+  if (path.includes("/upload")) return 30000;
+  if (path.includes("/stream")) return 30000;
+
   return DEFAULT_SLOW_THRESHOLD;
 }

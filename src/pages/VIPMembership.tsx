@@ -2,13 +2,14 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Check, Crown, Sparkles, Zap } from "lucide-react";
+import { Check, Crown, Sparkles, Zap, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 export default function VIPMembership() {
   const { data: balance } = trpc.fishCoin.getBalance.useQuery();
   const { data: vipInfo } = trpc.user.getVIPInfo.useQuery();
+  const { data: vipPlans, isLoading: plansLoading } = trpc.billingConfig.getVIPPlans.useQuery();
   const purchaseVIP = trpc.user.purchaseVIP.useMutation();
   const utils = trpc.useUtils();
   const [purchasing, setPurchasing] = useState<"vip" | "premium" | null>(null);
@@ -28,57 +29,44 @@ export default function VIPMembership() {
     }
   };
 
-  const plans = [
-    {
+  // ★ Phase 3：从后端动态构建 VIP 方案列表
+  const plans = useMemo(() => {
+    const iconMap: Record<string, any> = { vip: Crown, premium: Zap };
+    const colorMap: Record<string, string> = { vip: "text-blue-500", premium: "text-purple-500" };
+    const bgMap: Record<string, string> = {
+      vip: "bg-blue-50 dark:bg-blue-950",
+      premium: "bg-purple-50 dark:bg-purple-950",
+    };
+
+    const freePlan = {
       id: "free",
       name: "免费版",
       price: 0,
       icon: Sparkles,
       color: "text-gray-500",
       bgColor: "bg-gray-50 dark:bg-gray-900",
-      features: [
-        "10次/天 Insi对话",
-        "5次/天 图片生成",
-        "3次/天 文档处理",
-        "基础功能访问",
-      ],
+      features: ["基础对话配额", "基础图片配额", "基础文档配额", "基础功能访问"],
       current: vipInfo?.tier === "free",
-    },
-    {
-      id: "vip",
-      name: "VIP会员",
-      price: 50,
-      icon: Crown,
-      color: "text-blue-500",
-      bgColor: "bg-blue-50 dark:bg-blue-950",
-      features: [
-        "50次/天 Insi对话",
-        "20次/天 图片生成",
-        "15次/天 文档处理",
-        "优先处理速度",
-        "专属客服支持",
-      ],
-      popular: true,
-      current: vipInfo?.tier === "vip",
-    },
-    {
-      id: "premium",
-      name: "高级VIP",
-      price: 150,
-      icon: Zap,
-      color: "text-purple-500",
-      bgColor: "bg-purple-50 dark:bg-purple-950",
-      features: [
-        "200次/天 Insi对话",
-        "100次/天 图片生成",
-        "50次/天 文档处理",
-        "最高优先级处理",
-        "专属VIP客服",
-        "提前体验新功能",
-      ],
-      current: vipInfo?.tier === "premium",
-    },
-  ];
+    };
+
+    if (!vipPlans || vipPlans.length === 0) return [freePlan];
+
+    const dynamicPlans = vipPlans
+      .filter((p: any) => p.enabled)
+      .map((p: any) => ({
+        id: p.tier,
+        name: p.displayName,
+        price: p.monthlyPrice,
+        icon: iconMap[p.tier] || Crown,
+        color: colorMap[p.tier] || "text-blue-500",
+        bgColor: bgMap[p.tier] || "bg-blue-50 dark:bg-blue-950",
+        features: p.features || [],
+        popular: p.tier === "vip",
+        current: vipInfo?.tier === p.tier,
+      }));
+
+    return [freePlan, ...dynamicPlans];
+  }, [vipPlans, vipInfo]);
 
   return (
     <DashboardLayout>

@@ -12,6 +12,7 @@ import {
   ChevronDown, Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { detectLanguage, computeDiff, parseContent, getFileExtension, getFileIconColor } from './filePreview/diffUtils';
 import type { DiffLine, ViewMode } from './filePreview/diffUtils';
 import {
@@ -210,43 +211,10 @@ function JsonTreeView({ content }: { content: string }) {
 // ─── Markdown 预览 ───
 
 function MarkdownPreview({ content }: { content: string }) {
-  // 简化 Markdown 渲染（不依赖外部库）
-  const html = useMemo(() => {
-    return content
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      // Headers
-      .replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-4 mb-2 text-foreground">$1</h3>')
-      .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-5 mb-2 text-foreground">$1</h2>')
-      .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-6 mb-3 text-foreground">$1</h1>')
-      // Bold & italic
-      .replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground">$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      // Inline code
-      .replace(/`(.+?)`/g, '<code class="bg-muted/50 px-1 py-0.5 rounded text-[11px]">$1</code>')
-      // Code blocks
-      .replace(/```[\s\S]*?```/g, (m) => {
-        const code = m.replace(/^```\w*\n?/, '').replace(/```$/, '');
-        return `<pre class="bg-[#0d1117] rounded p-3 my-2 text-[12px] overflow-x-auto"><code>${code}</code></pre>`;
-      })
-      // Lists
-      .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-      .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-      // Blockquotes
-      .replace(/^> (.+)$/gm, '<blockquote class="border-l-2 border-muted-foreground/30 pl-3 text-muted-foreground italic">$1</blockquote>')
-      // Paragraphs (double newline)
-      .replace(/\n\n/g, '</p><p class="my-2">')
-      // Single newlines
-      .replace(/\n/g, '<br/>');
-    ;
-  }, [content]);
-
   return (
-    <div
-      className="p-4 text-sm leading-relaxed text-muted-foreground prose-invert max-w-none"
-      dangerouslySetInnerHTML={{ __html: `<p class="my-2">${html}</p>` }}
-    />
+    <div className="p-4 text-sm leading-relaxed text-muted-foreground max-w-none">
+      <SafeMarkdown>{content}</SafeMarkdown>
+    </div>
   );
 }
 

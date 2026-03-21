@@ -15,6 +15,8 @@ interface HighlightedContentProps {
   messageIndex?: number;
   /** v3: 文件包下载 */
   filePackageUrl?: string;
+  /** ★ 统一渲染：流式输出时跳过 Prism 高亮，用轻量高亮 */
+  streaming?: boolean;
 }
 
 // 定义关键词类别和对应的样式
@@ -64,7 +66,7 @@ const KEYWORD_CATEGORIES = {
   }
 };
 
-export function HighlightedContent({ content, hasImages = false, conversationId, messageIndex, filePackageUrl }: HighlightedContentProps) {
+export function HighlightedContent({ content, hasImages = false, conversationId, messageIndex, filePackageUrl, streaming }: HighlightedContentProps) {
   // 只对包含图片的消息进行高亮处理
   const processedContent = useMemo(() => {
     if (!hasImages || !content) {
@@ -113,7 +115,7 @@ export function HighlightedContent({ content, hasImages = false, conversationId,
 
   return (
     <div className="highlighted-content-wrapper">
-      <SafeMarkdownWithDownload content={processedContent} conversationId={conversationId} messageIndex={messageIndex} filePackageUrl={filePackageUrl} />
+      <SafeMarkdownWithDownload content={processedContent} conversationId={conversationId} messageIndex={messageIndex} filePackageUrl={filePackageUrl} streaming={streaming} />
       {hasImages && (
         <style>{`
           .highlighted-content-wrapper strong {

@@ -13,7 +13,7 @@
  * │  可拖拽排序的规则列表                    │
  * └─────────────────────────────────────────┘
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLocation } from "wouter";
@@ -117,6 +117,8 @@ export default function PersonaSettings() {
   }, [personaConfig, soulPrompt, behaviorRules]);
 
   // ── 保存 ──
+  const isBusy = updateAllMutation.isPending || applyTemplateMutation.isPending || resetMutation.isPending;
+
   const handleSave = () => {
     setSaveStatus("saving");
     updateAllMutation.mutate({
@@ -151,7 +153,27 @@ export default function PersonaSettings() {
     setEditingText("");
   };
 
-  // ── 拖拽排序 ──
+  // ── Ctrl+S 快捷保存 + 未保存离开保护 ──
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (hasChanges() && !isBusy) handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasChanges, isBusy, soulPrompt, behaviorRules]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasChanges()) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasChanges]);
+
+  // ── 拖拽排序（桌面 HTML5 + 移动端 Touch） ──
   const handleDragStart = (index: number) => setDragIndex(index);
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
@@ -166,7 +188,62 @@ export default function PersonaSettings() {
 
   const handleDragEnd = () => setDragIndex(null);
 
-  const isBusy = updateAllMutation.isPending || applyTemplateMutation.isPending || resetMutation.isPending;
+  // ── 移动端 Touch 拖拽 ──
+  const ruleListRef = useRef<HTMLDivElement>(null);
+  const touchDragRef = useRef<{ startIndex: number; currentIndex: number; startY: number } | null>(null);
+  const [touchDragIndex, setTouchDragIndex] = useState<number | null>(null);
+
+  const handleTouchStart = useCallback((index: number, e: React.TouchEvent) => {
+    // 只在 GripVertical 手柄上触发（通过 data-grip 属性标识）
+    const touch = e.touches[0];
+    touchDragRef.current = { startIndex: index, currentIndex: index, startY: touch.clientY };
+    setTouchDragIndex(index);
+    setDragIndex(index);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchDragRef.current || !ruleListRef.current) return;
+    e.preventDefault(); // 阻止页面滚动
+
+    const touch = e.touches[0];
+    const listEl = ruleListRef.current;
+    const children = Array.from(listEl.children) as HTMLElement[];
+
+    // 找到当前触摸位置对应的规则项索引
+    let targetIndex = touchDragRef.current.currentIndex;
+    for (let i = 0; i < children.length; i++) {
+      const rect = children[i].getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (touch.clientY < midY) {
+        targetIndex = i;
+        break;
+      }
+      if (i === children.length - 1) {
+        targetIndex = i;
+      }
+    }
+
+    if (targetIndex !== touchDragRef.current.currentIndex) {
+      setBehaviorRules(prev => {
+        const updated = [...prev];
+        const [item] = updated.splice(touchDragRef.current!.currentIndex, 1);
+        updated.splice(targetIndex, 0, item);
+        return updated;
+      });
+      touchDragRef.current.currentIndex = targetIndex;
+      setTouchDragIndex(targetIndex);
+      setDragIndex(targetIndex);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    touchDragRef.current = null;
+    setTouchDragIndex(null);
+    setDragIndex(null);
+  }, []);
+
+  // 合并的拖拽高亮索引（桌面 or 移动端）
+  const activeDragIndex = touchDragIndex ?? dragIndex;
 
   return (
     <DashboardLayout>
@@ -317,7 +394,12 @@ export default function PersonaSettings() {
               <div className="p-4 space-y-2">
                 {/* 规则列表 */}
                 {behaviorRules.length > 0 ? (
-                  <div className="space-y-1.5">
+                  <div
+                    ref={ruleListRef}
+                    className="space-y-1.5"
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                  >
                     {behaviorRules.map((rule, index) => (
                       <div
                         key={index}
@@ -326,12 +408,19 @@ export default function PersonaSettings() {
                         onDragOver={(e) => handleDragOver(e, index)}
                         onDragEnd={handleDragEnd}
                         className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all group ${
-                          dragIndex === index
-                            ? "border-indigo-300 bg-indigo-50 dark:border-indigo-600 dark:bg-indigo-950/30 shadow-sm"
+                          activeDragIndex === index
+                            ? "border-indigo-300 bg-indigo-50 dark:border-indigo-600 dark:bg-indigo-950/30 shadow-sm scale-[1.02]"
                             : "border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 hover:border-gray-200 dark:hover:border-gray-600"
                         }`}
+                        style={activeDragIndex === index ? { zIndex: 10, position: 'relative' } : undefined}
                       >
-                        <GripVertical className="w-4 h-4 text-gray-300 cursor-grab shrink-0 group-hover:text-gray-500 active:cursor-grabbing" />
+                        {/* 拖拽手柄 — 桌面用 draggable，移动端用 touchStart */}
+                        <div
+                          onTouchStart={(e) => handleTouchStart(index, e)}
+                          className="touch-none select-none shrink-0 p-0.5"
+                        >
+                          <GripVertical className="w-4 h-4 text-gray-300 cursor-grab shrink-0 group-hover:text-gray-500 active:cursor-grabbing" />
+                        </div>
                         <span className="text-xs font-mono text-gray-400 w-5 text-center shrink-0">
                           {index + 1}
                         </span>
@@ -342,7 +431,7 @@ export default function PersonaSettings() {
                             value={editingText}
                             onChange={e => setEditingText(e.target.value)}
                             onBlur={commitEdit}
-                            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') { setEditingIndex(null); setEditingText(""); } }}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === 'Escape') { setEditingIndex(null); setEditingText(""); } }}
                           />
                         ) : (
                           <span
@@ -353,7 +442,7 @@ export default function PersonaSettings() {
                         )}
                         <button
                           onClick={() => removeRule(index)}
-                          className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 text-gray-300 hover:text-red-400 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                          className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 text-gray-300 hover:text-red-400 transition-colors shrink-0 sm:opacity-0 sm:group-hover:opacity-100"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

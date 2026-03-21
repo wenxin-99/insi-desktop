@@ -95,6 +95,29 @@ function parseDisplayMessages(parsedMessages: any[]): ChatMessage[] {
 
   return deduped
     .map((msg: any) => {
+      // ★ Artifact 恢复：从 content 中的代码块重建丢失的 artifact（历史数据兼容）
+      if (msg.role === 'assistant' && !msg.artifact && typeof msg.content === 'string') {
+        const artifactMatch = msg.content.match(
+          /```(?:artifact:([^\n]*)|(?:(html|jsx|tsx|vue|css|react)\s*\n))([\s\S]*?)```/
+        );
+        if (artifactMatch) {
+          const title = (artifactMatch[1] || '').trim();
+          const lang = artifactMatch[2] || 'html';
+          const code = (artifactMatch[3] || '').trim();
+          if (code.length > 100 && (/<(!DOCTYPE|html|div|head|body|style|script)/i.test(code) || ['react','jsx','tsx','vue'].includes(lang))) {
+            const langMap: Record<string, string> = { html: 'html', jsx: 'react', tsx: 'react', vue: 'vue', css: 'css', react: 'react' };
+            msg = { ...msg, artifact: {
+              id: `art_recovered_${msg.timestamp || Date.now()}`,
+              title: title || (langMap[lang] === 'react' ? 'React 组件预览' : '界面预览'),
+              language: langMap[lang] || 'html',
+              code,
+              version: 1,
+              status: 'complete',
+              description: '',
+            }};
+          }
+        }
+      }
       // 特殊消息类型标记
       if (msg.isResearchTask)
         return {
@@ -111,6 +134,35 @@ function parseDisplayMessages(parsedMessages: any[]): ChatMessage[] {
           automationTaskName: msg.automationTaskName,
           automationSiteName: msg.automationSiteName,
         };
+      // ★ 自动化任务恢复：从消息内容中检测并恢复丢失的元数据（历史数据兼容）
+      if (msg.role === 'assistant' && !msg.isAutomationTask && typeof msg.content === 'string') {
+        // 匹配 "已为 N 个账号创建/继续任务" 或 "自动化任务已创建并启动"
+        const multiMatch = msg.content.match(/已为\s*(\d+)\s*个账号(?:创建|继续创建)(?:自动化)?任务/);
+        const singleMatch = msg.content.match(/自动化任务已创建并启动/) || msg.content.match(/已继续自动化任务/);
+        if (multiMatch || singleMatch) {
+          // 从内容中提取任务 ID 列表
+          const taskIdMatches = [...msg.content.matchAll(/任务\s*#(\d+)/g)];
+          const firstTaskId = taskIdMatches.length > 0 ? parseInt(taskIdMatches[0][1]) : undefined;
+          // 提取账号列表
+          const accountMatches = [...msg.content.matchAll(/账号\s*\*{0,2}(\S+?)\*{0,2}\s*→\s*任务\s*#(\d+)/g)];
+          const allTasks = accountMatches.length > 1
+            ? accountMatches.map(m => ({ taskId: parseInt(m[2]), username: m[1], taskName: m[1] }))
+            : undefined;
+          // 提取任务名称和站点名
+          const taskNameMatch = msg.content.match(/任务名称[：:]\s*\*{0,2}(.+?)\*{0,2}\n/);
+          const siteMatch = msg.content.match(/目标网站[：:]\s*\*{0,2}(.+?)\*{0,2}\n/);
+
+          return {
+            ...msg,
+            isAutomationTask: true,
+            automationTaskId: firstTaskId,
+            automationTaskName: taskNameMatch?.[1] || '自动化任务',
+            automationSiteName: siteMatch?.[1] || '',
+            ...(allTasks ? { automationAllTasks: allTasks } : {}),
+            timestamp: msg.timestamp || msg.sentAt || msg.respondedAt || Date.now(),
+          };
+        }
+      }
       if (msg.isVideoTask)
         return {
           ...msg,
@@ -155,8 +207,21 @@ function parseDisplayMessages(parsedMessages: any[]): ChatMessage[] {
       }
 
       // 普通文本消息
+      // ★ 向后兼容：旧 DB 数据可能只有 markdown ![AI_IMG](url) 没有 images 数组
+      // 从 content 中提取图片，让主渲染路径（ProgressiveImage + ImageActionBar）统一处理
+      let backfillImages: Array<{ url: string; name: string; imagePrompt?: string }> | undefined;
+      if (msg.role === 'assistant' && !msg.images && typeof msg.content === 'string') {
+        const imgRegex = /!\[(?:AI_IMG|Generated Image)[^\]]*\]\(([^)]+)\)/g;
+        const imgs: Array<{ url: string; name: string }> = [];
+        let match;
+        while ((match = imgRegex.exec(msg.content)) !== null) {
+          imgs.push({ url: match[1], name: '生成图片' });
+        }
+        if (imgs.length > 0) backfillImages = imgs;
+      }
       return {
         ...msg,
+        ...(backfillImages ? { images: backfillImages } : {}),
         content: (() => {
           if (msg._displayContent !== undefined) return msg._displayContent;
           if (typeof msg.content === 'string' && msg.role === 'user') {
@@ -192,6 +257,8 @@ function extractResearchTaskId(msgs: ChatMessage[]): number | null {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const msg = msgs[i] as any;
     if (msg.isResearchTask && msg.researchTaskId) return msg.researchTaskId;
+    // ★ 自动化任务也使用 activeResearchTaskId 驱动沙箱面板
+    if (msg.isAutomationTask && msg.automationTaskId) return msg.automationTaskId;
     const content = typeof msg.content === 'string' ? msg.content : '';
     const match = content.match(/<ResearchTaskCard\s+taskId="(\d+)"/);
     if (match) return parseInt(match[1]);

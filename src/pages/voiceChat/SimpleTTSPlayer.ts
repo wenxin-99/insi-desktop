@@ -17,12 +17,14 @@ class SimpleTTSPlayer {
   private currentSource: AudioBufferSourceNode | null = null;
   private abortController: AbortController | null = null;
   public voice: string = "";
+  public ttsProvider: string = "";  // ★ 套餐指定的 TTS 服务商（覆盖全局）
 
-  constructor(onDone: () => void, authHeaders: Record<string, string>, audioContext: AudioContext, voice?: string) {
+  constructor(onDone: () => void, authHeaders: Record<string, string>, audioContext: AudioContext, voice?: string, ttsProvider?: string) {
     this.onDone = onDone;
     this.authHeaders = authHeaders;
     this.audioContext = audioContext;
     if (voice) this.voice = voice;
+    if (ttsProvider) this.ttsProvider = ttsProvider;
 
     // ★ 移动端关键：监听 AudioContext 状态变化，自动恢复
     // iOS/Android 按音量键、锁屏、切 App 都会 suspend AudioContext
@@ -127,7 +129,11 @@ class SimpleTTSPlayer {
           method: 'POST',
           headers: this.authHeaders,
           credentials: 'include',
-          body: JSON.stringify({ text: text.trim(), voice: this.voice || undefined }),
+          body: JSON.stringify({
+            text: text.trim(),
+            voice: this.voice || undefined,
+            ttsProvider: this.ttsProvider || undefined,
+          }),
           signal: this.abortController!.signal,
         });
         if (this.isStopped || !response.ok) {
@@ -148,7 +154,16 @@ class SimpleTTSPlayer {
     this.scheduleChain = this.scheduleChain.then(async () => {
       try {
         const audioBuffer = await fetchPromise; // 等这句话自己的 fetch 完成
-        if (this.isStopped || !audioBuffer) return;
+        if (this.isStopped) return;
+
+        // ★ 服务端 TTS 失败 → 降级到浏览器内置 SpeechSynthesis
+        if (!audioBuffer) {
+          if (window.speechSynthesis) {
+            console.log(`[TTS] Server failed, falling back to browser SpeechSynthesis for: "${text.substring(0, 30)}"`);
+            await this._browserSpeak(text);
+          }
+          return;
+        }
 
         // ★ 播放前确保 AudioContext 处于 running 状态（移动端可能被系统 suspend）
         if (this.audioContext.state !== 'running') {
@@ -190,6 +205,42 @@ class SimpleTTSPlayer {
     setTimeout(() => { if (!this.isStopped) this.onDone(); }, remaining + 200);
   }
 
+  /** ★ T8-1: 暂停状态 */
+  private _isPaused = false;
+
+  /** ★ T8-1: 暂停播放（用户打断时调用）— 挂起 AudioContext 时间线 */
+  async pause(): Promise<void> {
+    if (this.isStopped || this._isPaused) return;
+    this._isPaused = true;
+    try {
+      if (this.audioContext.state === 'running') {
+        await this.audioContext.suspend();
+        console.log('[TTS] Paused (AudioContext suspended)');
+      }
+    } catch (e) {
+      console.warn('[TTS] Pause failed:', e);
+    }
+  }
+
+  /** ★ T8-1: 恢复播放（用户只是短暂噪音时调用） */
+  async resume(): Promise<void> {
+    if (this.isStopped || !this._isPaused) return;
+    this._isPaused = false;
+    try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+        console.log('[TTS] Resumed (AudioContext running)');
+      }
+    } catch (e) {
+      console.warn('[TTS] Resume failed:', e);
+    }
+  }
+
+  /** ★ T8-1: 当前是否暂停 */
+  get paused(): boolean {
+    return this._isPaused;
+  }
+
   /** 合成并播放文本（原有单次调用方式，保留兼容） */
   async speak(text: string): Promise<void> {
     if (this.isStopped || !text.trim()) {
@@ -202,6 +253,33 @@ class SimpleTTSPlayer {
     for (const s of sentences) this.speakQueued(s);
     this.finishQueue();
     return Promise.resolve();
+  }
+
+  /** 浏览器内置语音合成作为备选（Promise 版，用于 scheduleChain 串行等待） */
+  private _browserSpeak(text: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (this.isStopped || !window.speechSynthesis) { resolve(); return; }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+
+      const voices = window.speechSynthesis.getVoices();
+      const zhVoice = voices.find(v => (v.lang === 'zh-CN' || v.lang === 'zh_CN') && v.localService)
+        || voices.find(v => v.lang.startsWith('zh'));
+      if (zhVoice) utterance.voice = zhVoice;
+
+      const watchdog = setTimeout(() => {
+        console.warn('[TTS] Browser SpeechSynthesis watchdog triggered');
+        resolve();
+      }, 30000);
+
+      utterance.onend = () => { clearTimeout(watchdog); resolve(); };
+      utterance.onerror = (e) => { clearTimeout(watchdog); console.warn('[TTS] Browser fallback error:', e.error); resolve(); };
+
+      window.speechSynthesis.speak(utterance);
+    });
   }
 
   /** 浏览器内置语音合成作为备选 */
@@ -240,6 +318,7 @@ class SimpleTTSPlayer {
   stop() {
     console.log("[TTS] Stopping...");
     this.isStopped = true;
+    this._isPaused = false;
 
     // 中止fetch
     if (this.abortController) {

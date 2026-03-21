@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { ForumBenefitsCard } from "./dashboard/ForumBenefitsCard";
 import { BalanceQuotaSection } from "./dashboard/BalanceQuotaSection";
 import { ConsumptionChart } from "./dashboard/ConsumptionChart";
+import { TransactionItem } from "@/components/TransactionItem";
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -163,16 +164,15 @@ export default function Dashboard() {
             {transactions && transactions.length > 0 ? (
               <div className="space-y-4">
                 {transactions.map((tx) => (
-                  <div key={tx.id} className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{tx.description}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleString("zh-CN")}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-semibold ${parseFloat(tx.amount) < 0 ? "text-red-600" : "text-green-600"}`}>{tx.amount} 🐟币</p>
-                      <p className="text-xs text-muted-foreground">{t("pages.dashboard.balance")}: {tx.balanceAfter}</p>
-                    </div>
-                  </div>
+                  <TransactionItem
+                    key={tx.id}
+                    description={tx.description}
+                    amount={tx.amount}
+                    balanceAfter={tx.balanceAfter}
+                    createdAt={tx.createdAt}
+                    compact
+                    balanceLabel={t("pages.dashboard.balance")}
+                  />
                 ))}
               </div>
             ) : (

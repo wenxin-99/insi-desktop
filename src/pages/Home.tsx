@@ -437,6 +437,14 @@ export default function Home() {
             <span className="font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">paper insights</span>
           </div>
           <p className="text-muted-foreground">© 2026 paper insights. 由🐟币驱动</p>
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block mt-1 text-xs text-muted-foreground/70 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+          >
+            备案/许可证编号：渝ICP备2026002450号
+          </a>
         </div>
       </footer>
     </div>

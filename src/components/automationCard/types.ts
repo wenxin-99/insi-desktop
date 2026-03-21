@@ -58,6 +58,12 @@ export interface TaskProgressProps {
   thinking?: string;
   browserUrl?: string;
   browserScreenshot?: string;
+  /** AI 请求用户协同 */
+  helpNeeded?: { reason: string; category: string } | null;
+  /** Socket.io 实例（用于接管操作） */
+  socket?: any;
+  /** 清除协同请求 */
+  onDismissHelp?: () => void;
 }
 
 /** 任务控制 API */

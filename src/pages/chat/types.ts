@@ -97,30 +97,8 @@ export interface ChatMessage {
 }
 
 // ═══════════ Artifact 预览 ═══════════
-
-export interface ArtifactData {
-  id: string;
-  title: string;
-  language: 'html' | 'react' | 'vue' | 'css' | 'javascript';
-  code: string;
-  description?: string;
-  version: number;
-  previousCode?: string;
-  status: 'streaming' | 'complete' | 'approved' | 'rejected';
-}
-
-// ═══════════ 方案选择卡片 ═══════════
-
-export interface SolutionPickerData {
-  id: string;
-  question: string;
-  options: Array<{ title: string; description?: string }>;
-  allowCustom: boolean;
-  allowSkip: boolean;
-  selectedIndex?: number;
-  customText?: string;
-  status: 'pending' | 'selected' | 'skipped';
-}
+// ★ 从 @/types/artifact 共享（避免 components → pages/chat 循环依赖）
+export type { ArtifactData, SolutionPickerData } from '@/types/artifact';
 
 // ═══════════ 操作日志 ═══════════
 
@@ -200,6 +178,7 @@ export interface ChatStateReturn {
   // 翻译
   t: (key: string, opts?: any) => string;
   utils: any;
+  trpcClient: any;
   
   // 侧边栏
   isSidebarOpen: boolean;

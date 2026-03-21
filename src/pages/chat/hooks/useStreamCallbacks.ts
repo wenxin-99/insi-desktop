@@ -66,10 +66,13 @@ export function useStreamCallbacks(state: ChatStateReturn) {
   const _buildStreamCallbacks = (conversationId: number, effectiveImages: any[], hasImageGenerationIntent: boolean) => {
     let _capturedThinkingSummary = '';
     let _capturedImagePrompt = ''; // 存储图片生成时 LLM 优化后的 prompt
+    // ★ 闭包变量：捕获自动化/视频任务元数据，避免 React 18 批处理导致 onDone 读不到 onAutomationTask 设置的标记
+    let _capturedTaskMeta: Record<string, any> | null = null;
     return {
     onStart: (data: any) => {
       _capturedThinkingSummary = '';
       _capturedImagePrompt = '';
+      _capturedTaskMeta = null;
       setCurrentThinkingSteps([]);
       setRealtimeThinkingSteps([]);
       setOperationLogs([]);
@@ -155,12 +158,25 @@ export function useStreamCallbacks(state: ChatStateReturn) {
         code: '',
         version: artifact.version || 1,
         status: 'streaming' as const,
+        previousCode: undefined as string | undefined,
+        versions: [] as Array<{ version: number; code: string; timestamp: number }>,
       };
       // 写入消息
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
         if (lastMessage?.role === 'assistant') {
+          // ★ T9-1: 如果已有 artifact（即版本迭代），保存旧版本到 versions 数组
+          const existing = (lastMessage as any).artifact;
+          if (existing && existing.code && existing.status === 'complete') {
+            artifactData.previousCode = existing.code;
+            // 继承历史版本 + 追加当前完成版本
+            const existingVersions = existing.versions || [];
+            artifactData.versions = [
+              ...existingVersions,
+              { version: existing.version || 1, code: existing.code, timestamp: Date.now() },
+            ];
+          }
           (lastMessage as any).artifact = artifactData;
         }
         return newMessages;
@@ -195,6 +211,17 @@ export function useStreamCallbacks(state: ChatStateReturn) {
           (lastMessage as any).artifact = artifact;
           // 同步到右侧面板
           setActiveArtifact({ ...artifact });
+        }
+        return newMessages;
+      });
+    },
+    // ═══════ 作业批改结果卡片（T14-2） ═══════
+    onHomeworkResult: (data: any) => {
+      setMessages((prev: any[]) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          (lastMessage as any).homeworkResult = data;
         }
         return newMessages;
       });
@@ -297,6 +324,14 @@ export function useStreamCallbacks(state: ChatStateReturn) {
       setActiveResearchTaskId(data.taskId);
       // 注册到研究任务追踪器
       if (conversationId) researchTaskRegistry.register(conversationId, data.taskId);
+      // ★ 闭包捕获：确保 onDone 即使在 React 批处理下也能获取到这些元数据
+      _capturedTaskMeta = {
+        isAutomationTask: true,
+        automationTaskId: data.taskId,
+        automationTaskName: data.taskName,
+        automationSiteName: data.siteName,
+        ...(data.allTasks && data.allTasks.length > 1 ? { automationAllTasks: data.allTasks } : {}),
+      };
       setMessages((prev) => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
@@ -315,6 +350,69 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     },
     onIntentConfirm: (data: any) => {
       setIsStreamingMessage(false);
+      setThinkingStage('idle');
+      setThinkingStartTime(null);
+
+      // ★ Native Tool 架构：视频意图走 VideoConfirmCard（保留时长/风格/费用完整 UI）
+      if (data.intent === 'video_generation') {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const videoConfirmMsg = {
+            id: String(Date.now()),
+            role: 'assistant' as const,
+            content: '',
+            timestamp: Date.now(),
+            isVideoConfirm: true,
+            videoConfirmParams: {
+              prompt: data.prompt || '',
+              extractedDuration: data.duration || 5,
+              extractedStyle: data.style || '',
+              imageUrl: data.imageUrl || undefined,
+              isVideoRequest: true,
+              confidence: 'high',
+            },
+          };
+          // 替换最后一条 assistant 占位消息，或追加
+          const lastIdx = newMessages.length - 1;
+          if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+            newMessages[lastIdx] = videoConfirmMsg as any;
+          } else {
+            newMessages.push(videoConfirmMsg as any);
+          }
+          return newMessages;
+        });
+        return;
+      }
+
+      // ★ Native Tool 架构：深度调研意图走 ResearchConfirmCard
+      if (data.intent === 'deep_research') {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const researchConfirmMsg = {
+            id: String(Date.now()),
+            role: 'assistant' as const,
+            content: '',
+            timestamp: Date.now(),
+            isResearchConfirm: true,
+            researchConfirmParams: {
+              prompt: data.prompt || '',
+              confidence: 'high' as const,
+              method: 'llm' as const,
+              originalMessage: data.prompt || '',
+            },
+          };
+          const lastIdx = newMessages.length - 1;
+          if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+            newMessages[lastIdx] = researchConfirmMsg as any;
+          } else {
+            newMessages.push(researchConfirmMsg as any);
+          }
+          return newMessages;
+        });
+        return;
+      }
+
+      // 其他意图走通用 IntentConfirmCard
       setMessages((prev) => {
         const newMessages = [...prev];
         const lastAssistantIdx = newMessages.length - 1;
@@ -333,12 +431,18 @@ export function useStreamCallbacks(state: ChatStateReturn) {
         if (lastMessage && lastMessage.role === 'assistant') {
           if (lastMessage.content === '🎨 正在为您生成图片，请稍候…') lastMessage.content = '';
           if (!lastMessage.images) lastMessage.images = [];
-          // ★ 替换已有的 isGenerating 占位图（Canvas 动画 → 模糊占位图）
-          const genIdx = lastMessage.images.findIndex((img: any) => img.isGenerating);
-          if (genIdx !== -1) {
-            lastMessage.images[genIdx] = { url: data.placeholderUrl, name: data.prompt, isPlaceholder: true };
+          // ★ 优先用服务端下发的 index 精准定位槽位
+          const targetIdx = typeof data.index === 'number' ? data.index : -1;
+          if (targetIdx >= 0 && targetIdx < lastMessage.images.length) {
+            lastMessage.images[targetIdx] = { url: data.placeholderUrl, name: data.prompt, isPlaceholder: true };
           } else {
-            lastMessage.images.push({ url: data.placeholderUrl, name: data.prompt, isPlaceholder: true });
+            // 兜底：替换第一个 isGenerating 占位图
+            const genIdx = lastMessage.images.findIndex((img: any) => img.isGenerating);
+            if (genIdx !== -1) {
+              lastMessage.images[genIdx] = { url: data.placeholderUrl, name: data.prompt, isPlaceholder: true };
+            } else {
+              lastMessage.images.push({ url: data.placeholderUrl, name: data.prompt, isPlaceholder: true });
+            }
           }
           setCollapsedDescriptions(prev => { const newSet = new Set(prev); newSet.add(newMessages.length - 1); return newSet; });
         }
@@ -374,12 +478,18 @@ export function useStreamCallbacks(state: ChatStateReturn) {
           lastMessage.content += `\n\n![AI_IMG](${data.imageUrl})`;
           const imageObj = { url: data.imageUrl, name: data.prompt, placeholderUrl: data.placeholderUrl, imagePrompt: data.prompt };
           if (lastMessage.images) {
-            // ★ 优先替换 isGenerating 占位，其次替换 isPlaceholder 占位
-            const genIdx = lastMessage.images.findIndex((img: any) => img.isGenerating);
-            const placeholderIndex = genIdx !== -1 ? genIdx : lastMessage.images.findIndex((img: any) => img.isPlaceholder);
-            if (placeholderIndex !== -1) {
-              lastMessage.images[placeholderIndex] = imageObj;
-            } else { lastMessage.images.push(imageObj); }
+            // ★ 优先用服务端下发的 index 精准定位槽位
+            const targetIdx = typeof data.index === 'number' ? data.index : -1;
+            if (targetIdx >= 0 && targetIdx < lastMessage.images.length) {
+              lastMessage.images[targetIdx] = imageObj;
+            } else {
+              // 兜底：优先替换 isGenerating 占位，其次替换 isPlaceholder 占位
+              const genIdx = lastMessage.images.findIndex((img: any) => img.isGenerating);
+              const placeholderIndex = genIdx !== -1 ? genIdx : lastMessage.images.findIndex((img: any) => img.isPlaceholder);
+              if (placeholderIndex !== -1) {
+                lastMessage.images[placeholderIndex] = imageObj;
+              } else { lastMessage.images.push(imageObj); }
+            }
           } else { lastMessage.images = [imageObj]; }
           setCollapsedDescriptions(prev => { const newSet = new Set(prev); newSet.add(newMessages.length - 1); return newSet; });
         }
@@ -403,6 +513,25 @@ export function useStreamCallbacks(state: ChatStateReturn) {
         timestamp: data.timestamp,
       });
     },
+    // ★ 单张图片生成失败时，移除该槽位的占位图
+    onImageFailed: (data: any) => {
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage?.role === 'assistant' && lastMessage.images) {
+          const targetIdx = typeof data.index === 'number' ? data.index : -1;
+          if (targetIdx >= 0 && targetIdx < lastMessage.images.length) {
+            lastMessage.images.splice(targetIdx, 1);
+          } else {
+            // 兜底：移除第一个 isGenerating 占位
+            const genIdx = lastMessage.images.findIndex((img: any) => img.isGenerating);
+            if (genIdx !== -1) lastMessage.images.splice(genIdx, 1);
+          }
+          if (lastMessage.images.length === 0) delete (lastMessage as any).images;
+        }
+        return newMessages;
+      });
+    },
     // ═══════ 轻量联网搜索 ═══════
     onWebSearchStart: (data: any) => {
       setWebSearchQuery(data.query || '');
@@ -421,6 +550,29 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     },
     onWebSearchDone: () => {
       setWebSearchQuery(null);
+    },
+    onWebSearchProgress: (data: any) => {
+      // 多轮搜索进度 → 更新搜索状态显示
+      if (data.phase === 'searching' && data.query) {
+        setWebSearchQuery(`🔄 [${data.totalSearches}] ${data.query}`);
+      } else if (data.phase === 'iterating') {
+        setWebSearchQuery(`🔄 已搜索 ${data.totalSearches} 次，正在分析是否需要补充...`);
+      } else if (data.phase === 'done') {
+        // 不立即清除，让 web_search_done 事件处理
+      }
+      // 同时更新消息上的搜索计数
+      setMessages((prev: any[]) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          (lastMessage as any).searchProgress = {
+            phase: data.phase,
+            totalSearches: data.totalSearches,
+            iteration: data.iteration,
+          };
+        }
+        return newMessages;
+      });
     },
     // ═══════ 网页抓取 ═══════
     onUrlFetchStart: (data: any) => {
@@ -487,17 +639,27 @@ export function useStreamCallbacks(state: ChatStateReturn) {
       onStreamComplete();
 
       // 更新最后一条助手消息
+      // ★ 在 updater 中捕获最终消息，供立即持久化使用
+      let _messagesToPersist: any[] | null = null;
+      let _isConfirmCard = false;
       setMessages((prev) => {
         const newMessages = [...prev];
         const lastIdx = newMessages.length - 1;
         const origMsg = newMessages[lastIdx];
+        // ★ 确认卡片保护：如果最后一条消息是意图确认卡片（Research/Video/Intent），
+        //   跳过 onDone 的内容覆盖和属性修改，避免破坏卡片状态和交互
+        if (origMsg && ((origMsg as any).isResearchConfirm || (origMsg as any).isVideoConfirm || (origMsg as any).isIntentConfirm)) {
+          _isConfirmCard = true;
+          _messagesToPersist = newMessages.filter((m: any) => m.role !== 'system');
+          return newMessages;
+        }
         if (origMsg && origMsg.role === 'assistant') {
           const lastMessage = { ...origMsg };
           newMessages[lastIdx] = lastMessage;
           lastMessage.content = finalContent || origMsg.content || '';
-          // ★ 清理残留的 isGenerating 占位图（错误时未被 onImage 替换）
+          // ★ 清理残留的 isGenerating 和 isPlaceholder 占位图（未被 onImage 替换的孤儿）
           if (lastMessage.images) {
-            lastMessage.images = lastMessage.images.filter((img: any) => !img.isGenerating);
+            lastMessage.images = lastMessage.images.filter((img: any) => !img.isGenerating && !img.isPlaceholder);
             if (lastMessage.images.length === 0) delete (lastMessage as any).images;
           }
           lastMessage.respondedAt = respondedAt;
@@ -513,6 +675,10 @@ export function useStreamCallbacks(state: ChatStateReturn) {
           if (savedReasoning && savedReasoning.length > 0) (lastMessage as any).reasoningContent = savedReasoning;
           // ★ 附加文件包下载链接
           if (data.filePackageUrl) (lastMessage as any).filePackageUrl = data.filePackageUrl;
+          // ★ 回复被截断标记（服务端 auto-continuation 后仍不完整）
+          if ((data as any).truncated) {
+            lastMessage.content = (lastMessage.content || '') + '\n\n---\n> ⚠️ 回复内容较长已被截断，发送"继续"可接续阅读。';
+          }
           const msgContent = typeof lastMessage.content === 'string' ? lastMessage.content : '';
           const researchMatch = msgContent.match(/<ResearchTaskCard\s+taskId="(\d+)"/);
           if (researchMatch && !(lastMessage as any).isResearchTask) {
@@ -524,39 +690,78 @@ export function useStreamCallbacks(state: ChatStateReturn) {
             // 注册到研究任务追踪器（支持后台徽章显示）
             if (conversationId) researchTaskRegistry.register(conversationId, taskId);
           }
+          // ★ 合并闭包捕获的任务元数据（防止 React 18 批处理丢失 onAutomationTask 的标记）
+          if (_capturedTaskMeta) {
+            Object.assign(lastMessage, _capturedTaskMeta);
+          }
         }
+        // ★ 捕获最终消息用于立即持久化（在 React 状态更新的同一微任务中）
+        _messagesToPersist = newMessages.filter((m: any) => m.role !== 'system');
         return newMessages;
       });
 
       setIsStreamingMessage(false);
       if (conversationId) streamManager.clearTask(conversationId);
       refetchBalance();
+
+      // ★ 确认卡片场景：跳过标题生成、推荐追问等后处理，避免干扰用户交互
+      if (_isConfirmCard) {
+        onStreamComplete();
+        // 仍需持久化（确保刷新后卡片不丢失），但不触发标题生成和推荐追问
+        if (conversationId) {
+          queueMicrotask(() => {
+            const toSave = _messagesToPersist;
+            if (toSave && toSave.length > 0) {
+              trpcClient.conversation.saveMessages.mutate({
+                conversationId: conversationId!,
+                messages: JSON.stringify(toSave),
+              }).then(() => refetchConversations()).catch(() => refetchConversations());
+            } else {
+              refetchConversations();
+            }
+          });
+        }
+        return;
+      }
+
+      // ★ 自动化任务场景：服务端已通过 saveToConversation 写入完整元数据，
+      //   跳过客户端 saveMessages 避免覆盖（客户端消息可能缺少 isAutomationTask 等标记）
+      if (_capturedTaskMeta) {
+        onStreamComplete();
+        if (conversationId) refetchConversations();
+        return;
+      }
+
       // ★ filePackageUrl 在 setMessages 内部设置后可能不触发子组件重渲染，
       // 延迟强制刷新一次确保下载按钮立即显示
       if (data.filePackageUrl) {
         setTimeout(() => setMessages(prev => [...prev]), 150);
       }
 
-      // 流完成后自动持久化消息到数据库（防止刷新后丢失）
+      // ★ 流完成后立即持久化消息到数据库（不再用 setTimeout 延迟）
+      // 旧逻辑：200ms setTimeout → 在此期间 refetchConversations/generateTitle 可能
+      //   触发 loadConversationMessages → 从 DB 读到空消息 → 覆盖 React state → 消息丢失
+      // 新逻辑：queueMicrotask 确保在 React batch 刷新后立即保存，
+      //   然后才触发 refetchConversations，保证 DB 中已有最新消息
       if (conversationId) {
-        const saveMessagesMutation = (state as any).saveMessagesMutation;
-        setTimeout(() => {
-          setMessages((currentMsgs: any[]) => {
-            const toSave = currentMsgs.filter((m: any) => m.role !== 'system');
-            if (toSave.length > 0 && saveMessagesMutation) {
-              saveMessagesMutation.mutate({
-                conversationId,
-                messages: JSON.stringify(toSave),
-              });
-            } else if (toSave.length > 0) {
-              trpcClient.conversation.saveMessages.mutate({
-                conversationId,
-                messages: JSON.stringify(toSave),
-              }).catch((err: any) => console.error('[Stream] Auto-save failed:', err.message));
-            }
-            return currentMsgs;
-          });
-        }, 200);
+        queueMicrotask(() => {
+          const toSave = _messagesToPersist;
+          if (toSave && toSave.length > 0) {
+            trpcClient.conversation.saveMessages.mutate({
+              conversationId: conversationId!,
+              messages: JSON.stringify(toSave),
+            }).then(() => {
+              // ★ 保存成功后才刷新对话列表，此时 DB 中已有最新消息
+              refetchConversations();
+            }).catch((err: any) => {
+              console.error('[Stream] Auto-save failed:', err.message);
+              // 保存失败也要刷新（不阻塞 UI）
+              refetchConversations();
+            });
+          } else {
+            refetchConversations();
+          }
+        });
       }
 
       // 异步生成标题 — ★ 仅在第一条用户消息时触发（避免每次对话都浪费一次 LLM 调用）
@@ -566,7 +771,12 @@ export function useStreamCallbacks(state: ChatStateReturn) {
           const userMessageContent = userMessages[0]?.content || '';
           generateTitleMutation.mutate(
             { conversationId, userMessage: typeof userMessageContent === 'string' ? userMessageContent : '' },
-            { onSuccess: () => refetchConversations(), onError: (error: any) => console.error('生成标题失败:', error) }
+            {
+              // ★ 不再在 onSuccess 里 refetchConversations —— 上面 saveMessages 完成后已经刷新
+              // 避免在消息持久化之前触发重新加载（导致读到空消息覆盖 state）
+              onSuccess: () => { /* refetch 已由 saveMessages.then 处理 */ },
+              onError: (error: any) => console.error('生成标题失败:', error),
+            }
           );
         }
       }

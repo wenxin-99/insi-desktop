@@ -223,11 +223,6 @@ export function AgentTaskCard({
                   <Trash2 className="w-3.5 h-3.5 text-red-500" />
                 </button>
               )}
-              {task.status === "cancelled" && onDelete && (
-                <button onClick={onDelete} className="p-1 rounded hover:bg-red-100" title="删除">
-                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                </button>
-              )}
             </>
           )}
           <button onClick={onView} className="p-1 rounded hover:bg-gray-100" title="查看详情">

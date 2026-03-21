@@ -7,8 +7,12 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
-import { getLoginUrl } from "./const";
+import { getLoginUrl, getApiBaseUrl } from "./const";
+import { installTauriApiInterceptor } from "./lib/tauriApiInterceptor";
 import "./index.css";
+
+// ═══════════ Tauri API 拦截器（必须最先执行）═══════════
+installTauriApiInterceptor();
 
 // ═══════════ 部署更新自动刷新 ═══════════
 // 全局捕获动态 import 失败（Vite 重新 build 后旧 chunk hash 不存在）
@@ -93,7 +97,7 @@ queryClient.getMutationCache().subscribe(event => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: `${getApiBaseUrl()}/api/trpc`,
       transformer: superjson,
       fetch(input, init) {
         // 从 localStorage 获取 token

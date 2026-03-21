@@ -70,7 +70,7 @@ export function useSendMessage(state: ChatStateReturn) {
 
   // ═══ 子 Hook 组合 ═══
   const { normalizeImageUrl, extractImagesFromMarkdown, generateSuggestedQuestions } = useMessageUtils(state);
-  const { _handleResearchMode, _detectImageIntent, _detectResearchIntent, _handleAutoResearch, _handleVideoIntent } = useIntentDetectors(state);
+  const { _handleResearchMode, _detectImageIntent } = useIntentDetectors(state);
   const { _buildMessageContent } = useMessageBuilder(state);
   const { _buildStreamCallbacks } = useStreamCallbacks(state);
 
@@ -108,16 +108,15 @@ export function useSendMessage(state: ChatStateReturn) {
     const imageIntentResult = _detectImageIntent(textToSend, resendImages);
     const { hasImageGenerationIntent, hasImageEditIntent, enhancedMessage, shouldIgnoreUploadedImages } = imageIntentResult;
 
-    // ═══════════ 3. 智能联网代理意图检测 ═══════════
-    const hasResearchIntent = _detectResearchIntent(textToSend, effectiveFiles);
-    if (hasResearchIntent && !isResearchMode) {
-      await _handleAutoResearch(textToSend);
-      return;
-    }
+    // ═══════════ 3. 深度调研意图检测 ═══════════
+    // ★ Native Tool 架构：前端不再拦截调研意图
+    // 消息正常发送到后端 → 主 LLM 通过 deep_research tool 自行决策
+    // 后端通过 SSE intent_confirmation 事件触发前端 ResearchConfirmCard
 
     // ═══════════ 4. 视频生成意图检测 ═══════════
-    const videoHandled = await _handleVideoIntent(textToSend, effectiveFiles);
-    if (videoHandled) return;
+    // ★ Native Tool 架构：前端不再拦截视频意图
+    // 消息正常发送到后端 → 主 LLM 通过 generate_video tool 自行决策
+    // 后端通过 SSE intent_confirmation 事件触发前端 VideoConfirmCard
 
     // ═══════════ 5. 自动创建对话 ═══════════
     let conversationId = selectedConversationId;

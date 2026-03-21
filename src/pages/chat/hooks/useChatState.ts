@@ -312,7 +312,7 @@ export function useChatState(): ChatStateReturn {
   }, [messages, modelPackages, selectedPackageId]);
 
   return {
-    t, utils, isSidebarOpen,
+    t, utils, trpcClient: utils.client, isSidebarOpen,
     selectedConversationId, setSelectedConversationId,
     selectedModelId, setSelectedModelId,
     selectedPackageId, setSelectedPackageId,

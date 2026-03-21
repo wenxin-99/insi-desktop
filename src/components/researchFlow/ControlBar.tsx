@@ -20,6 +20,10 @@ interface ControlBarProps {
   isStopping?: boolean;
   currentPhase?: TaskPhase;
   phaseProgress?: number;
+  /** ★ T7-3: 全局百分比 0-100 */
+  totalPercent?: number;
+  /** ★ T7-3: 预估剩余时间文本 */
+  estimatedTime?: string;
   /** Socket.IO 实例（来自 useSandboxSocket） */
   socket?: any;
 }
@@ -32,6 +36,8 @@ export function ControlBar({
   isStopping,
   currentPhase = 'search',
   phaseProgress = 0,
+  totalPercent,
+  estimatedTime,
   socket,
 }: ControlBarProps) {
   const [takeoverActive, setTakeoverActive] = useState(false);
@@ -118,7 +124,8 @@ export function ControlBar({
       <PhaseProgress
         currentPhase={currentPhase}
         progress={phaseProgress}
-        estimatedTime={status === 'pending' ? '启动中...' : undefined}
+        totalPercent={totalPercent}
+        estimatedTime={status === 'pending' ? '启动中...' : estimatedTime}
       />
 
       {/* 接管反馈输入框 */}

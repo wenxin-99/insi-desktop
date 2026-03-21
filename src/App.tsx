@@ -94,8 +94,9 @@ const SSHSettings           = lazy(() => import("./pages/admin/SSHSettings"));
 const TokenStats            = lazy(() => import("./pages/admin/TokenStats"));
 const PDFWatermarkConfig    = lazy(() => import("./pages/admin/PDFWatermarkConfig"));
 const FishCoinManagement    = lazy(() => import("./pages/admin/FishCoinManagement"));
+const ForumBenefitsManagement = lazy(() => import("./pages/ForumBenefitsManagement"));
 const PaymentConfig         = lazy(() => import("./pages/admin/PaymentConfig"));
-
+const BillingConfig          = lazy(() => import("./pages/admin/BillingConfig"));
 // AI 运维管理页面
 const AdminAIOps            = lazy(() => import("./pages/admin/AIOps"));
 const AdminAIOpsChat        = lazy(() => import("./pages/admin/AIOpsChat"));
@@ -201,6 +202,7 @@ function Router() {
       <Route path="/admin/export" component={AdminExport} />
       <Route path="/admin/auth-mode-test" component={AuthModeTest} />
       <Route path="/admin/discount" component={DiscountManagement} />
+      <Route path="/admin/forum-benefits" component={ForumBenefitsManagement} />
       <Route path="/admin/video-api" component={VideoApiConfig} />
       <Route path="/admin/system-settings" component={SystemSettings} />
       <Route path="/admin/channel-settings" component={ChannelSettings} />
@@ -210,7 +212,8 @@ function Router() {
       <Route path="/admin/token-stats" component={TokenStats} />
       <Route path="/voice-chat" component={VoiceChat} />
       <Route path="/admin/payment-config" component={PaymentConfig} />
-      
+      <Route path="/admin/billing-config" component={BillingConfig} />
+
       {/* AI 运维路由 */}
       <Route path="/admin/ai-ops" component={AdminAIOps} />
       <Route path="/admin/ai-ops/chat" component={AdminAIOpsChat} />

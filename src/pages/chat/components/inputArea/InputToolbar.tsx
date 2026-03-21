@@ -37,6 +37,11 @@ interface InputToolbarProps {
   onKBSelect?: (kb: SelectedKB | null) => void;
   selectedGitHubRepo?: SelectedGitHubRepo | null;
   onGitHubRepoSelect?: (repo: SelectedGitHubRepo | null) => void;
+  /** ★ 隐藏 + 按钮（由父级渲染在 textarea 同行） */
+  hidePlusButton?: boolean;
+  /** ★ 外部控制 AttachMenu 开关 */
+  menuOpen?: boolean;
+  onMenuToggle?: (open: boolean) => void;
 }
 
 export function InputToolbar({
@@ -47,14 +52,23 @@ export function InputToolbar({
   onVoiceInterimResult, onStop,
   selectedKB, onKBSelect,
   selectedGitHubRepo, onGitHubRepoSelect,
+  hidePlusButton = false,
+  menuOpen: externalMenuOpen,
+  onMenuToggle,
 }: InputToolbarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [internalMenuOpen, setInternalMenuOpen] = useState(false);
+  // ★ 支持外部控制或内部自管理
+  const menuOpen = externalMenuOpen !== undefined ? externalMenuOpen : internalMenuOpen;
+  const setMenuOpen = (v: boolean) => {
+    if (onMenuToggle) onMenuToggle(v);
+    else setInternalMenuOpen(v);
+  };
 
   return (
     <div className="flex items-center justify-between">
       {/* ──── 左侧: "+" 菜单 + 已选 Badge ──── */}
       <div className="flex items-center gap-1 relative flex-wrap">
-        {/* 弹出菜单 */}
+        {/* 弹出菜单（始终渲染，确保 popup 工作） */}
         <AttachMenu
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
@@ -68,21 +82,23 @@ export function InputToolbar({
           onGitHubRepoSelect={onGitHubRepoSelect}
         />
 
-        {/* "+" 按钮 */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "h-8 w-8 md:h-9 md:w-9 rounded-full flex-shrink-0 transition-all",
-            menuOpen ? 'bg-accent rotate-45' : 'hover:bg-accent'
-          )}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen(!menuOpen); }}
-          disabled={isStreaming}
-          title="附件/知识库/GitHub"
-          type="button"
-        >
-          <Plus className="h-5 w-5 transition-transform duration-200" />
-        </Button>
+        {/* ★ "+" 按钮 — 可由父级隐藏（改为在 textarea 同行渲染） */}
+        {!hidePlusButton && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-8 w-8 md:h-9 md:w-9 rounded-full flex-shrink-0 transition-all",
+              menuOpen ? 'bg-accent rotate-45' : 'hover:bg-accent'
+            )}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen(!menuOpen); }}
+            disabled={isStreaming}
+            title="附件/知识库/GitHub"
+            type="button"
+          >
+            <Plus className="h-5 w-5 transition-transform duration-200" />
+          </Button>
+        )}
 
         {/* 已选知识库 Badge */}
         {selectedKB && onKBSelect && (
@@ -115,7 +131,8 @@ export function InputToolbar({
         )}
       </div>
 
-      {/* ──── 右侧: 语音 + 发送 ──── */}
+      {/* ──── 右侧: 语音 + 发送（hidePlusButton 时由父级内联渲染，这里隐藏） ──── */}
+      {!hidePlusButton && (
       <div className="flex items-center gap-1">
         {onVoiceTranscribed && (
           <PressToTalkButton
@@ -145,6 +162,7 @@ export function InputToolbar({
           )}
         </Button>
       </div>
+      )}
     </div>
   );
 }

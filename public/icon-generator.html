@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><head><title>PWA Icon Generator</title></head>
+<body style="font-family:sans-serif;padding:2rem;background:#f5f5f5;">
+<h2>Paper Insights PWA 图标生成器</h2>
+<p>点击按钮生成 4 张图标并自动下载，放到 <code>public/icons/</code> 目录下。</p>
+<button id="g" style="padding:12px 24px;font-size:16px;cursor:pointer;background:#2563eb;color:#fff;border:none;border-radius:8px">生成并下载</button>
+<div id="p" style="margin-top:1rem;display:flex;gap:1rem;flex-wrap:wrap"></div>
+<script>
+function star(c,x,y,s,col){c.fillStyle=col;c.beginPath();c.moveTo(x,y-s);c.quadraticCurveTo(x+s*.15,y-s*.15,x+s,y);c.quadraticCurveTo(x+s*.15,y+s*.15,x,y+s);c.quadraticCurveTo(x-s*.15,y+s*.15,x-s,y);c.quadraticCurveTo(x-s*.15,y-s*.15,x,y-s);c.closePath();c.fill()}
+function draw(sz,mask){
+  var cv=document.createElement('canvas');cv.width=cv.height=sz;var c=cv.getContext('2d'),s=sz;
+  if(mask){c.fillStyle='#2563eb';c.fillRect(0,0,s,s)}
+  else{var r=s*.18;c.beginPath();c.moveTo(r,0);c.lineTo(s-r,0);c.quadraticCurveTo(s,0,s,r);c.lineTo(s,s-r);c.quadraticCurveTo(s,s,s-r,s);c.lineTo(r,s);c.quadraticCurveTo(0,s,0,s-r);c.lineTo(0,r);c.quadraticCurveTo(0,0,r,0);c.closePath();var g=c.createLinearGradient(0,0,s,s);g.addColorStop(0,'#2563eb');g.addColorStop(1,'#0891b2');c.fillStyle=g;c.fill()}
+  var cx=s*.5,cy=s*.42,ss=s*.22;
+  star(c,cx,cy,ss,'#fff');star(c,cx+ss*.8,cy-ss*.6,ss*.35,'rgba(255,255,255,.7)');star(c,cx-ss*.5,cy+ss*.7,ss*.25,'rgba(255,255,255,.5)');
+  c.fillStyle='rgba(255,255,255,.95)';c.font='bold '+s*.12+'px -apple-system,sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText('Insights',s*.5,s*.75);
+  return cv}
+document.getElementById('g').onclick=function(){
+  var p=document.getElementById('p');p.innerHTML='';
+  [[192,false,'icon-192.png'],[512,false,'icon-512.png'],[192,true,'icon-maskable-192.png'],[512,true,'icon-maskable-512.png']].forEach(function(cfg){
+    var cv=draw(cfg[0],cfg[1]),d=document.createElement('div');d.style.textAlign='center';
+    var img=document.createElement('img');img.src=cv.toDataURL();img.style.cssText='width:80px;height:80px;border:1px solid #ccc;border-radius:12px';
+    d.appendChild(img);var l=document.createElement('div');l.style.fontSize='11px';l.style.marginTop='4px';l.textContent=cfg[2];d.appendChild(l);p.appendChild(d);
+    cv.toBlob(function(b){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=cfg[2];a.click()})
+  })
+}
+</script></body></html>

@@ -11,6 +11,7 @@ import {
   ChevronDown, ChevronUp, Pause, Play, Square,
   Lightbulb, Globe, Terminal, Eye,
   Keyboard, Send, LogIn, ExternalLink, MousePointer,
+  Gamepad2, Hand, AlertTriangle, MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -179,14 +180,80 @@ export function TaskProgress({
   taskSummary = null, contentInfo = null,
   initialLoaded = false, thinking = "", browserUrl = "",
   browserScreenshot = "",
+  helpNeeded = null, socket = null, onDismissHelp,
 }: TaskProgressProps) {
   const [collapsed, setCollapsed] = useState(true);
   const [userExpanded, setUserExpanded] = useState(false);
   const [expandedPreview, setExpandedPreview] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // ★ 接管协同状态
+  const [takeoverActive, setTakeoverActive] = useState(false);
+  const [takeoverLoading, setTakeoverLoading] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
+
   const isFinished = ["completed", "failed", "cancelled"].includes(status);
   const isRunning = status === "running" || status === "pending";
+
+  // ═══ 接管协同逻辑 ═══
+  const authHeaders = () => {
+    const token = localStorage.getItem('auth_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  // 监听 takeover_status 事件
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (event: any) => {
+      if (event.type === 'takeover_status' && event.taskId === taskId) {
+        setTakeoverActive(event.payload.active);
+        if (!event.payload.active) { setShowFeedback(false); setFeedbackText(''); }
+      }
+    };
+    socket.on('sandbox_event', handler);
+    return () => { socket.off('sandbox_event', handler); };
+  }, [socket, taskId]);
+
+  // taskId 切换时重置
+  useEffect(() => {
+    setTakeoverActive(false); setTakeoverLoading(false);
+    setShowFeedback(false); setFeedbackText('');
+  }, [taskId]);
+
+  const toggleTakeover = async () => {
+    if (!taskId) return;
+    if (takeoverActive) { setShowFeedback(true); return; }
+    setTakeoverLoading(true);
+    try {
+      const res = await fetch(`/api/automation/tasks/${taskId}/takeover/enable`, {
+        method: 'POST', credentials: 'include', headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTakeoverActive(true);
+        onDismissHelp?.(); // 接管后清除协同请求
+        toast.success('已接管浏览器控制');
+      } else { toast.error(`接管失败：${data.error || '未知错误'}`); }
+    } catch (err: any) { toast.error(`接管失败：${err.message || ''}`); }
+    finally { setTakeoverLoading(false); }
+  };
+
+  const releaseTakeover = async (withFeedback: boolean) => {
+    setFeedbackSending(true);
+    try {
+      if (withFeedback && feedbackText.trim() && socket) {
+        socket.emit('takeover_feedback', { taskId, feedback: feedbackText.trim() });
+      }
+      await fetch(`/api/automation/tasks/${taskId}/takeover/disable`, {
+        method: 'POST', credentials: 'include', headers: authHeaders(),
+      });
+      setTakeoverActive(false); setShowFeedback(false); setFeedbackText('');
+      toast.success('已归还控制权，AI 继续执行');
+    } catch (err: any) { console.error(err); }
+    finally { setFeedbackSending(false); }
+  };
 
   // ═══ 转换步骤 ═══
   const baseTime = steps.length > 0 ? steps[0].timestamp : Date.now();
@@ -295,13 +362,77 @@ export function TaskProgress({
         </div>
       )}
 
-      {/* ═══ 内联浏览器预览（移动端替代浮动沙箱卡片） ═══ */}
-      {browserScreenshot && isRunning && (
-        <div className="rounded-xl border border-blue-200/50 dark:border-blue-800/30 bg-blue-50/30 dark:bg-blue-950/10 overflow-hidden">
+      {/* ═══ AI 协同请求卡片 ═══ */}
+      {helpNeeded && isRunning && !takeoverActive && (
+        <div className="rounded-xl border-2 border-orange-300 dark:border-orange-700 bg-orange-50/80 dark:bg-orange-950/30 p-3 shadow-[0_0_12px_rgba(251,146,60,0.3)]">
+          <div className="flex items-start gap-2">
+            <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle className="w-4 h-4 text-orange-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-semibold text-orange-700 dark:text-orange-300 mb-1">AI 需要您的协助</p>
+              <p className="text-[11px] text-orange-600/80 dark:text-orange-400/80 leading-relaxed">{helpNeeded.reason}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2.5">
+            <Button size="sm" className="h-7 px-3 text-[11px] bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={toggleTakeover} disabled={takeoverLoading}>
+              {takeoverLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Gamepad2 className="w-3 h-3 mr-1" />}
+              接管处理
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px] text-muted-foreground"
+              onClick={onDismissHelp}>
+              稍后再说
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ 接管反馈面板 ═══ */}
+      {showFeedback && (
+        <div className="rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/20 p-3 space-y-2">
+          <p className="text-[11px] text-cyan-700 dark:text-cyan-300 font-medium flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5" />
+            描述你做了什么（可选），AI 将参考你的反馈继续
+          </p>
+          <textarea
+            className="w-full text-[12px] border border-cyan-200 dark:border-cyan-800 rounded-lg p-2 resize-none bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+            rows={2} placeholder="例如：我手动输入了验证码并点击了登录..."
+            value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} autoFocus
+          />
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]"
+              onClick={() => releaseTakeover(false)} disabled={feedbackSending}>
+              跳过
+            </Button>
+            <Button size="sm" className="h-6 px-3 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-white"
+              onClick={() => releaseTakeover(true)} disabled={feedbackSending || !feedbackText.trim()}>
+              {feedbackSending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Send className="w-3 h-3 mr-1" />}
+              提交并归还
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ 内联浏览器预览 ═══ */}
+      {browserScreenshot && (isRunning || status === 'completed' || status === 'failed') && (
+        <div className={`rounded-xl overflow-hidden transition-all ${
+          takeoverActive
+            ? 'border-2 border-orange-400 dark:border-orange-600 ring-2 ring-orange-300/50'
+            : 'border border-blue-200/50 dark:border-blue-800/30'
+        } bg-blue-50/30 dark:bg-blue-950/10`}>
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-blue-200/30 dark:border-blue-800/20">
             <Globe className="w-3 h-3 text-blue-500" />
-            <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">浏览器实况</span>
-            {isConnected && (
+            <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+              {takeoverActive ? '🎮 你正在操作' : isRunning ? '浏览器实况' : '最终页面截图'}
+            </span>
+            {takeoverActive && (
+              <span className="flex items-center gap-1 ml-auto">
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+                <span className="text-[9px] text-orange-600 dark:text-orange-400">接管中</span>
+              </span>
+            )}
+            {!takeoverActive && isConnected && (
               <span className="flex items-center gap-1 ml-auto">
                 <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-[9px] text-green-600 dark:text-green-400">已连接</span>
@@ -312,15 +443,38 @@ export function TaskProgress({
             <img
               src={`data:image/jpeg;base64,${browserScreenshot}`}
               alt="浏览器预览"
-              className="w-full h-auto max-h-[200px] object-cover object-top"
+              className={`w-full h-auto max-h-[200px] object-cover object-top ${takeoverActive ? 'max-h-[300px] object-contain' : ''}`}
               draggable={false}
             />
-            {browserUrl && (
+            {browserUrl && !takeoverActive && (
               <div className="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm px-2.5 py-1">
                 <span className="text-[10px] text-white/70 font-mono truncate block">{browserUrl}</span>
               </div>
             )}
+            {/* 接管中提示 → 点击浏览器预览打开桌面沙箱面板操作 */}
+            {takeoverActive && (
+              <div className="absolute bottom-0 left-0 right-0 bg-orange-500/90 backdrop-blur-sm px-2.5 py-1.5 text-center">
+                <span className="text-[10px] text-white font-medium">在右侧沙箱面板中操作浏览器，完成后点击下方归还</span>
+              </div>
+            )}
           </div>
+          {/* 接管/归还按钮（浏览器预览底部） */}
+          {isRunning && !showFeedback && (
+            <div className="flex items-center justify-center py-1.5 border-t border-blue-200/30 dark:border-blue-800/20">
+              <button
+                className={`flex items-center text-[11px] px-3 py-1 rounded-full transition-all ${
+                  takeoverActive
+                    ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 hover:bg-orange-500/20'
+                    : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20'
+                }`}
+                onClick={toggleTakeover} disabled={takeoverLoading}
+              >
+                {takeoverLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                  : takeoverActive ? <Hand className="w-3 h-3 mr-1" /> : <Gamepad2 className="w-3 h-3 mr-1" />}
+                {takeoverActive ? '归还控制' : '协同操作'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

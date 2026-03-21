@@ -8,6 +8,7 @@ export interface MessageItemProps {
   index: number;
   displayContent: string;
   isLastAssistant: boolean;
+  isStreaming?: boolean;            // ★ 统一渲染：当前消息正在流式输出
   state: ChatStateReturn;
   handleSendMessage: (text?: string, resendImages?: any[], resendFiles?: any[], isRegenerate?: boolean) => void;
   handleImageDownload: (url: string, name: string) => Promise<void>;

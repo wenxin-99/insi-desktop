@@ -170,44 +170,55 @@ export const ChatInput = memo(forwardRef<ChatInputRef, ChatInputProps>(
     }, [onSend, value, uploadedImages, uploadedFiles]);
 
     // 移动端优化：输入框获得焦点时，利用 visualViewport 确保可见
-    // ★ 不再使用 setTimeout + scrollIntoView（会与流式自动滚动打架）
+    // ★ 首次打开键盘后 dvh 可能还没重算，需要多阶段检查
+    const firstFocusRef = useRef(true);
     const handleFocus = useCallback(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
 
       const vv = window.visualViewport;
-      if (!vv) return; // 不支持则不做额外处理，浏览器默认行为即可
+      if (!vv) return;
 
-      // 等待键盘完全弹出后检查可见性
-      const checkVisibility = () => {
+      const ensureVisible = () => {
         const rect = textarea.getBoundingClientRect();
         const viewportBottom = vv.offsetTop + vv.height;
-        // 如果输入框底部超出了视觉视口，说明被键盘遮挡
         if (rect.bottom > viewportBottom) {
-          // 找到最近的滚动容器，向上滚动刚好露出输入框的距离
+          // 方案 1：滚动最近的滚动容器
           const scrollParent = textarea.closest('[class*="overflow-y"]') || textarea.parentElement;
           if (scrollParent) {
-            const overshoot = rect.bottom - viewportBottom + 12; // 12px 余量
+            const overshoot = rect.bottom - viewportBottom + 16;
             scrollParent.scrollTop += overshoot;
           }
+          // 方案 2：兜底 scrollIntoView（仅当方案 1 没完全解决时）
+          requestAnimationFrame(() => {
+            const rectAfter = textarea.getBoundingClientRect();
+            if (rectAfter.bottom > vv.offsetTop + vv.height) {
+              textarea.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          });
         }
       };
 
-      // visualViewport resize 事件会在键盘弹出时触发
       const onceResize = () => {
         vv.removeEventListener('resize', onceResize);
-        // 再等一帧让布局稳定
-        requestAnimationFrame(checkVisibility);
+        // 等一帧让布局稳定
+        requestAnimationFrame(() => {
+          ensureVisible();
+          // ★ 首次聚焦：dvh 重算可能延迟，300ms 后再检查一次
+          if (firstFocusRef.current) {
+            firstFocusRef.current = false;
+            setTimeout(ensureVisible, 300);
+          }
+        });
       };
       vv.addEventListener('resize', onceResize);
 
-      // 安全回退：500ms 后如果 resize 没触发，也检查一次然后清理
+      // 安全回退：600ms 后如果 resize 没触发，也检查一次
       const fallbackTimer = setTimeout(() => {
         vv.removeEventListener('resize', onceResize);
-        checkVisibility();
-      }, 500);
+        ensureVisible();
+      }, 600);
 
-      // 清理 fallback
       const cleanup = () => { clearTimeout(fallbackTimer); };
       vv.addEventListener('resize', cleanup, { once: true });
     }, []);
@@ -222,7 +233,7 @@ export const ChatInput = memo(forwardRef<ChatInputRef, ChatInputProps>(
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         disabled={disabled}
-        className="w-full min-h-[36px] resize-none bg-transparent border-none outline-none text-base md:text-base placeholder:text-muted-foreground py-1.5 overflow-y-auto leading-relaxed"
+        className={`w-full min-h-[36px] resize-none bg-transparent border-none outline-none text-base md:text-base placeholder:text-muted-foreground py-1.5 leading-relaxed ${value.split('\n').length > 3 ? 'overflow-y-auto' : 'overflow-y-hidden'}`}
         rows={1}
         style={{ height: '36px', maxHeight: '136px', fontSize: 'max(16px, 1rem)' }}
         enterKeyHint="send"

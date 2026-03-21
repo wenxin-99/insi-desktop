@@ -1,13 +1,13 @@
 /**
  * MessageList — 消息区域编排器
  * 
+ * ★ 统一渲染架构：MessageItem 同时处理 streaming + completed 状态
+ *   不再使用独立的 StreamingMessage 组件，消灭双路径 DOM 重建
+ * 
  * 负责：Card容器、滚动容器、骨架屏、空状态、滚动到底部按钮、免责声明
  * 委派：
- *   - MessageItem   → 单条消息渲染（~1319行）
- *   - StreamingMessage → 流式响应（~160行）
- *   - ChatInputArea   → 底部输入区域（~734行）
- * 
- * 原始: 2261行 → 精简后 ~230行
+ *   - MessageItem   → 单条消息渲染（streaming + completed）
+ *   - ChatInputArea → 底部输入区域
  */
 
 import { useRef, useEffect, useCallback } from 'react';
@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
 import { MessageItem } from './MessageItem';
-import { StreamingMessage } from './StreamingMessage';
 import { ChatInputArea } from './ChatInputArea';
 import type { ChatStateReturn } from '../types';
 
@@ -202,17 +201,16 @@ export function MessageList({
                 />
               )}
 
-              {/* ═══════ 消息列表 ═══════ */}
+              {/* ═══════ 消息列表（★ 统一渲染：流式+完成态同一 DOM 节点） ═══════ */}
               {messages.map((msg, index) => {
                 if (msg.role === 'system') return null;
 
-                const hasPlaceholderImages = msg.images && msg.images.length > 0;
-                if (isStreamingMessage && index === messages.length - 1 && msg.role === 'assistant' && !hasPlaceholderImages) {
-                  return null;
-                }
-
                 const isLastAssistant = index === messages.length - 1 && msg.role === 'assistant';
-                const displayContent = (isLastAssistant && !msg.content && streamedContent) ? streamedContent : msg.content;
+                const isStreamingThis = isStreamingMessage && isLastAssistant;
+                // ★ 流式期间使用 streamedContent，完成态使用 msg.content
+                const displayContent = isStreamingThis
+                  ? (streamedContent || '')
+                  : (isLastAssistant && !msg.content && streamedContent) ? streamedContent : msg.content;
 
                 return (
                   <MessageItem
@@ -221,6 +219,7 @@ export function MessageList({
                     index={index}
                     displayContent={displayContent}
                     isLastAssistant={isLastAssistant}
+                    isStreaming={isStreamingThis}
                     state={state}
                     handleSendMessage={handleSendMessage}
                     handleImageDownload={handleImageDownload}
@@ -230,8 +229,8 @@ export function MessageList({
                 );
               })}
 
-              {/* ═══════ 流式响应 ═══════ */}
-              <StreamingMessage state={state} />
+              {/* ═══════ 滚动锚点 ═══════ */}
+              <div ref={messagesEndRef} />
 
               {/* ═══════ 推荐追问（内联在消息流中，紧跟AI回复） ═══════ */}
               {suggestedQuestions.length > 0 && !isStreamingMessage && (

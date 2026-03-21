@@ -81,8 +81,47 @@ export function useConversation(state: ChatStateReturn) {
     }
 
     const displayMessages = deduped.map((msg: any) => {
+      // ★ Artifact 恢复：从 content 中的代码块重建丢失的 artifact（历史数据兼容）
+      if (msg.role === 'assistant' && !msg.artifact && typeof msg.content === 'string') {
+        const artifactMatch = msg.content.match(
+          /```(?:artifact:([^\n]*)|(?:(html|jsx|tsx|vue|css|react)\s*\n))([\s\S]*?)```/
+        );
+        if (artifactMatch) {
+          const title = (artifactMatch[1] || '').trim();
+          const lang = artifactMatch[2] || 'html';
+          const code = (artifactMatch[3] || '').trim();
+          // 只有代码足够长且像 UI 内容才重建
+          if (code.length > 100 && (/<(!DOCTYPE|html|div|head|body|style|script)/i.test(code) || ['react','jsx','tsx','vue'].includes(lang))) {
+            const langMap: Record<string, string> = { html: 'html', jsx: 'react', tsx: 'react', vue: 'vue', css: 'css', react: 'react' };
+            msg = { ...msg, artifact: {
+              id: `art_recovered_${msg.timestamp || Date.now()}`,
+              title: title || (langMap[lang] === 'react' ? 'React 组件预览' : '界面预览'),
+              language: langMap[lang] || 'html',
+              code,
+              version: 1,
+              status: 'complete',
+              description: '',
+            }};
+          }
+        }
+      }
       if (msg.isResearchTask) return { ...msg, isResearchTask: true, researchTaskId: msg.researchTaskId, researchPrompt: msg.researchPrompt };
       if (msg.isAutomationTask) return { ...msg, isAutomationTask: true, automationTaskId: msg.automationTaskId, automationTaskName: msg.automationTaskName, automationSiteName: msg.automationSiteName };
+      // ★ 自动化任务恢复：从消息内容中检测并恢复丢失的元数据（历史数据兼容）
+      if (msg.role === 'assistant' && !msg.isAutomationTask && typeof msg.content === 'string') {
+        const isAutoMsg = /已为\s*\d+\s*个账号(?:创建|继续创建)(?:自动化)?任务/.test(msg.content)
+          || /自动化任务已创建并启动/.test(msg.content)
+          || /已继续自动化任务/.test(msg.content);
+        if (isAutoMsg) {
+          const taskIdMatches = [...msg.content.matchAll(/任务\s*#(\d+)/g)];
+          const firstTaskId = taskIdMatches.length > 0 ? parseInt(taskIdMatches[0][1]) : undefined;
+          const accountMatches = [...msg.content.matchAll(/账号\s*\*{0,2}(\S+?)\*{0,2}\s*→\s*任务\s*#(\d+)/g)];
+          const allTasks = accountMatches.length > 1
+            ? accountMatches.map(m => ({ taskId: parseInt(m[2]), username: m[1], taskName: m[1] }))
+            : undefined;
+          return { ...msg, isAutomationTask: true, automationTaskId: firstTaskId, automationTaskName: '自动化任务', automationSiteName: '', ...(allTasks ? { automationAllTasks: allTasks } : {}), timestamp: msg.timestamp || msg.sentAt || Date.now() };
+        }
+      }
       if (msg.isVideoTask) return { ...msg, isVideoTask: true, videoTaskId: msg.videoTaskId, videoPrompt: msg.videoPrompt || msg.content, timestamp: msg.timestamp || msg.sentAt || msg.respondedAt || Date.now() };
       if (typeof msg.content === 'object' && Array.isArray(msg.content)) {
         let textContent = '';
@@ -151,6 +190,11 @@ export function useConversation(state: ChatStateReturn) {
         setActiveResearchTaskId(msg.researchTaskId);
         return;
       }
+      // ★ 自动化任务也使用 activeResearchTaskId 驱动沙箱面板
+      if (msg.isAutomationTask && msg.automationTaskId) {
+        setActiveResearchTaskId(msg.automationTaskId);
+        return;
+      }
       const content = typeof msg.content === 'string' ? msg.content : '';
       const match = content.match(/<ResearchTaskCard\s+taskId="(\d+)"/);
       if (match) {
@@ -160,6 +204,7 @@ export function useConversation(state: ChatStateReturn) {
     }
     // 没有找到沙箱任务 → 清除旧值
     setActiveResearchTaskId(null);
+    (state as any).setActiveArtifact?.(null);
   }, [setActiveResearchTaskId]);
 
   // ═══════════ 加载对话消息 ═══════════
@@ -253,6 +298,7 @@ export function useConversation(state: ChatStateReturn) {
       setPreviewFile(null);
       setPreviewFiles([]);
       setActivePreviewIndex(0);
+      (state as any).setActiveArtifact?.(null);
       lastFileNameRef.current = null;
       previewOpenedRef.current = false;
 
@@ -266,6 +312,15 @@ export function useConversation(state: ChatStateReturn) {
         const collapsed = computeCollapsedIndices(displayMessages);
         const isNowStreaming = streamManager.isRunning(conversationId);
         if (selectedConvIdRef.current === conversationId && !isNowStreaming) {
+          // ★ 防止服务端返回的旧消息覆盖刚完成的流式消息
+          // 场景：流刚结束 → saveMessages 正在飞行中 → 此时 loadConversationMessages 被触发
+          //   → DB 还是空/旧数据 → 用空消息覆盖了 React state 中的完整对话
+          // 修复：如果当前 state 中已有更多消息，跳过覆盖
+          const currentMsgCount = (streamingForConvIdRef.current === conversationId) ? messages.length : 0;
+          if (displayMessages.length < currentMsgCount && currentMsgCount > 0) {
+            console.log(`[Load Conversation] Skipping stale DB data: DB has ${displayMessages.length} msgs, state has ${currentMsgCount}`);
+            return;
+          }
           setMessages(displayMessages);
           setCollapsedDescriptions(collapsed);
           restoreResearchTaskFromMessages(displayMessages);
@@ -304,6 +359,7 @@ export function useConversation(state: ChatStateReturn) {
     setSuggestedQuestions([]);
     setPreviewFile(null);
     setActiveResearchTaskId(null);
+    (state as any).setActiveArtifact?.(null);
     lastFileNameRef.current = null;
     previewOpenedRef.current = false;
     setMessages([]);

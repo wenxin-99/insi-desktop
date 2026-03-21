@@ -68,6 +68,10 @@ export function PlaybookDetail({ id, onBack }: Props) {
   const [ratingScore, setRatingScore] = useState(5);
   const [ratingComment, setRatingComment] = useState("");
 
+  // ★ 桌面授权状态
+  const [desktopStatus, setDesktopStatus] = useState<{ connected: boolean; authorized: boolean } | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+
   const detailQuery = trpc.playbook.detail.useQuery({ id });
   const runMut = trpc.playbook.run.useMutation({ onSuccess: (r) => { navigate(`/agent/${r.taskId}`); } });
   const forkMut = trpc.playbook.fork.useMutation({ onSuccess: (r) => navigate(`/playbooks/${r.id}/edit`) });
@@ -84,6 +88,25 @@ export function PlaybookDetail({ id, onBack }: Props) {
   const parameters = pb.parameters || [];
   const price = parseFloat(pb.price as any) || 0;
   const statusInfo = STATUS_MAP[pb.status] || STATUS_MAP.draft;
+
+  // ★ 桌面 Playbook 授权检查
+  const isDesktopPlaybook = pb.category === "desktop";
+  const checkDesktopAuth = async () => {
+    try {
+      const res = await fetch("/api/desktop/status", { credentials: "include" });
+      if (res.ok) setDesktopStatus(await res.json());
+    } catch {}
+  };
+  const handleAuthorize = async () => {
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/desktop/authorize", { method: "POST", credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setDesktopStatus(prev => prev ? { ...prev, authorized: true } : null);
+      }
+    } catch {} finally { setAuthLoading(false); }
+  };
 
   // 初始化参数默认值
   const initParams = () => {
@@ -135,7 +158,7 @@ export function PlaybookDetail({ id, onBack }: Props) {
         {/* 操作按钮 */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
-            onClick={() => { initParams(); setShowRunDialog(true); }}
+            onClick={() => { initParams(); setShowRunDialog(true); if (pb?.category === "desktop") checkDesktopAuth(); }}
             disabled={pb.status !== "published" && !pb.isOfficial}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-primary/20"
           >
@@ -312,11 +335,34 @@ export function PlaybookDetail({ id, onBack }: Props) {
               </div>
             )}
 
+            {/* ★ 桌面授权提示 */}
+            {isDesktopPlaybook && desktopStatus && !desktopStatus.authorized && (
+              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 mb-4">
+                <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
+                  {desktopStatus.connected
+                    ? "⚠️ 桌面客户端已连接，但未授权 AI 控制桌面"
+                    : "❌ 桌面客户端未连接，请先启动 Insi Desktop Agent"}
+                </p>
+                {desktopStatus.connected && (
+                  <button
+                    onClick={handleAuthorize}
+                    disabled={authLoading}
+                    className="px-4 py-1.5 bg-green-500 text-white rounded-lg text-xs font-medium hover:bg-green-600 disabled:opacity-50"
+                  >
+                    {authLoading ? "授权中..." : "✓ 授权 AI 控制桌面"}
+                  </button>
+                )}
+              </div>
+            )}
+            {isDesktopPlaybook && desktopStatus?.authorized && (
+              <p className="text-xs text-green-600 dark:text-green-400 mb-3">✓ 桌面已授权，可以运行</p>
+            )}
+
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowRunDialog(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">取消</button>
               <button
                 onClick={handleRun}
-                disabled={runMut.isPending}
+                disabled={runMut.isPending || (isDesktopPlaybook && (!desktopStatus?.connected || !desktopStatus?.authorized))}
                 className="px-5 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
               >
                 {runMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}

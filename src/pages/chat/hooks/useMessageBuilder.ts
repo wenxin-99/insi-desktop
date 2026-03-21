@@ -108,6 +108,14 @@ export function useMessageBuilder(state: ChatStateReturn) {
             '7z': 'application/x-7z-compressed',
             bz2: 'application/x-bzip2',
             xz: 'application/x-xz',
+            // 视频
+            mp4: 'video/mp4',
+            mov: 'video/quicktime',
+            avi: 'video/x-msvideo',
+            webm: 'video/webm',
+            mkv: 'video/x-matroska',
+            flv: 'video/x-flv',
+            wmv: 'video/x-ms-wmv',
           };
           const mimeType = mimeMap[ext] || 'application/octet-stream';
           if (file.url) contentParts.push({ type: 'file_url', file_url: { url: file.url, mime_type: mimeType, filename: file.name } });

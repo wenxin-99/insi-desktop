@@ -1,23 +1,28 @@
 /**
  * MessageItem — 单条消息渲染组件（入口编排文件）
  * 
+ * ★ 统一渲染架构：同一个 DOM 节点处理 streaming + completed 两种状态
+ *   流式期间：使用 state.operationLogs / state.reasoningContent 等实时数据
+ *   完成之后：使用 msg.operationLogs / msg.reasoningContent 等持久化数据
+ *   → 零布局跳动，无 DOM 重建
+ * 
  * 将渲染委托给子模块：
  * - IntentConfirmSection  → 意图/研究/视频确认卡片
  * - AssistantTaskCards     → 研究/视频/自动化任务卡片
  * - AssistantRegularContent → 助手常规内容（图片+Markdown）
  * - UserContent            → 用户消息（图片+文件+编辑+文本）
  * - MessageActions         → 消息操作按钮栏
- * 
- * 原始文件 1322 行 → 拆分为 6 个文件
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { InlineThinkingBlock } from '@/components/InlineThinkingBlock';
 import { InlineStepList } from '@/components/InlineStepBlock';
 import { ImageGenerationProgress, isImageGenerationFlow } from '@/components/ImageGenerationProgress';
 import { ArtifactInlineTrigger } from '@/components/ArtifactInlineTrigger';
 import { SolutionPickerCard, SolutionPickerResult } from '@/components/SolutionPickerCard';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
+import { ThinkingAnimation } from '@/components/ThinkingAnimation';
+import { SearchingIndicator } from '@/components/WebSearchIndicator';
 import { Brain, ChevronDown, ChevronUp } from 'lucide-react';
 import { AiLogo } from '@/components/AiLogo';
 import { formatSmartTime } from '@/lib/timeUtils';
@@ -39,6 +44,7 @@ interface MessageItemProps {
   index: number;
   displayContent: string;
   isLastAssistant: boolean;
+  isStreaming?: boolean;            // ★ 统一渲染：当前消息正在流式输出
   state: ChatStateReturn;
   handleSendMessage: (text?: string, resendImages?: any[], resendFiles?: any[], isRegenerate?: boolean) => void;
   handleImageDownload: (url: string, name: string) => Promise<void>;
@@ -48,13 +54,53 @@ interface MessageItemProps {
 
 export function MessageItem(props: MessageItemProps) {
   const {
-    msg, index, displayContent, isLastAssistant,
+    msg, index, displayContent, isLastAssistant, isStreaming,
     state, handleSendMessage, handleImageDownload,
     normalizeImageUrl, extractImagesFromMarkdown,
   } = props;
   const { t } = useTranslation();
   const { messages, isSidebarOpen, setPreviewFile } = state;
   const [reasoningCollapsed, setReasoningCollapsed] = useState(true);
+
+  // ═══════ 统一渲染：流式 vs 持久化数据源 ═══════
+  const effectiveOperationLogs = isStreaming
+    ? state.operationLogs
+    : ((msg as any).operationLogs || []);
+  const effectiveThinkingSteps = isStreaming
+    ? state.currentThinkingSteps
+    : ((msg as any).thinkingSteps || []);
+  const effectiveReasoningContent = isStreaming
+    ? state.reasoningContent
+    : ((msg as any).reasoningContent || '');
+  const thinkingStage = isStreaming ? state.thinkingStage : undefined;
+  const isReasoning = thinkingStage === 'reasoning';
+  const isGenerating = thinkingStage === 'generating';
+  const hasReasoningPanel = isReasoning || isGenerating || (effectiveReasoningContent && effectiveReasoningContent.length > 0);
+
+  // ═══════ 推理面板自动滚动（流式期间） ═══════
+  const reasoningRef = useRef<HTMLDivElement>(null);
+  const reasoningUserScrolledUpRef = useRef(false);
+  const [showReasoningScrollBtn, setShowReasoningScrollBtn] = useState(false);
+
+  const panelTexts = useMemo(() => {
+    const reasoningTexts = ['正在深度推理分析...', '深度思考中...', '仔细推敲问题中...', '展开逻辑推理...'];
+    const transitionTexts = ['推理完成，正在生成回答...', '分析完毕，组织回答中...', '推理就绪，输出结果...'];
+    const waitingTexts = ['正在生成回答...', '组织语言中...', '整理思路中...', '输出回答中...'];
+    const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    return { reasoning: pick(reasoningTexts), transition: pick(transitionTexts), done: '深度推理过程', waiting: pick(waitingTexts) };
+  }, []);
+
+  useEffect(() => {
+    if (reasoningRef.current && isReasoning && !reasoningUserScrolledUpRef.current) {
+      reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
+    }
+  }, [effectiveReasoningContent, isReasoning]);
+  useEffect(() => { if (!isReasoning) { reasoningUserScrolledUpRef.current = false; setShowReasoningScrollBtn(false); } }, [isReasoning]);
+  useEffect(() => {
+    if (isReasoning) setReasoningCollapsed(false);
+    else if (isGenerating && displayContent) setReasoningCollapsed(true);
+    else if (!isStreaming && effectiveReasoningContent) setReasoningCollapsed(true);
+  }, [isReasoning, isGenerating, isStreaming, displayContent, effectiveReasoningContent]);
 
   return (
     <div
@@ -80,10 +126,10 @@ export function MessageItem(props: MessageItemProps) {
 
           {msg.role === "assistant" ? (
             <div className="flex flex-col w-full max-w-[850px] mx-auto">
-              {/* AI 头像 */}
+              {/* AI 头像 — 流式期间带动画 */}
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <AiLogo />
+                  <AiLogo animated={isStreaming} />
                   <span className="text-sm text-muted-foreground">{t("chat.aiAssistant")}</span>
                   {msg.timestamp && (
                     <span className="text-xs text-muted-foreground/70">{formatSmartTime(msg.timestamp)}</span>
@@ -91,53 +137,94 @@ export function MessageItem(props: MessageItemProps) {
                 </div>
               </div>
 
-              {/* 内联思考步骤（逐步展示） */}
-              {((msg as any).operationLogs?.length > 0 || (msg as any).thinkingSteps?.length > 0) && (
-                isImageGenerationFlow((msg as any).operationLogs || []) ? (
-                  <ImageGenerationProgress
-                    operations={(msg as any).operationLogs}
-                    isLive={false}
-                  />
-                ) : (
-                  <InlineStepList
-                    operations={(msg as any).operationLogs || []}
-                    thinkingSteps={(msg as any).thinkingSteps}
-                    isLive={false}
-                    onFileClick={(fileName) => handleFileClick(fileName, msg, setPreviewFile)}
-                  />
-                )
-              )}
-
-              {/* 深度推理内容（折叠回看） */}
-              {(msg as any).reasoningContent && (
-                <div className={cn(
-                  "mb-3 rounded-xl overflow-hidden border transition-colors duration-300",
-                  "border-purple-200/30 dark:border-purple-800/20"
-                )} style={{ background: 'var(--color-purple-50, rgba(139,92,246,0.04))' }}>
+              {/* ═══════ 🧠 深度推理面板（统一版） ═══════ */}
+              {hasReasoningPanel && (
+                <div
+                  className={cn(
+                    "mb-3 rounded-xl overflow-hidden border transition-colors duration-300",
+                    isReasoning
+                      ? "border-purple-300/40 dark:border-purple-700/40"
+                      : "border-purple-200/30 dark:border-purple-800/20"
+                  )}
+                  style={{ background: 'var(--color-purple-50, rgba(139,92,246,0.04))' }}
+                >
                   <button
                     onClick={() => setReasoningCollapsed(c => !c)}
-                    className="flex items-center gap-2 w-full px-3 py-2 text-left select-none bg-purple-50/80 dark:bg-purple-900/20 hover:bg-purple-100/80 dark:hover:bg-purple-900/30 transition-colors"
+                    className="flex items-center gap-2 w-full px-3 py-2.5 text-left select-none bg-purple-50/80 dark:bg-purple-900/20 hover:bg-purple-100/80 dark:hover:bg-purple-900/30 transition-colors"
                   >
-                    <Brain className="h-4 w-4 text-purple-500 shrink-0" />
+                    {isReasoning ? (
+                      <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                    ) : (
+                      <Brain className="h-4 w-4 text-purple-500 shrink-0" />
+                    )}
                     <span className="text-sm font-medium text-purple-700 dark:text-purple-300 flex-1">
-                      深度推理过程
+                      {isReasoning ? panelTexts.reasoning : isGenerating ? panelTexts.transition : panelTexts.done}
                     </span>
-                    <span className="text-xs text-purple-500/50 mr-1 shrink-0">
-                      {(msg as any).reasoningContent.length} 字
-                    </span>
+                    {effectiveReasoningContent && effectiveReasoningContent.length > 0 && (
+                      <span className="text-xs text-purple-500/50 mr-1 shrink-0">{effectiveReasoningContent.length} 字</span>
+                    )}
                     <div className="text-purple-400/40 shrink-0">
                       {!reasoningCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </div>
                   </button>
-                  <div className={cn(
-                    "transition-all duration-300 ease-in-out overflow-hidden",
-                    !reasoningCollapsed ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
-                  )}>
-                    <div className="px-3 py-2 max-h-[500px] overflow-y-auto text-sm leading-relaxed bg-purple-50/30 dark:bg-purple-900/10 prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-pre:my-1 prose-ul:my-1 prose-ol:my-1">
-                      <SafeMarkdown>{(msg as any).reasoningContent}</SafeMarkdown>
+                  <div className={cn("transition-all duration-300 ease-in-out overflow-hidden relative", !reasoningCollapsed ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0")}>
+                    <div
+                      ref={reasoningRef}
+                      className="px-3 py-2 max-h-[500px] overflow-y-auto text-sm leading-relaxed bg-purple-50/30 dark:bg-purple-900/10 prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-pre:my-1 prose-ul:my-1 prose-ol:my-1"
+                      onScroll={(e) => {
+                        const target = e.target as HTMLDivElement;
+                        const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 60;
+                        reasoningUserScrolledUpRef.current = !isNearBottom;
+                        setShowReasoningScrollBtn(!isNearBottom && !!isReasoning);
+                      }}
+                    >
+                      <SafeMarkdown>{effectiveReasoningContent || '正在思考...'}</SafeMarkdown>
+                      {isReasoning && <span className="inline-block w-[2px] h-[1em] bg-purple-500/60 ml-0.5 animate-pulse align-text-bottom" />}
                     </div>
+                    {showReasoningScrollBtn && isReasoning && (
+                      <button
+                        onClick={() => { reasoningUserScrolledUpRef.current = false; setShowReasoningScrollBtn(false); if (reasoningRef.current) reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight; }}
+                        className="absolute bottom-2 right-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-500/90 hover:bg-purple-600 text-white shadow-md backdrop-blur-sm transition-all duration-200"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                        回到最新
+                      </button>
+                    )}
                   </div>
                 </div>
+              )}
+
+              {/* ═══════ 操作步骤 + 思考文字（统一版） ═══════ */}
+              {(effectiveOperationLogs.length > 0 || effectiveThinkingSteps.length > 0) && (
+                isImageGenerationFlow(effectiveOperationLogs) ? (
+                  <ImageGenerationProgress operations={effectiveOperationLogs} isLive={!!isStreaming} />
+                ) : (
+                  <InlineStepList
+                    operations={effectiveOperationLogs}
+                    thinkingSteps={effectiveThinkingSteps}
+                    isLive={!!isStreaming}
+                    onFileClick={(fileName) => {
+                      if (isStreaming) {
+                        const content = state.streamedContent || '';
+                        const codeBlocks = content.match(/```[\w]*\n([\s\S]*?)```/g) || [];
+                        const lastBlock = codeBlocks.length > 0 ? codeBlocks[codeBlocks.length - 1].replace(/```\w*\n?/g, '').trim() : '';
+                        setPreviewFile({ name: fileName, content: lastBlock, isLive: true });
+                      } else {
+                        handleFileClick(fileName, msg, setPreviewFile);
+                      }
+                    }}
+                  />
+                )
+              )}
+
+              {/* ═══════ Artifact 内联触发卡片（流式期间） ═══════ */}
+              {isStreaming && (msg as any).artifact && (
+                <ArtifactInlineTrigger artifact={(msg as any).artifact} onOpen={() => { const { setActiveArtifact, openMobileArtifact } = state as any; if (setActiveArtifact) setActiveArtifact((msg as any).artifact); if (openMobileArtifact) openMobileArtifact(); }} />
+              )}
+
+              {/* ═══════ 联网搜索状态指示器（仅流式期间） ═══════ */}
+              {isStreaming && (state as any).webSearchQuery && (
+                <div className="mb-2"><SearchingIndicator query={(state as any).webSearchQuery} /></div>
               )}
 
               {/* 内容区域 */}
@@ -200,9 +287,9 @@ export function MessageItem(props: MessageItemProps) {
                   ) : (
                     <SolutionPickerResult data={(msg as any).solutionPicker} />
                   )
-                ) : (msg as any).artifact ? (
+                ) : (msg as any).artifact && !isStreaming ? (
                   <>
-                    {/* Artifact 场景：描述文字 + 紧凑触发卡片 */}
+                    {/* Artifact 场景：描述文字 + 紧凑触发卡片（完成态） */}
                     {(() => {
                       const cleanedContent = displayContent
                         .replace(/```(?:html|jsx|tsx|vue|css|react|artifact:[^\n]*)\n[\s\S]*?```/g, '')
@@ -216,13 +303,38 @@ export function MessageItem(props: MessageItemProps) {
                     <ArtifactInlineTrigger
                       artifact={(msg as any).artifact}
                       onOpen={() => {
-                        const { setActiveArtifact } = state as any;
+                        const { setActiveArtifact, openMobileArtifact } = state as any;
                         if (setActiveArtifact) setActiveArtifact((msg as any).artifact);
+                        if (openMobileArtifact) openMobileArtifact();
                       }}
                     />
                   </>
                 ) : (
-                  <AssistantRegularContent {...props} />
+                  /* ═══════ 常规内容（统一流式+完成态渲染） ═══════ */
+                  <>
+                    {displayContent ? (
+                      <AssistantRegularContent {...props} />
+                    ) : isStreaming ? (
+                      /* 等待指示器（流式期间无内容时） */
+                      isImageGenerationFlow(effectiveOperationLogs) ? null : (
+                        effectiveOperationLogs.length > 0 ? (
+                          <div className="flex items-center gap-2 py-2 text-muted-foreground">
+                            <div className="animate-spin w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full" />
+                            <span className="text-sm">{panelTexts.waiting}</span>
+                            {state.elapsedThinkingTime > 0 && (
+                              <span className="text-xs text-muted-foreground/60">{state.elapsedThinkingTime.toFixed(1)}s</span>
+                            )}
+                          </div>
+                        ) : (
+                          <ThinkingAnimation
+                            elapsedTime={state.elapsedThinkingTime}
+                            thinkingStage={state.thinkingStage}
+                            hasOperations={effectiveOperationLogs.length > 0}
+                          />
+                        )
+                      )
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -231,8 +343,13 @@ export function MessageItem(props: MessageItemProps) {
             <UserContent {...props} />
           )}
 
-          {/* 操作按钮 */}
-          <MessageActions {...props} />
+          {/* 操作按钮 — 流式期间隐藏，完成后渐入（保留占位避免跳动） */}
+          <div className={cn(
+            "transition-opacity duration-200 ease-out",
+            isStreaming ? "opacity-0 pointer-events-none" : "opacity-100"
+          )}>
+            <MessageActions {...props} />
+          </div>
         </div>
       </div>
     </div>

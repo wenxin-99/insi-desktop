@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle, CheckCircle2, Github } from "lucide-react";
+import { getApiBaseUrl, isTauri } from "@/const";
 import axios from "axios";
 
 export default function ForumLogin() {
@@ -29,7 +30,7 @@ export default function ForumLogin() {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("/api/forum/password-login", {
+      const response = await axios.post(`${getApiBaseUrl()}/api/forum/password-login`, {
         username,
         password,
       });
@@ -41,6 +42,20 @@ export default function ForumLogin() {
         // 保存用户信息（可选）
         if (response.data.user) {
           localStorage.setItem('user_info', JSON.stringify(response.data.user));
+        }
+
+        // Tauri 桌面客户端：通过 IPC 将 token 传递给 Rust 后端启动 WebSocket
+        // 直接使用 window.__TAURI_INTERNALS__ 避免依赖 @tauri-apps/api npm 包
+        if (isTauri()) {
+          try {
+            const tauri = (window as any).__TAURI_INTERNALS__;
+            if (tauri?.invoke) {
+              await tauri.invoke('login', { token: response.data.token });
+              console.log('[Auth] Tauri IPC login invoked');
+            }
+          } catch (e) {
+            console.warn('[Auth] Tauri IPC login failed:', e);
+          }
         }
         
         setSuccess(true);
@@ -150,7 +165,24 @@ export default function ForumLogin() {
             variant="outline"
             className="w-full h-12 text-base font-medium gap-2 border-gray-300 hover:bg-gray-50"
             onClick={() => {
-              window.location.href = "/api/github/login";
+              const baseUrl = getApiBaseUrl();
+              const loginUrl = `${baseUrl}/api/github/login`;
+              if (isTauri()) {
+                // Tauri 环境下使用系统浏览器打开 OAuth
+                // 通过 window.__TAURI_INTERNALS__ 调用 shell plugin，无需 npm 依赖
+                try {
+                  const tauri = (window as any).__TAURI_INTERNALS__;
+                  if (tauri?.invoke) {
+                    tauri.invoke('plugin:shell|open', { path: loginUrl });
+                  } else {
+                    window.open(loginUrl, '_blank');
+                  }
+                } catch {
+                  window.open(loginUrl, '_blank');
+                }
+              } else {
+                window.location.href = loginUrl;
+              }
             }}
           >
             <Github className="h-5 w-5" />

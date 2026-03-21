@@ -11,13 +11,29 @@ interface PhaseProgressProps {
   currentPhase: TaskPhase;
   progress: number;       // 0-100 当前阶段内的进度
   estimatedTime?: string; // 预估剩余时间
+  totalPercent?: number;  // ★ T7-3: 全局百分比 0-100
 }
 
-export function PhaseProgress({ currentPhase, progress, estimatedTime }: PhaseProgressProps) {
+export function PhaseProgress({ currentPhase, progress, estimatedTime, totalPercent }: PhaseProgressProps) {
   const currentIdx = RESEARCH_PHASES.findIndex(p => p.key === currentPhase);
 
   return (
     <div className="space-y-1">
+      {/* ★ T7-3: 百分比数字 + ETA */}
+      {(totalPercent !== undefined || estimatedTime) && (
+        <div className="flex items-center justify-between text-[10px] mb-0.5">
+          {totalPercent !== undefined && (
+            <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">
+              {Math.min(99, Math.max(0, Math.round(totalPercent)))}%
+            </span>
+          )}
+          {estimatedTime && (
+            <span className="text-muted-foreground/70">
+              预计还需 {estimatedTime}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-0.5 w-full">
         {RESEARCH_PHASES.map((phase, i) => {
           const isActive = phase.key === currentPhase;

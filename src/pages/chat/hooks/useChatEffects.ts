@@ -61,6 +61,7 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
     showShortcutsHelp, setShowShortcutsHelp,
     uploadedImages,
     activeResearchTaskId, setActiveResearchTaskId,
+    saveMessagesMutation,
   } = state;
   const { loadConversationMessages, handleSendMessage, saveToMessageCache, generateSuggestedQuestions } = config;
 
@@ -288,17 +289,28 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
         }
       }
 
-      // 追加消息
+      // 追加消息并持久化到数据库
+      const newMsg = {
+        role: 'assistant' as const,
+        content: summaryText,
+        timestamp: Date.now(),
+        automationTaskId: data.taskId,
+        automationCompleted: true,
+      };
       setMessages((prev: any) => {
         const alreadyExists = prev.some((m: any) => m.automationTaskId === data.taskId && m.automationCompleted === true);
         if (alreadyExists) return prev;
-        return [...prev, {
-          role: 'assistant' as const,
-          content: summaryText,
-          timestamp: Date.now(),
-          automationTaskId: data.taskId,
-          automationCompleted: true,
-        }];
+        const updated = [...prev, newMsg];
+        // ★ 持久化到数据库（刷新后保留完成报告）
+        const convId = selectedConvIdRef.current;
+        if (convId) {
+          const toSave = updated.filter((m: any) => m.role !== 'system');
+          saveMessagesMutation.mutate({
+            conversationId: convId,
+            messages: JSON.stringify(toSave),
+          });
+        }
+        return updated;
       });
 
       // 仅在单账号任务完成时生成追问（多账号由 batch_complete 处理）
@@ -332,12 +344,22 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
       setMessages((prev: any) => {
         const alreadyExists = prev.some((m: any) => m._batchComplete === true);
         if (alreadyExists) return prev;
-        return [...prev, {
+        const updated = [...prev, {
           role: 'assistant' as const,
           content: text.trim(),
           timestamp: Date.now(),
           _batchComplete: true,
         }];
+        // ★ 持久化到数据库（刷新后保留批次汇总）
+        const convId = selectedConvIdRef.current;
+        if (convId) {
+          const toSave = updated.filter((m: any) => m.role !== 'system');
+          saveMessagesMutation.mutate({
+            conversationId: convId,
+            messages: JSON.stringify(toSave),
+          });
+        }
+        return updated;
       });
 
       if (generateSuggestedQuestions) {

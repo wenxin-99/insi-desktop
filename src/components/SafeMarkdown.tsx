@@ -16,6 +16,9 @@ import { detectLanguage } from "@/lib/languageDetector";
 // Mermaid 组件懒加载（~200KB，仅在需要时才加载）
 const MermaidBlock = lazy(() => import("@/components/MermaidBlock").then(m => ({ default: m.MermaidBlock })));
 
+// SVG 内联渲染组件懒加载（仅当检测到 ```svg 代码块时加载）
+const InlineSVGBlock = lazy(() => import("@/components/InlineSVGBlock").then(m => ({ default: m.InlineSVGBlock })));
+
 interface SafeMarkdownProps {
   children: string;
   className?: string;
@@ -251,6 +254,20 @@ export const SafeMarkdown = memo(function SafeMarkdown({
             </div>
           }>
             <MermaidBlock code={codeContent} />
+          </Suspense>
+        );
+      }
+
+      // SVG：内联渲染为可视化图形（流式中跳过，等结束后再渲染）
+      if (language === 'svg' && !streamingRef.current && codeContent.includes('<svg')) {
+        return (
+          <Suspense fallback={
+            <div className="flex items-center gap-2 py-4 text-muted-foreground text-sm">
+              <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full" />
+              渲染 SVG 图形...
+            </div>
+          }>
+            <InlineSVGBlock code={codeContent} />
           </Suspense>
         );
       }

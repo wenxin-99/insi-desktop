@@ -9,9 +9,9 @@
  * 原始: 6041 行 → 精简后 ~250 行
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Image as ImageIcon, Sparkles } from 'lucide-react';
+import { Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react';
 import { NetworkStatusBar } from '@/components/NetworkStatusBar';
 import { ConversationSearch } from '@/components/ConversationSearch';
 import { RightSidePanel } from '@/components/RightSidePanel';
@@ -45,6 +45,67 @@ export default function Chat() {
 
   // ═══════════ 1. 全局状态 ═══════════
   const state = useChatState();
+
+  // ═══════════ 1.5 移动端 Artifact 全屏控制 ═══════════
+  // 移动端不自动弹全屏，需用户主动点击才打开
+  const [mobileArtifactOpen, setMobileArtifactOpen] = useState(false);
+  // activeArtifact 清空时重置
+  useEffect(() => {
+    if (!state.activeArtifact) setMobileArtifactOpen(false);
+  }, [state.activeArtifact]);
+
+  // ── 下滑手势关闭 ──
+  const [sheetDragY, setSheetDragY] = useState(0);        // 当前下拉距离
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const sheetTouchStartRef = useRef<{ y: number; time: number } | null>(null);
+  const SWIPE_THRESHOLD = 80;    // 下拉超过 80px 触发关闭
+  const VELOCITY_THRESHOLD = 0.5; // 快速下滑也触发
+
+  const closeMobileArtifact = useCallback(() => {
+    setMobileArtifactOpen(false);
+    state.setActiveArtifact(null);
+    setSheetDragY(0);
+    setSheetDragging(false);
+  }, [state]);
+
+  const handleSheetTouchStart = useCallback((e: React.TouchEvent) => {
+    // 只在触摸顶部拖拽条区域时启动手势（前 48px）
+    const touch = e.touches[0];
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (touch.clientY - rect.top > 48) return; // 只响应顶部区域
+    sheetTouchStartRef.current = { y: touch.clientY, time: Date.now() };
+  }, []);
+
+  const handleSheetTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!sheetTouchStartRef.current) return;
+    const deltaY = e.touches[0].clientY - sheetTouchStartRef.current.y;
+    if (deltaY > 0) { // 只处理下拉
+      setSheetDragY(deltaY);
+      setSheetDragging(true);
+    }
+  }, []);
+
+  const handleSheetTouchEnd = useCallback(() => {
+    if (!sheetTouchStartRef.current || !sheetDragging) {
+      sheetTouchStartRef.current = null;
+      return;
+    }
+    const elapsed = Date.now() - sheetTouchStartRef.current.y;
+    const velocity = sheetDragY / Math.max(1, Date.now() - sheetTouchStartRef.current.time);
+    if (sheetDragY > SWIPE_THRESHOLD || velocity > VELOCITY_THRESHOLD) {
+      closeMobileArtifact();
+    } else {
+      setSheetDragY(0);
+      setSheetDragging(false);
+    }
+    sheetTouchStartRef.current = null;
+  }, [sheetDragY, sheetDragging, closeMobileArtifact]);
+
+  // 注入到 state 中供子组件调用（点击内联触发卡片时打开移动端全屏）
+  const enhancedState = useMemo(() => ({
+    ...state,
+    openMobileArtifact: () => setMobileArtifactOpen(true),
+  }), [state]);
 
   // ═══════════ 2. 文件上传 ═══════════
   const {
@@ -176,7 +237,7 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
 
             {/* 消息渲染区 + 输入框 */}
             <MessageList
-              state={state}
+              state={enhancedState}
               handleSendMessage={handleSendMessage}
               handleStopStreaming={handleStopStreaming}
               handleImageDownload={handleImageDownload}
@@ -237,7 +298,7 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
                 </div>
               </div>
             ) : activeArtifact ? (
-              <div className="h-full flex flex-col">
+              <div className="h-full flex flex-col overflow-hidden">
                 <ArtifactCard
                   artifact={activeArtifact}
                   fillHeight
@@ -310,49 +371,94 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
             isActive={!!activeResearchTaskId}
           />
         )}
-      {/* ═══════ 移动端 Artifact 全屏预览（xl 以下） ═══════ */}
-      {activeArtifact && (
-        <div className="xl:hidden fixed inset-0 z-[55] bg-background flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
-            <div className="flex items-center gap-2 min-w-0">
-              <Sparkles className="w-4 h-4 text-primary shrink-0" />
-              <span className="text-sm font-semibold truncate">{activeArtifact.title || '界面预览'}</span>
+      {/* ═══════ 移动端 Artifact 通知条 + 全屏预览（xl 以下） ═══════ */}
+      {/* ★ 修复：不再自动全屏，始终先显示通知条，用户主动点击后才全屏 */}
+      {activeArtifact && !mobileArtifactOpen && (
+        <div className="xl:hidden fixed bottom-20 left-4 right-4 z-[55] bg-background/95 backdrop-blur border border-border rounded-xl shadow-lg px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div
+              className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
+              onClick={() => {
+                if (activeArtifact.status === 'complete' || activeArtifact.status === 'approved') {
+                  setMobileArtifactOpen(true);
+                }
+              }}
+            >
+              {activeArtifact.status === 'streaming' ? (
+                <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+              ) : (
+                <Sparkles className="w-4 h-4 text-primary shrink-0" />
+              )}
+              <span className="text-sm font-medium truncate">{activeArtifact.title || '界面预览'}</span>
+              {activeArtifact.status === 'streaming' ? (
+                <span className="text-xs text-muted-foreground">生成中...</span>
+              ) : (
+                <span className="text-xs text-primary font-medium">点击查看预览 →</span>
+              )}
             </div>
             <button
               onClick={() => setActiveArtifact(null)}
-              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted"
+              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted ml-2 shrink-0"
             >
               关闭
             </button>
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <ArtifactCard
-              artifact={activeArtifact}
-              fillHeight
-              onApprove={() => {
-                setActiveArtifact({ ...activeArtifact, status: 'approved' });
-                const { setMessages } = state;
-                setMessages((prev: any[]) => {
-                  const newMsgs = [...prev];
-                  for (let i = newMsgs.length - 1; i >= 0; i--) {
-                    if ((newMsgs[i] as any).artifact?.id === activeArtifact.id) {
-                      (newMsgs[i] as any).artifact = { ...(newMsgs[i] as any).artifact, status: 'approved' };
-                      break;
+        </div>
+      )}
+      {activeArtifact && mobileArtifactOpen && (
+        <div className="xl:hidden fixed inset-0 z-[55]">
+          {/* 半透明遮罩（点击可关闭，跟随拖拽透明度变化） */}
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+            style={{ opacity: sheetDragY > 0 ? Math.max(0.1, 1 - sheetDragY / 300) : 1 }}
+            onClick={closeMobileArtifact}
+          />
+          {/* 卡片主体 — 从 top-[60px] 开始，支持下滑手势 */}
+          <div
+            className="absolute inset-x-0 bottom-0 top-[60px] flex flex-col bg-card rounded-t-2xl shadow-2xl border-t border-x border-border overflow-hidden"
+            style={{
+              transform: sheetDragY > 0 ? `translateY(${sheetDragY}px)` : undefined,
+              transition: sheetDragging ? 'none' : 'transform 0.3s ease-out',
+            }}
+            onTouchStart={handleSheetTouchStart}
+            onTouchMove={handleSheetTouchMove}
+            onTouchEnd={handleSheetTouchEnd}
+          >
+            {/* ── 顶部拖拽条 ── */}
+            <div className="flex flex-col items-center pt-2 pb-1 flex-shrink-0 cursor-grab active:cursor-grabbing">
+              <div className="w-9 h-1 rounded-full bg-muted-foreground/30" />
+            </div>
+            {/* ── ArtifactCard 填充剩余空间 ── */}
+            <div className="flex flex-col overflow-hidden" style={{ height: 0, flexGrow: 1 }}>
+              <ArtifactCard
+                artifact={activeArtifact}
+                fillHeight
+                onClose={closeMobileArtifact}
+                onApprove={() => {
+                  setActiveArtifact({ ...activeArtifact, status: 'approved' });
+                  const { setMessages } = state;
+                  setMessages((prev: any[]) => {
+                    const newMsgs = [...prev];
+                    for (let i = newMsgs.length - 1; i >= 0; i--) {
+                      if ((newMsgs[i] as any).artifact?.id === activeArtifact.id) {
+                        (newMsgs[i] as any).artifact = { ...(newMsgs[i] as any).artifact, status: 'approved' };
+                        break;
+                      }
                     }
+                    return newMsgs;
+                  });
+                }}
+                onIterate={(feedback) => {
+                  closeMobileArtifact();
+                  const { chatInputRef } = state as any;
+                  if (chatInputRef?.current) {
+                    chatInputRef.current.setInput(`请调整上面的预览效果：${feedback}`);
+                    chatInputRef.current.focus();
                   }
-                  return newMsgs;
-                });
-              }}
-              onIterate={(feedback) => {
-                setActiveArtifact(null);
-                const { chatInputRef } = state as any;
-                if (chatInputRef?.current) {
-                  chatInputRef.current.setInput(`请调整上面的预览效果：${feedback}`);
-                  chatInputRef.current.focus();
-                }
-              }}
-              onExport={() => {}}
-            />
+                }}
+                onExport={() => {}}
+              />
+            </div>
           </div>
         </div>
       )}

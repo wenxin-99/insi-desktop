@@ -3,16 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Copy, Check, Download, ChevronDown, ChevronUp, WrapText, Hash, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import Prism from "prismjs";
-import { VirtualCodeBlock } from "./VirtualCodeBlock";
-import { sanitizeCode } from '@/lib/sanitizeHtml';
-import { streamingHighlightToHtml } from '@/lib/streamingHighlight'; // ★ 流式轻量高亮
-
-// 导入Prism.js核心样式和高亮行插件
 import "prismjs/themes/prism-tomorrow.css";
-import "prismjs/plugins/line-highlight/prism-line-highlight.css";
-import "prismjs/plugins/line-highlight/prism-line-highlight";
-
-// 导入常用编程语言支持
 import "prismjs/components/prism-javascript";
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-python";
@@ -30,26 +21,25 @@ import "prismjs/components/prism-sql";
 import "prismjs/components/prism-bash";
 import "prismjs/components/prism-json";
 import "prismjs/components/prism-yaml";
+import "prismjs/components/prism-css";
 import "prismjs/components/prism-markdown";
-import "prismjs/components/prism-jsx";
-import "prismjs/components/prism-tsx";
+import "prismjs/components/prism-docker";
+import "prismjs/components/prism-diff";
+
+
+import { VirtualCodeBlock } from "./VirtualCodeBlock";
+import { sanitizeCode } from '@/lib/sanitizeHtml';
+import { streamingHighlightToHtml } from '@/lib/streamingHighlight'; // ★ 流式轻量高亮
+
+// 导入Prism.js核心样式和高亮行插件
+
+// 导入常用编程语言支持
 
 // 移动开发语言
-import "prismjs/components/prism-kotlin";
-import "prismjs/components/prism-swift";
-import "prismjs/components/prism-dart";
-import "prismjs/components/prism-objectivec";
 
 // 数据科学语言
-import "prismjs/components/prism-r";
-import "prismjs/components/prism-matlab";
-import "prismjs/components/prism-julia";
 
 // 其他常用语言
-import "prismjs/components/prism-scala";
-import "prismjs/components/prism-perl";
-import "prismjs/components/prism-lua";
-import "prismjs/components/prism-haskell";
 
 // 修复Prism.js的Python语言定义bug
 if (Prism.languages.python && (Prism.languages.python as any)['string-interpolation']) {

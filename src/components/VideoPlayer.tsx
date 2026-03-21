@@ -8,16 +8,21 @@ interface VideoPlayerProps {
   poster?: string;
   className?: string;
   onDownload?: () => void;
+  /** ★ T12-3: 自动播放（静音） */
+  autoPlay?: boolean;
+  /** ★ T12-3: 循环播放 */
+  loop?: boolean;
 }
 
-export function VideoPlayer({ src, poster, className = "", onDownload }: VideoPlayerProps) {
+export function VideoPlayer({ src, poster, className = "", onDownload, autoPlay = false, loop = false }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(100);
+  const [isMuted, setIsMuted] = useState(autoPlay); // autoPlay 时默认静音
+  const [volume, setVolume] = useState(autoPlay ? 0 : 100);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [showControls, setShowControls] = useState(true);
+  const [showControls, setShowControls] = useState(!autoPlay); // autoPlay 时隐藏控件
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -88,15 +93,30 @@ export function VideoPlayer({ src, poster, className = "", onDownload }: VideoPl
 
   return (
     <div 
-      className={`relative group ${className}`}
-      onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(false)}
+      className={`relative group rounded-xl overflow-hidden ${className}`}
+      onMouseEnter={() => {
+        setShowControls(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      }}
+      onMouseLeave={() => {
+        // ★ T12-3: 悬停离开后 2 秒隐藏控件
+        hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
+      }}
+      onMouseMove={() => {
+        setShowControls(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
+      }}
     >
       <video
         ref={videoRef}
         src={src}
         poster={poster}
         className="w-full rounded-lg"
+        autoPlay={autoPlay}
+        muted={isMuted}
+        loop={loop}
+        playsInline
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onPlay={() => setIsPlaying(true)}

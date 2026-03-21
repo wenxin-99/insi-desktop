@@ -10,6 +10,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
+import { getApiBaseUrl } from "@/const";
 
 // ═══════════════════════════════════════════
 // 类型
@@ -41,6 +42,8 @@ export interface DesktopStep {
 export interface DesktopState {
   /** Tauri 桌面客户端是否已连接到服务端 */
   isConnected: boolean;
+  /** 用户是否已授权 AI 控制桌面 */
+  isAuthorized: boolean;
   /** 连接信息 */
   connectionInfo: DesktopConnectionInfo | null;
   /** 最新截图 */
@@ -83,6 +86,7 @@ export interface DesktopState {
 
 const initialState: DesktopState = {
   isConnected: false,
+  isAuthorized: false,
   connectionInfo: null,
   latestScreenshot: null,
   screenshotHistory: [],
@@ -111,10 +115,13 @@ export function useDesktopSocket() {
   useEffect(() => {
     // 连接到主 Socket.IO（不是 /desktop namespace）
     // 桌面状态通过 sandbox_event 推送
-    const socket = io(window.location.origin, {
+    const baseUrl = getApiBaseUrl() || window.location.origin;
+    const token = localStorage.getItem("auth_token");
+    const socket = io(baseUrl, {
       path: "/socket.io",
       transports: ["websocket", "polling"],
       withCredentials: true,
+      ...(token ? { auth: { token } } : {}),
     });
 
     socketRef.current = socket;
@@ -130,11 +137,13 @@ export function useDesktopSocket() {
     // 监听桌面状态变更事件
     socket.on("desktop_status", (data: {
       connected: boolean;
+      authorized?: boolean;
       clientInfo?: DesktopConnectionInfo;
     }) => {
       setState(prev => ({
         ...prev,
         isConnected: data.connected,
+        isAuthorized: data.authorized ?? prev.isAuthorized,
         connectionInfo: data.clientInfo || prev.connectionInfo,
       }));
     });
@@ -183,6 +192,7 @@ export function useDesktopSocket() {
         setState(prev => ({
           ...prev,
           isConnected: data.connected,
+          isAuthorized: data.authorized || false,
           connectionInfo: data.clientInfo || null,
         }));
       }
@@ -320,6 +330,39 @@ export function useDesktopSocket() {
     }
   }, []);
 
+  // ── 授权控制 ──
+  const authorizeDesktop = useCallback(async () => {
+    try {
+      const res = await fetch("/api/desktop/authorize", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setState(prev => ({ ...prev, isAuthorized: true }));
+        }
+        return data;
+      }
+    } catch (err) {
+      console.warn("[DesktopSocket] Authorize failed:", err);
+    }
+  }, []);
+
+  const revokeDesktopAuth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/desktop/revoke", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setState(prev => ({ ...prev, isAuthorized: false }));
+      }
+    } catch (err) {
+      console.warn("[DesktopSocket] Revoke failed:", err);
+    }
+  }, []);
+
   const resetState = useCallback(() => {
     setState(prev => ({
       ...prev,
@@ -342,6 +385,7 @@ export function useDesktopSocket() {
     savePlaybook,
     rollbackToStep,
     stopRecordingAndSave,
-  };
+    authorizeDesktop,
+    revokeDesktopAuth,
   };
 }

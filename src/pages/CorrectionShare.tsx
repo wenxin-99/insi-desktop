@@ -161,7 +161,7 @@ export default function CorrectionShare() {
   const pieData = [
     { name: "正确", value: correction.correctCount, color: "#22c55e" },
     { name: "错误", value: correction.wrongCount, color: "#ef4444" },
-  ];
+  ].filter(d => d.value > 0);
 
   return (
     <div className="container mx-auto py-6 max-w-4xl px-4">
@@ -223,10 +223,21 @@ export default function CorrectionShare() {
         {correction.totalQuestions > 0 && (
           <Card>
             <CardContent className="pt-6">
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" outerRadius={70} dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  <Pie data={pieData} cx="50%" cy="50%" outerRadius={65} dataKey="value"
+                    startAngle={90} endAngle={-270}
+                    label={({ name, percent, x, y, midAngle }) => {
+                      const RADIAN = Math.PI / 180;
+                      const radius = 10;
+                      const nx = x + radius * Math.cos(-midAngle * RADIAN);
+                      const ny = y + radius * Math.sin(-midAngle * RADIAN);
+                      return (
+                        <text x={nx} y={ny} fill="#333" textAnchor={nx > 0 ? "start" : "end"} dominantBaseline="central" fontSize={12}>
+                          {`${name} ${(percent * 100).toFixed(0)}%`}
+                        </text>
+                      );
+                    }} labelLine={true}>
                     {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip /><Legend />

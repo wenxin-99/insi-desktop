@@ -10,7 +10,7 @@
 
 export type StreamEventType =
   | 'start' | 'content' | 'done' | 'error'
-  | 'image' | 'image_placeholder'
+  | 'image' | 'image_placeholder' | 'image_count' | 'image_failed'
   | 'video_task' | 'fallback' | 'thinking'
   | 'intent_confirmation' | 'operation' | 'automation_task'
   | 'reasoning_content' | 'thinking_stage'

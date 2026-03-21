@@ -1,0 +1,60 @@
+[package]
+name = "insi-desktop"
+version = "0.3.5"
+description = "Insi Desktop Agent — AI 桌面控制客户端"
+authors = ["insights.ren"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+base64 = "0.22"
+image = { version = "0.25", features = ["webp"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+log = "0.4"
+env_logger = "0.11"
+parking_lot = "0.12"
+
+# 文件系统
+dirs = "5"
+
+# WebSocket (Socket.IO 兼容)
+rust_socketio = { version = "0.6", features = ["async"] }
+tokio-tungstenite = "0.24"
+url = "2"
+
+# 截屏
+xcap = "0.7"
+
+# 输入模拟
+enigo = { version = "0.2", features = ["serde"] }
+
+# 系统信息
+sysinfo = "0.32"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Gdi",
+  "Win32_Foundation",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.24"
+core-foundation = "0.10"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

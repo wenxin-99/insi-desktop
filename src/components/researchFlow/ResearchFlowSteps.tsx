@@ -236,10 +236,28 @@ export function ResearchFlowSteps({ taskId, prompt, onOpenSandbox }: ResearchFlo
     return Math.max(10, Math.round(Math.min(allSteps.length / 30, 0.9) * 100));
   }, [status, allSteps.length, sandbox.progress]);
 
+  // ★ T7-3: ETA 估算
   // ═══════ 时间计算 ═══════
-
   const baseTime = allSteps.length > 0 ? allSteps[0].timestamp : Date.now();
   const lastTime = allSteps.length > 0 ? allSteps[allSteps.length - 1].timestamp : Date.now();
+
+  const estimatedTimeStr = useMemo(() => {
+    if (!isRunning || allSteps.length < 3) return undefined;
+    const elapsed = lastTime - baseTime;
+    if (elapsed <= 0 || progressPercent <= 5 || progressPercent >= 95) return undefined;
+
+    // 基于当前进度推算总时长
+    const totalEstimate = elapsed / (progressPercent / 100);
+    const remainMs = totalEstimate - elapsed;
+    if (remainMs <= 0) return undefined;
+
+    const remainSec = Math.round(remainMs / 1000);
+    if (remainSec < 60) return `${remainSec}秒`;
+    const m = Math.floor(remainSec / 60);
+    const s = remainSec % 60;
+    return s > 0 ? `${m}分${s}秒` : `${m}分钟`;
+  }, [isRunning, allSteps.length, baseTime, lastTime, progressPercent]);
+
 
   const formatDuration = (ms: number): string => {
     const s = Math.round(ms / 1000);
@@ -380,6 +398,8 @@ export function ResearchFlowSteps({ taskId, prompt, onOpenSandbox }: ResearchFlo
           isStopping={cancelTask.isPending}
           currentPhase={currentPhase}
           phaseProgress={phaseProgress}
+          totalPercent={progressPercent}
+          estimatedTime={estimatedTimeStr}
           socket={sandbox.socket}
           onStop={async () => {
             if (await confirm({ title: '停止任务', description: '确认停止此研究任务？停止后无法恢复。', confirmText: '停止', variant: 'destructive' })) {

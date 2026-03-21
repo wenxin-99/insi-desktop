@@ -6,7 +6,7 @@ interface Message {
 }
 
 interface StreamResponse {
-  type: "start" | "content" | "done" | "error" | "image" | "image_placeholder" | "image_stage" | "image_progress" | "video_task" | "fallback" | "thinking" | "intent_confirmation" | "operation" | "automation_task";
+  type: "start" | "content" | "done" | "error" | "image" | "image_placeholder" | "image_failed" | "image_stage" | "image_progress" | "video_task" | "fallback" | "thinking" | "intent_confirmation" | "operation" | "automation_task";
   content?: string;
   cost?: string;
   originalCost?: string;
@@ -18,6 +18,7 @@ interface StreamResponse {
   imageUrl?: string;
   placeholderUrl?: string; // 低分辨率占位图URL
   prompt?: string;
+  index?: number; // ★ 多图并发时标识图片槽位
   taskId?: number;
   status?: string;
   usedFallback?: boolean;
@@ -51,6 +52,7 @@ interface UseChatStreamOptions {
   onContent?: (content: string) => void;
   onImagePlaceholder?: (data: { placeholderUrl: string; prompt: string }) => void; // 占位图事件
   onImage?: (data: { imageUrl: string; placeholderUrl?: string; prompt: string }) => void;
+  onImageFailed?: (data: { index?: number }) => void; // ★ 单张图片生成失败
   onImageStage?: (data: { stage: string; prompt?: string; error?: string; errorType?: string; timestamp: number }) => void;
   onImageProgress?: (data: { attempt: number; maxAttempts: number; status: string; timestamp: number }) => void;
   onVideoTask?: (data: { taskId: number; prompt: string; status: string }) => void;
@@ -64,6 +66,7 @@ interface UseChatStreamOptions {
   onArtifactChunk?: (data: { artifactId: string; chunk: string }) => void;
   onArtifactEnd?: (data: { artifactId: string; metadata?: any }) => void;
   onSolutionPicker?: (data: { id: string; question: string; options: Array<{ title: string; description?: string }>; allowCustom: boolean; allowSkip: boolean }) => void;
+  onHomeworkResult?: (data: any) => void; // ★ T14-2
   onAutomationTask?: (data: { taskId: number; taskName: string; siteName: string; status: string }) => void;
   onFilePreview?: (data: { fileName: string; action: 'create' | 'modify' | 'delete'; newContent?: string; oldContent?: string; timestamp: number }) => void;
   onDone?: (data: { newBalance: string; message: string; isDocumentGeneration?: boolean; requestedFormat?: string }) => void;
@@ -278,6 +281,7 @@ export function useChatStream() {
                 options.onImagePlaceholder?.({
                   placeholderUrl: data.placeholderUrl!,
                   prompt: data.prompt!,
+                  index: data.index,
                 });
               } else if (data.type === "image") {
                 // 处理图片生成事件
@@ -285,6 +289,12 @@ export function useChatStream() {
                   imageUrl: data.imageUrl!,
                   placeholderUrl: data.placeholderUrl,
                   prompt: data.prompt!,
+                  index: data.index,
+                });
+              } else if (data.type === "image_failed") {
+                // ★ 单张图片生成失败，移除对应槽位
+                options.onImageFailed?.({
+                  index: data.index,
                 });
               } else if (data.type === "image_stage") {
                 // 处理图片生成阶段事件
@@ -367,6 +377,9 @@ export function useChatStream() {
                   allowCustom: data.allowCustom ?? true,
                   allowSkip: data.allowSkip ?? true,
                 });
+              } else if (data.type === "homework_result") {
+                // ★ T14-2: 作业批改结果
+                options.onHomeworkResult?.(data);
               } else if (data.type === "automation_task") {
                 // 处理自动化任务事件
                 options.onAutomationTask?.({

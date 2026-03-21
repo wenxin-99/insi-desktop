@@ -28,6 +28,7 @@ interface VoiceSettingsPanelProps {
   ttsProvider: string;
   voicePackages: any[] | undefined;
   usageInfo?: VoiceUsageInfo | null;
+  voiceMode?: "pipeline" | "live";
 }
 
 /** 套餐档位图标 */
@@ -47,6 +48,7 @@ export function VoiceSettingsPanel({
   selectedVoice, setSelectedVoice,
   ttsProvider, voicePackages,
   usageInfo,
+  voiceMode,
 }: VoiceSettingsPanelProps) {
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -184,6 +186,19 @@ export function VoiceSettingsPanel({
 
   return (
     <div className="border-b bg-muted/20 space-y-3 py-3 animate-in slide-in-from-top-2 duration-200">
+      {/* ── Live 模式提示 ── */}
+      {voiceMode === "live" && (
+        <div className="mx-4 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <Zap className="w-4 h-4" />
+            实时对话模式
+          </div>
+          <p className="text-xs text-amber-600/80 dark:text-amber-500/70 mt-1 leading-relaxed">
+            端到端原生音频，延迟极低。音色由实时模型控制，下方音色设置仅在普通模式生效。
+          </p>
+        </div>
+      )}
+
       {/* ── 今日使用量 ── */}
       {usageInfo && usageInfo.dailyLimit > 0 && (
         <div className="px-4">

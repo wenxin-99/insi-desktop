@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Copy, Check, RotateCcw, Pencil, Volume2, Square, Download, Trash2, Quote } from 'lucide-react';
+import { Copy, Check, RotateCcw, Pencil, Volume2, Square, Download, Trash2, Quote, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -36,6 +36,7 @@ export function MessageActions({
     playingTtsIndex, handleTtsPlay,
     exportContentPdfMutation,
     generateDocumentMutation,
+    saveMessagesMutation,
     chatInputRef,
     setQuotedRef,
   } = state;
@@ -132,6 +133,20 @@ export function MessageActions({
     }
   };
 
+  // ── 助手消息：续写（从中断处继续） ──
+  const handleContinue = () => {
+    if (isStreamingMessage) return;
+    handleSendMessage('继续');
+  };
+
+  // 检测是否是被截断或停止的消息（显示续写按钮）
+  const isTruncatedOrStopped = msg.role === 'assistant' && (
+    (msg.content || '').includes('已被用户停止') ||
+    (msg.content || '').includes('已被截断') ||
+    (msg.content || '').includes('发送"继续"可接续') ||
+    (msg as any)._truncated
+  );
+
   // ── 删除（使用主题弹窗） ──
   const handleDelete = async () => {
     const ok = await confirm({
@@ -142,7 +157,18 @@ export function MessageActions({
       variant: 'destructive',
     });
     if (ok) {
-      setMessages((prev: any[]) => prev.filter((_: any, i: number) => i !== index));
+      setMessages((prev: any[]) => {
+        const updated = prev.filter((_: any, i: number) => i !== index);
+        // ★ 同步到数据库（刷新后不会复活）
+        if (selectedConversationId) {
+          const toSave = updated.filter((m: any) => m.role !== 'system');
+          saveMessagesMutation.mutate({
+            conversationId: selectedConversationId,
+            messages: JSON.stringify(toSave),
+          });
+        }
+        return updated;
+      });
       toast.success('消息已删除', { duration: 1500 });
     }
   };
@@ -305,6 +331,13 @@ export function MessageActions({
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleRegenerate} title={t('chat.regenerate')}>
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
+          {/* 续写（被截断/停止的消息） */}
+          {isTruncatedOrStopped && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-xs text-primary" onClick={handleContinue} title="从中断处续写">
+              <ArrowRight className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">续写</span>
+            </Button>
+          )}
           {/* TTS */}
           <Button
             variant="ghost"

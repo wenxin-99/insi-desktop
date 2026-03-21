@@ -8,6 +8,7 @@ import { useState, useRef, useCallback, useEffect, type MutableRefObject } from 
 import { acquireMicStream, releaseMicStream } from "@/hooks/useMicPermission";
 import { toast } from "sonner";
 import { SimpleTTSPlayer, stripMarkdownForTts } from './SimpleTTSPlayer';
+import { startVAD, type VADHandle } from './vadDetector'; // ★ T8-1
 import type { VoiceChatStatus, VoiceMessage } from './types';
 
 interface UseVoiceChatHandlersParams {
@@ -47,6 +48,9 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
   const sharedAudioCtxRef = useRef<AudioContext | null>(null);
   const audioUnlockRef = useRef<boolean>(false);
   const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ★ T8-1: VAD 打断
+  const vadHandleRef = useRef<VADHandle | null>(null);
+  const vadMicStreamRef = useRef<MediaStream | null>(null);
 
   // 清理资源
   useEffect(() => {
@@ -55,6 +59,12 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
       releaseMicStream();
       if (ttsPlayerRef.current) ttsPlayerRef.current.stop();
       if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
+      // ★ T8-1: 清理 VAD
+      if (vadHandleRef.current) { vadHandleRef.current.stop(); vadHandleRef.current = null; }
+      if (vadMicStreamRef.current) {
+        vadMicStreamRef.current.getTracks().forEach(t => t.stop());
+        vadMicStreamRef.current = null;
+      }
       if (sharedAudioCtxRef.current) {
         sharedAudioCtxRef.current.close().catch(() => {});
         sharedAudioCtxRef.current = null;
@@ -229,17 +239,29 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
             ? voicePackages?.find((p: any) => p.id === selectedVoicePackageId)
             : null;
           const activeVoice = activePkg?.ttsVoice || selectedVoice || undefined;
+          const activeTtsProvider = activePkg?.ttsProvider || undefined;
 
           const player = new SimpleTTSPlayer(
             () => { setState("idle"); clearSafetyTimeout(); },
             headers,
             audioCtx,
-            activeVoice
+            activeVoice,
+            activeTtsProvider
           );
           ttsPlayerRef.current = player;
 
           const trySpeakSentence = () => {
-            const match = ttsBuffer.match(/^([\s\S]*?[。！？.!?\n])/);
+            // ★ 优化 TTS 延迟：多级分句策略
+            // 1. 优先按句号/问号/感叹号切分（完整句子）
+            let match = ttsBuffer.match(/^([\s\S]*?[。！？.!?\n])/);
+            // 2. 如果没有完整句子但缓冲区超过 20 字，按逗号/分号切分（短语级）
+            if (!match && ttsBuffer.length > 20) {
+              match = ttsBuffer.match(/^([\s\S]*?[，,；;：:、])/);
+            }
+            // 3. 如果连逗号都没有但已积累 40+ 字，强制截断发送（防止长句卡死）
+            if (!match && ttsBuffer.length > 40) {
+              match = [ttsBuffer, ttsBuffer] as unknown as RegExpMatchArray;
+            }
             if (match) {
               const rawSentence = match[1];
               const sentence = stripMarkdownForTts(rawSentence).trim();
@@ -351,10 +373,69 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
 
   // 停止播放
   const stopSpeaking = useCallback(() => {
+    // ★ T8-1: 先停 VAD
+    if (vadHandleRef.current) { vadHandleRef.current.stop(); vadHandleRef.current = null; }
+    if (vadMicStreamRef.current) { vadMicStreamRef.current.getTracks().forEach(t => t.stop()); vadMicStreamRef.current = null; }
     if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; }
+    // ★ 安全网：直接取消浏览器 SpeechSynthesis（防止 player.stop() 未能覆盖 fallback 场景）
+    if (window.speechSynthesis) { window.speechSynthesis.cancel(); }
     clearSafetyTimeout();
     setState("idle");
   }, [clearSafetyTimeout]);
+
+  // ★ T8-1: VAD 打断 — 在 speaking 状态时启动麦克风 VAD 监听
+  useEffect(() => {
+    if (state !== 'speaking') {
+      // 非 speaking 状态，停止 VAD
+      if (vadHandleRef.current) { vadHandleRef.current.stop(); vadHandleRef.current = null; }
+      if (vadMicStreamRef.current) { vadMicStreamRef.current.getTracks().forEach(t => t.stop()); vadMicStreamRef.current = null; }
+      return;
+    }
+
+    let cancelled = false;
+    let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    (async () => {
+      try {
+        // 获取独立的麦克风流用于 VAD（不复用录音流，避免冲突）
+        const vadStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) { vadStream.getTracks().forEach(t => t.stop()); return; }
+        vadMicStreamRef.current = vadStream;
+
+        const vadHandle = startVAD(
+          vadStream,
+          // onSpeechStart: 用户开始说话 → 暂停 TTS
+          () => {
+            if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
+            if (ttsPlayerRef.current && !ttsPlayerRef.current.paused) {
+              console.log('[VoiceChat] T8-1: User interrupt detected, pausing TTS');
+              ttsPlayerRef.current.pause();
+            }
+          },
+          // onSpeechEnd: 用户停止说话 → 等 1.5s，如果没有再说话则恢复 TTS
+          () => {
+            resumeTimer = setTimeout(() => {
+              if (ttsPlayerRef.current && ttsPlayerRef.current.paused && !ttsPlayerRef.current.stopped) {
+                console.log('[VoiceChat] T8-1: Brief noise ended, resuming TTS');
+                ttsPlayerRef.current.resume();
+              }
+            }, 1500);
+          },
+          { threshold: 30, speechStartFrames: 3, speechEndFrames: 10, intervalMs: 50 },
+        );
+
+        if (cancelled) { vadHandle.stop(); vadStream.getTracks().forEach(t => t.stop()); return; }
+        vadHandleRef.current = vadHandle;
+      } catch (err) {
+        console.warn('[VoiceChat] T8-1: Failed to start VAD (non-fatal):', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (resumeTimer) clearTimeout(resumeTimer);
+    };
+  }, [state]);
 
   // 主按钮
   const handleMainAction = useCallback(() => {

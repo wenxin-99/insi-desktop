@@ -18,7 +18,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Mic, ArrowLeft, Volume2, VolumeX, Loader2, Square, Settings, MessageSquare } from "lucide-react";
+import { Mic, ArrowLeft, Volume2, VolumeX, Loader2, Square, Settings, MessageSquare, Zap, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { SafeMarkdown } from "@/components/SafeMarkdown";
@@ -29,6 +29,7 @@ import { VoiceSettingsPanel } from "./voiceChat/VoiceSettingsPanel";
 import { VoiceHistoryPanel } from "./voiceChat/VoiceHistoryPanel";
 import { VoiceUpgradePrompt } from "./voiceChat/VoiceUpgradePrompt";
 import { useVoiceChatHandlers } from "./voiceChat/useVoiceChatHandlers";
+import { useGeminiLive, type LiveProvider } from "./voiceChat/useGeminiLive";
 import DashboardLayout from '@/components/DashboardLayout';
 import {
   type VoiceMessage,
@@ -61,6 +62,18 @@ export default function VoiceChat() {
   const [ttsProvider, setTtsProvider] = useState<string>("");
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ★ Live 模式 vs Pipeline 模式
+  const [voiceMode, setVoiceMode] = useState<"pipeline" | "live">(() => {
+    try { return (localStorage.getItem("voiceChat_mode") as any) || "pipeline"; } catch { return "pipeline"; }
+  });
+  const [liveProvider, setLiveProvider] = useState<LiveProvider | undefined>(() => {
+    try { return (localStorage.getItem("voiceChat_liveProvider") as LiveProvider) || undefined; } catch { return undefined; }
+  });
+  useEffect(() => { try { localStorage.setItem("voiceChat_mode", voiceMode); } catch {} }, [voiceMode]);
+  useEffect(() => {
+    if (liveProvider) try { localStorage.setItem("voiceChat_liveProvider", liveProvider); } catch {}
+  }, [liveProvider]);
 
   // 同步 muted ref
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -115,13 +128,13 @@ export default function VoiceChat() {
     setShowHistory(true);
 
     const token = localStorage.getItem('auth_token');
-    fetch(`/api/trpc/conversation.getById?input=${encodeURIComponent(JSON.stringify({id}))}`, {
+    fetch(`/api/trpc/conversation.getById?input=${encodeURIComponent(JSON.stringify({json:{id}}))}`, {
       credentials: 'include',
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     })
       .then(r => r.json())
       .then(data => {
-        const conversation = data?.result?.data;
+        const conversation = data?.result?.data?.json || data?.result?.data;
         if (conversation?.messages) {
           try {
             const parsed = JSON.parse(conversation.messages);
@@ -181,6 +194,34 @@ export default function VoiceChat() {
     onRoundComplete: handleRoundComplete,
   });
 
+  // ★ Gemini Live 实时语音 Hook
+  const geminiLive = useGeminiLive({
+    voicePackageId: selectedVoicePackageId || undefined,
+    voice: undefined,
+    liveProvider,
+    messages,
+    setMessages,
+    conversationId,
+    setConversationId,
+    onError: (msg) => toast.error(msg),
+  });
+
+  // ★ 统一状态：根据当前模式选择对应的状态
+  const isLiveMode = voiceMode === "live";
+  const effectiveState = isLiveMode
+    ? (geminiLive.status === "listening" ? (geminiLive.aiSpeaking ? "speaking" : "listening") : geminiLive.status === "connecting" ? "processing" : "idle")
+    : state;
+  const effectiveStream = isLiveMode ? geminiLive.micStream : audioStreamRef.current;
+
+  // ★ 录音时自动收起历史面板（露出波形可视化），播放完成后自动展开
+  useEffect(() => {
+    if (effectiveState === "listening") {
+      setShowHistory(false);
+    } else if (effectiveState === "idle" && messages.length > 0) {
+      setShowHistory(true);
+    }
+  }, [effectiveState, messages.length]);
+
   // ── 包装 startListening：录音前检查额度 ──
   const startListening = useCallback(() => {
     if (usageInfo && !usageInfo.canUse) {
@@ -227,6 +268,26 @@ export default function VoiceChat() {
         </Button>
         <h1 className="text-lg font-semibold">语音对话</h1>
         <div className="flex items-center gap-1">
+          {/* ★ Live / Pipeline 模式切换 */}
+          <Button
+            variant="ghost" size="icon"
+            onClick={() => {
+              if (effectiveState !== "idle" && effectiveState !== "connecting") {
+                toast.info("请先结束当前对话再切换模式");
+                return;
+              }
+              setVoiceMode(v => v === "live" ? "pipeline" : "live");
+              toast.success(voiceMode === "live" ? "已切换到普通模式" : "已切换到实时模式");
+            }}
+            title={voiceMode === "live"
+              ? `实时模式（${liveProvider === "gemini" ? "Gemini" : "通义千问"}）`
+              : "普通模式（ASR+LLM+TTS）"}
+          >
+            {voiceMode === "live"
+              ? <Zap className="h-5 w-5 text-amber-500" />
+              : <Radio className="h-5 w-5" />
+            }
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setIsMuted(!isMuted)}>
             {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
           </Button>
@@ -247,6 +308,7 @@ export default function VoiceChat() {
           selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice}
           ttsProvider={ttsProvider} voicePackages={voicePackages}
           usageInfo={usageInfo}
+          voiceMode={voiceMode}
         />
       )}
 
@@ -263,24 +325,63 @@ export default function VoiceChat() {
 
         {/* 波形可视化 */}
         <div className="w-64 h-64 md:w-80 md:h-80">
-          <AudioVisualizer isActive={state === "listening"} audioStream={audioStreamRef.current} color={getVisualizerColor(state)} />
+          <AudioVisualizer
+            isActive={isLiveMode ? geminiLive.status === "listening" : state === "listening"}
+            audioStream={effectiveStream || undefined}
+            color={isLiveMode
+              ? (geminiLive.interrupted ? "#f59e0b" : geminiLive.aiSpeaking ? "#22c55e" : "#3b82f6")
+              : getVisualizerColor(effectiveState as any)
+            }
+          />
         </div>
 
         {/* 状态文本 */}
         <div className="mt-4 text-center px-4 w-full">
-          <p className="text-lg font-medium text-muted-foreground">{getStatusText(state)}</p>
-          {currentTranscript && state !== "idle" && (
-            <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">{currentTranscript}</p>
-          )}
-          {aiResponse && (state === "thinking" || state === "speaking") && (
-            <div className="mt-3 max-w-md mx-auto max-h-[40vh] overflow-y-auto rounded-xl bg-muted/30 px-4 py-3">
-              <div className="text-sm leading-relaxed prose prose-sm max-w-none text-left"><SafeMarkdown>{aiResponse}</SafeMarkdown></div>
-            </div>
+          {isLiveMode ? (
+            <>
+              <p className={`text-lg font-medium ${geminiLive.interrupted ? "text-amber-500 animate-pulse" : "text-muted-foreground"}`}>
+                {geminiLive.status === "idle" && "点击开始实时对话"}
+                {geminiLive.status === "connecting" && "正在连接..."}
+                {geminiLive.interrupted && "已打断，正在聆听..."}
+                {geminiLive.status === "listening" && !geminiLive.interrupted && (geminiLive.aiSpeaking ? "AI 正在回答..." : "正在聆听...")}
+              </p>
+              {geminiLive.status === "listening" && (
+                <p className="mt-1 text-xs text-amber-500/80 flex items-center justify-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  {geminiLive.activeProvider === "qwen-omni" ? "通义千问" : geminiLive.connectionMode === "direct" ? "Gemini 直连" : "Gemini 代理"}
+                  {geminiLive.elapsedSeconds > 0 && (
+                    <span className="ml-1 tabular-nums">
+                      · {Math.floor(geminiLive.elapsedSeconds / 60)}:{String(geminiLive.elapsedSeconds % 60).padStart(2, "0")}
+                    </span>
+                  )}
+                </p>
+              )}
+              {geminiLive.userTranscript && (
+                <p className="mt-2 text-sm text-blue-500 max-w-md mx-auto">你：{geminiLive.userTranscript}</p>
+              )}
+              {geminiLive.aiTranscript && (
+                <div className="mt-2 max-w-md mx-auto rounded-xl bg-muted/30 px-4 py-2">
+                  <p className="text-sm text-left">{geminiLive.aiTranscript}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-lg font-medium text-muted-foreground">{getStatusText(state)}</p>
+              {currentTranscript && state !== "idle" && (
+                <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">{currentTranscript}</p>
+              )}
+              {aiResponse && (state === "thinking" || state === "speaking") && (
+                <div className="mt-3 max-w-md mx-auto max-h-[40vh] overflow-y-auto rounded-xl bg-muted/30 px-4 py-3">
+                  <div className="text-sm leading-relaxed prose prose-sm max-w-none text-left"><SafeMarkdown>{aiResponse}</SafeMarkdown></div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {/* 最近一条消息预览 */}
-        {messages.length > 0 && state === "idle" && !showHistory && (
+        {messages.length > 0 && effectiveState === "idle" && !showHistory && (
           <div className="mt-4 max-w-md mx-auto px-4">
             <div className="bg-muted/50 rounded-xl px-4 py-3">
               <p className="text-xs text-muted-foreground mb-1">
@@ -307,93 +408,159 @@ export default function VoiceChat() {
 
       {/* 底部控制区 */}
       <div className="pb-safe px-4 py-6 flex flex-col items-center gap-4">
-        {(state === "processing" || state === "thinking") && (
-          <div className="flex flex-col items-center gap-3">
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg ${getButtonStyle(state)} opacity-70`}>
-              <Loader2 className="w-8 h-8 text-white animate-spin" />
-            </div>
-            <p className="text-xs text-muted-foreground">请稍候...</p>
-          </div>
-        )}
 
-        {state === "speaking" && (
-          <div className="flex flex-col items-center gap-3">
-            <button onClick={stopSpeaking} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg ${getButtonStyle(state)} active:scale-95 transition-all duration-300`}>
-              <Square className="w-7 h-7 text-white" />
-            </button>
-            <p className="text-xs text-muted-foreground">点击打断</p>
-          </div>
-        )}
-
-        {(state === "idle" || state === "listening") && (
+        {/* ════════ Live 模式控制 ════════ */}
+        {isLiveMode && (
           <div className="flex flex-col items-center gap-3 w-full max-w-xs">
-            <button
-              onMouseDown={(e) => { e.preventDefault(); if (state === "idle") startListening(); }}
-              onMouseUp={() => { if (state === "listening") stopListening(); }}
-              onMouseLeave={() => { if (state === "listening") stopListening(); }}
-              onTouchStart={(e) => {
-                e.preventDefault(); e.stopPropagation();
-                (e.currentTarget as any)._touchStartY = e.touches[0].clientY;
-                if (state === "idle") startListening();
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                if (state !== "listening") return;
-                const touch = e.changedTouches[0];
-                const startY = (e.currentTarget as any)._touchStartY || touch.clientY;
-                const deltaY = touch.clientY - startY;
-                if (deltaY < -60) cancelListening();
-                else stopListening();
-              }}
-              onTouchCancel={(e) => { e.preventDefault(); if (state === "listening") cancelListening(); }}
-              onTouchMove={() => {}}
-              className={[
-                "w-full h-16 rounded-2xl flex items-center justify-center gap-3",
-                "shadow-lg select-none transition-all duration-150 outline-none",
-                state === "listening"
-                  ? "bg-red-500 scale-95 shadow-xl"
-                  : "bg-blue-500 hover:bg-blue-600 active:scale-95 active:bg-blue-700",
-              ].join(" ")}
-              style={{ touchAction: "none", WebkitUserSelect: "none" } as React.CSSProperties}
-            >
-              {state === "listening" ? (
-                <>
-                  <div className="flex gap-1 items-end h-6">
-                    {[4, 7, 10, 7, 4].map((h, i) => (
-                      <div key={i} className="w-1.5 bg-white rounded-full" style={{
-                        height: `${h}px`,
-                        animation: "voiceBar 0.5s ease-in-out infinite alternate",
-                        animationDelay: `${i * 0.1}s`,
-                      }} />
-                    ))}
-                  </div>
-                  <span className="text-white font-semibold text-base">松开 发送</span>
-                </>
-              ) : (
-                <>
-                  <Mic className="w-6 h-6 text-white" />
-                  <span className="text-white font-semibold text-base">按住 说话</span>
-                </>
-              )}
-            </button>
+            {geminiLive.status === "connecting" && (
+              <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-amber-500 opacity-70">
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              </div>
+            )}
 
-            {/* 底部提示（含套餐和剩余额度） */}
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground">
-                {state === "listening" ? "松开发送 · 上滑取消" : "按住说话，松开发送 · 空格键快捷"}
+            {geminiLive.status === "idle" && (
+              <button
+                onClick={geminiLive.start}
+                className="w-full h-16 rounded-2xl flex items-center justify-center gap-3 shadow-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 transition-all duration-150"
+              >
+                <Zap className="w-6 h-6 text-white" />
+                <span className="text-white font-semibold text-base">开始实时对话</span>
+              </button>
+            )}
+
+            {geminiLive.status === "listening" && (
+              <button
+                onClick={geminiLive.stop}
+                className="w-full h-16 rounded-2xl flex items-center justify-center gap-3 shadow-lg bg-red-500 hover:bg-red-600 active:scale-95 transition-all duration-150"
+              >
+                <Square className="w-6 h-6 text-white" />
+                <span className="text-white font-semibold text-base">结束对话</span>
+              </button>
+            )}
+
+            <p className="text-xs text-muted-foreground text-center">
+              {geminiLive.status === "idle"
+                ? "实时模式 · 延迟 < 1秒 · 支持随时打断"
+                : geminiLive.status === "listening"
+                  ? "直接说话即可 · AI 会自动回应 · 点击结束"
+                  : "正在连接..."}
+            </p>
+
+            {/* ★ Provider 切换（仅 idle 时显示） */}
+            {geminiLive.status === "idle" && (
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <span className="text-xs text-muted-foreground/60">引擎:</span>
+                <button
+                  onClick={() => setLiveProvider(liveProvider === "gemini" ? "qwen-omni" : "gemini")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors hover:bg-muted"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${liveProvider === "gemini" ? "bg-blue-500" : "bg-green-500"}`} />
+                  {liveProvider === "gemini" ? "Gemini" : "通义千问"}
+                </button>
+              </div>
+            )}
+
+            {/* ★ 运行中显示当前 provider */}
+            {geminiLive.status === "listening" && geminiLive.activeProvider && (
+              <p className="text-[10px] text-muted-foreground/50 text-center mt-0.5">
+                {geminiLive.activeProvider === "qwen-omni" ? "通义千问 Qwen-Omni" : "Google Gemini Live"}
               </p>
-              {usageInfo && state === "idle" && (
-                <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                  {usageInfo.fishCoinCost > 0
-                    ? `${usageInfo.packageName} · ${usageInfo.fishCoinCost} 🐟/轮`
-                    : usageInfo.dailyLimit > 0
-                      ? `${usageInfo.packageName} · 剩余 ${Math.max(0, usageInfo.dailyLimit - usageInfo.usedToday)} 轮`
-                      : usageInfo.packageName
-                  }
-                </p>
-              )}
-            </div>
+            )}
           </div>
+        )}
+
+        {/* ════════ Pipeline 模式控制（原有） ════════ */}
+        {!isLiveMode && (
+          <>
+            {(state === "processing" || state === "thinking") && (
+              <div className="flex flex-col items-center gap-3">
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg ${getButtonStyle(state)} opacity-70`}>
+                  <Loader2 className="w-8 h-8 text-white animate-spin" />
+                </div>
+                <p className="text-xs text-muted-foreground">请稍候...</p>
+              </div>
+            )}
+
+            {state === "speaking" && (
+              <div className="flex flex-col items-center gap-3">
+                <button onClick={stopSpeaking} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg ${getButtonStyle(state)} active:scale-95 transition-all duration-300`}>
+                  <Square className="w-7 h-7 text-white" />
+                </button>
+                <p className="text-xs text-muted-foreground">点击打断</p>
+              </div>
+            )}
+
+            {(state === "idle" || state === "listening") && (
+              <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); if (state === "idle") startListening(); }}
+                  onMouseUp={() => { if (state === "listening") stopListening(); }}
+                  onMouseLeave={() => { if (state === "listening") stopListening(); }}
+                  onTouchStart={(e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    (e.currentTarget as any)._touchStartY = e.touches[0].clientY;
+                    if (state === "idle") startListening();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    if (state !== "listening") return;
+                    const touch = e.changedTouches[0];
+                    const startY = (e.currentTarget as any)._touchStartY || touch.clientY;
+                    const deltaY = touch.clientY - startY;
+                    if (deltaY < -60) cancelListening();
+                    else stopListening();
+                  }}
+                  onTouchCancel={(e) => { e.preventDefault(); if (state === "listening") cancelListening(); }}
+                  onTouchMove={() => {}}
+                  className={[
+                    "w-full h-16 rounded-2xl flex items-center justify-center gap-3",
+                    "shadow-lg select-none transition-all duration-150 outline-none",
+                    state === "listening"
+                      ? "bg-red-500 scale-95 shadow-xl"
+                      : "bg-blue-500 hover:bg-blue-600 active:scale-95 active:bg-blue-700",
+                  ].join(" ")}
+                  style={{ touchAction: "none", WebkitUserSelect: "none" } as React.CSSProperties}
+                >
+                  {state === "listening" ? (
+                    <>
+                      <div className="flex gap-1 items-end h-6">
+                        {[4, 7, 10, 7, 4].map((h, i) => (
+                          <div key={i} className="w-1.5 bg-white rounded-full" style={{
+                            height: `${h}px`,
+                            animation: "voiceBar 0.5s ease-in-out infinite alternate",
+                            animationDelay: `${i * 0.1}s`,
+                          }} />
+                        ))}
+                      </div>
+                      <span className="text-white font-semibold text-base">松开 发送</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-6 h-6 text-white" />
+                      <span className="text-white font-semibold text-base">按住 说话</span>
+                    </>
+                  )}
+                </button>
+
+                {/* 底部提示（含套餐和剩余额度） */}
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">
+                    {state === "listening" ? "松开发送 · 上滑取消" : "按住说话，松开发送 · 空格键快捷"}
+                  </p>
+                  {usageInfo && state === "idle" && (
+                    <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                      {usageInfo.fishCoinCost > 0
+                        ? `${usageInfo.packageName} · ${usageInfo.fishCoinCost} 🐟/轮`
+                        : usageInfo.dailyLimit > 0
+                          ? `${usageInfo.packageName} · 剩余 ${Math.max(0, usageInfo.dailyLimit - usageInfo.usedToday)} 轮`
+                          : usageInfo.packageName
+                      }
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

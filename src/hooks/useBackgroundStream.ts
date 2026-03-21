@@ -19,6 +19,7 @@ export interface StreamEventHandlers {
   onImagePlaceholder?: (data: any) => void;
   onImageCount?: (data: any) => void;
   onImage?: (data: any) => void;
+  onImageFailed?: (data: any) => void;
   onVideoTask?: (data: any) => void;
   onFallback?: (data: any) => void;
   onThinking?: (data: any) => void;
@@ -37,6 +38,7 @@ export interface StreamEventHandlers {
   // 轻量联网搜索
   onWebSearchStart?: (data: { query: string }) => void;
   onWebSearchResult?: (data: { query: string; sources: Array<{ title: string; url: string }> }) => void;
+  onWebSearchProgress?: (data: { phase: string; totalSearches: number; iteration: number; query?: string }) => void;
   onWebSearchDone?: (data: any) => void;
   // 网页抓取
   onUrlFetchStart?: (data: { url: string }) => void;
@@ -119,6 +121,7 @@ export function useBackgroundStream(conversationId: number | null) {
       case 'image_placeholder': h.onImagePlaceholder?.(d); break;
       case 'image_count': h.onImageCount?.(d); break;
       case 'image': h.onImage?.(d); break;
+      case 'image_failed': h.onImageFailed?.(d); break;
       case 'video_task': h.onVideoTask?.(d); break;
       case 'fallback': h.onFallback?.(d); break;
       case 'thinking': h.onThinking?.(d); break;
@@ -141,6 +144,7 @@ export function useBackgroundStream(conversationId: number | null) {
       case 'solution_picker': h.onSolutionPicker?.(d); break;
       case 'web_search_start': h.onWebSearchStart?.(d); break;
       case 'web_search_result': h.onWebSearchResult?.(d); break;
+      case 'web_search_progress': h.onWebSearchProgress?.(d); break;
       case 'web_search_done': h.onWebSearchDone?.(d); break;
       case 'url_fetch_start': h.onUrlFetchStart?.(d); break;
       case 'url_fetch_result': h.onUrlFetchResult?.(d); break;

@@ -101,11 +101,16 @@
     .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
     .btn-primary { background: var(--primary); color: #fff; }
     .btn-primary:hover:not(:disabled) { background: var(--primary-h); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover:not(:disabled) { background: #0d9668; }
     .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
     .btn-outline:hover:not(:disabled) { background: #f3f4f6; }
     .btn-danger { background: transparent; color: var(--danger); border: 1.5px solid rgba(239,68,68,.25); }
     .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,.06); }
+    .btn-danger-solid { background: var(--danger); color: #fff; }
+    .btn-danger-solid:hover:not(:disabled) { background: #dc2626; }
     .btn-sm { height: 34px; font-size: 13px; }
+    .btn-xs { height: 28px; font-size: 12px; border-radius: 6px; }
 
     /* Alert */
     .alert {
@@ -122,7 +127,7 @@
     .divider span { font-size: 12px; color: var(--text-sec); white-space: nowrap; }
 
     /* Status */
-    .status-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .status-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
     .status-dot {
       width: 10px; height: 10px; border-radius: 50%;
       background: #d1d5db; flex-shrink: 0;
@@ -134,7 +139,7 @@
     .status-label { font-size: 15px; font-weight: 600; }
     .status-sub { font-size: 12px; color: var(--text-sec); }
 
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     .info-item { padding: 10px 12px; background: #f8f9fc; border-radius: 8px; border: 1px solid var(--border); }
     .info-item .label { font-size: 11px; color: var(--text-sec); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
     .info-item .value { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-all; }
@@ -142,7 +147,7 @@
     .user-badge {
       display: flex; align-items: center; gap: 10px;
       padding: 12px; background: linear-gradient(135deg, #f0f4ff 0%, #ede9fe 100%);
-      border-radius: 10px; margin-bottom: 16px;
+      border-radius: 10px; margin-bottom: 14px;
     }
     .user-avatar {
       width: 36px; height: 36px; background: var(--primary); border-radius: 10px;
@@ -152,8 +157,24 @@
     .user-name { font-weight: 600; font-size: 14px; }
     .user-id { font-size: 11px; color: var(--text-sec); }
 
-    .footer { margin-top: auto; padding-top: 12px; }
-    .footer-links { display: flex; justify-content: center; gap: 16px; margin-top: 12px; }
+    /* Permission banner */
+    .perm-banner {
+      padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13px; gap: 10px;
+    }
+    .perm-banner.not-auth {
+      background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2);
+      color: #92400e;
+    }
+    .perm-banner.authed {
+      background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2);
+      color: #065f46;
+    }
+
+    .footer { margin-top: auto; padding-top: 10px; }
+    .footer .btn + .btn { margin-top: 8px; }
+    .footer-links { display: flex; justify-content: center; gap: 16px; margin-top: 10px; }
     .footer-links a { font-size: 12px; color: var(--primary); text-decoration: none; cursor: pointer; }
     .footer-links a:hover { text-decoration: underline; }
 
@@ -167,7 +188,7 @@
     .view { display: none; flex-direction: column; flex: 1; }
     .view.active { display: flex; }
 
-    .version-text { text-align: center; font-size: 11px; color: #c0c5d0; padding-top: 10px; }
+    .version-text { text-align: center; font-size: 11px; color: #c0c5d0; padding-top: 8px; }
   </style>
 </head>
 <body>
@@ -235,6 +256,14 @@
           </div>
         </div>
 
+        <!-- ★ 权限状态横幅 -->
+        <div id="permBanner" class="perm-banner not-auth">
+          <span id="permText">⚠️ AI 桌面控制未授权</span>
+          <button class="btn btn-success btn-xs" id="permBtn" onclick="handleAuthorize()" style="width:auto;padding:0 14px;">
+            ✓ 授权
+          </button>
+        </div>
+
         <div class="info-grid">
           <div class="info-item">
             <div class="label">系统</div>
@@ -255,6 +284,10 @@
         </div>
 
         <div class="footer">
+          <!-- ★ Kill Switch -->
+          <button class="btn btn-danger-solid btn-sm" id="killSwitchBtn" onclick="handleKillSwitch()" style="display:none;">
+            ⏹ 紧急停止所有操作
+          </button>
           <button class="btn btn-danger btn-sm" onclick="handleDisconnect()">断开连接并退出登录</button>
           <div class="footer-links">
             <a onclick="openExternal('https://insights.ren')">访问网页版</a>
@@ -263,7 +296,7 @@
       </div>
     </div>
 
-    <div class="version-text">Insi Desktop v0.2.5</div>
+    <div class="version-text">Insi Desktop v0.3.5</div>
   </div>
 
   <script>
@@ -407,8 +440,44 @@
           var pn = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
           document.getElementById('infoPlatform').textContent = pn[s.platform] || s.platform || '—';
           document.getElementById('infoVersion').textContent = 'v' + (s.clientVersion || '?');
-          document.getElementById('infoAuth').textContent = s.authorized ? '已授权' : '未授权';
-          document.getElementById('infoAuth').style.color = s.authorized ? 'var(--success)' : 'var(--warn)';
+
+          // ★ 权限状态更新
+          var authEl = document.getElementById('infoAuth');
+          var permBanner = document.getElementById('permBanner');
+          var permText = document.getElementById('permText');
+          var permBtn = document.getElementById('permBtn');
+          var killBtn = document.getElementById('killSwitchBtn');
+
+          if (s.authorized) {
+            authEl.textContent = '已授权';
+            authEl.style.color = 'var(--success)';
+            permBanner.className = 'perm-banner authed';
+            permText.textContent = '✓ AI 桌面控制已授权';
+            permBtn.textContent = '撤销';
+            permBtn.className = 'btn btn-outline btn-xs';
+            permBtn.style.width = 'auto';
+            permBtn.style.padding = '0 14px';
+            permBtn.onclick = handleRevoke;
+            killBtn.style.display = '';
+          } else {
+            authEl.textContent = '未授权';
+            authEl.style.color = 'var(--warn)';
+            permBanner.className = 'perm-banner not-auth';
+            permText.textContent = '⚠️ AI 桌面控制未授权';
+            permBtn.textContent = '✓ 授权';
+            permBtn.className = 'btn btn-success btn-xs';
+            permBtn.style.width = 'auto';
+            permBtn.style.padding = '0 14px';
+            permBtn.onclick = handleAuthorize;
+            killBtn.style.display = 'none';
+          }
+
+          // 未连接时隐藏权限横幅
+          if (s.status === 'Disconnected') {
+            permBanner.style.display = 'none';
+          } else {
+            permBanner.style.display = '';
+          }
 
           if (s.screen) {
             document.getElementById('infoScreen').textContent =
@@ -421,7 +490,43 @@
       }
 
       await update();
-      statusTimer = setInterval(update, 3000);
+      statusTimer = setInterval(update, 2000);
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ Authorization
+    // ═══════════════════════════════════════════
+    async function handleAuthorize() {
+      try {
+        var result = await invoke('authorize');
+        if (result && result.success) {
+          console.log('[Auth] Authorize requested');
+        }
+      } catch (err) {
+        console.error('Authorize error:', err);
+      }
+    }
+
+    async function handleRevoke() {
+      try {
+        var result = await invoke('revoke');
+        if (result && result.success) {
+          console.log('[Auth] Revoke requested');
+        }
+      } catch (err) {
+        console.error('Revoke error:', err);
+      }
+    }
+
+    async function handleKillSwitch() {
+      try {
+        var result = await invoke('kill_switch');
+        if (result && result.success) {
+          console.log('[KillSwitch] Activated');
+        }
+      } catch (err) {
+        console.error('Kill switch error:', err);
+      }
     }
 
     // ═══════════════════════════════════════════
@@ -446,7 +551,6 @@
       if (!token) return;
 
       try {
-        // 校验 token 是否有效
         var res = await fetch(SERVER + '/api/trpc/auth.me', {
           headers: { 'Authorization': 'Bearer ' + token },
         });
@@ -458,26 +562,81 @@
           await invoke('login', { token: token });
           switchToStatus();
         } else {
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('user_info');
+          // Token 过期，尝试 refresh
+          var refreshed = await tryRefreshToken(token);
+          if (!refreshed) {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_info');
+          }
         }
       } catch (e) {
-        // 网络不可用时仍尝试连接，让状态面板显示"连接中"
         await invoke('login', { token: token });
         switchToStatus();
       }
     }
 
-    // Enter key to login
+    // ★ Token 过期自动刷新
+    async function tryRefreshToken(oldToken) {
+      try {
+        var res = await fetch(SERVER + '/api/auth/refresh', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + oldToken,
+          },
+        });
+        if (!res.ok) return false;
+        var data = await res.json();
+        if (data.token) {
+          localStorage.setItem('auth_token', data.token);
+          await invoke('login', { token: data.token });
+          switchToStatus();
+          return true;
+        }
+      } catch (e) {
+        console.warn('[Auth] Token refresh failed:', e);
+      }
+      return false;
+    }
+
+    // ★ 自动检查更新（每次启动时）
+    async function checkForUpdate() {
+      try {
+        var result = await invoke('plugin:updater|check');
+        if (result && result.available) {
+          var confirmed = confirm(
+            '发现新版本 ' + result.version + '！\n\n' +
+            (result.body || '包含 bug 修复和新功能') +
+            '\n\n是否立即更新？'
+          );
+          if (confirmed) {
+            await invoke('plugin:updater|download_and_install');
+          }
+        }
+      } catch (e) {
+        // updater 不可用（开发模式）或网络错误，静默忽略
+        console.log('[Updater]', e);
+      }
+    }
+
+    // ═══════════════════════════════════════════
+    // Global keyboard shortcut: Escape = Kill Switch
+    // ═══════════════════════════════════════════
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && document.getElementById('loginView').classList.contains('active')) {
         handleLogin();
+      }
+      // Escape 键作为全局 Kill Switch
+      if (e.key === 'Escape' && document.getElementById('statusView').classList.contains('active')) {
+        handleKillSwitch();
       }
     });
 
     // Boot
     window.addEventListener('DOMContentLoaded', function() {
       tryAutoLogin();
+      // 延迟检查更新，不阻塞启动
+      setTimeout(checkForUpdate, 3000);
     });
   </script>
 </body>

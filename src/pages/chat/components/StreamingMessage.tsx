@@ -234,8 +234,9 @@ export function StreamingMessage({ state }: StreamingMessageProps) {
               <ArtifactInlineTrigger
                 artifact={artifact}
                 onOpen={() => {
-                  const { setActiveArtifact } = state as any;
+                  const { setActiveArtifact, openMobileArtifact } = state as any;
                   if (setActiveArtifact) setActiveArtifact(artifact);
+                  if (openMobileArtifact) openMobileArtifact();
                 }}
               />
             );

@@ -43,11 +43,14 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
   const [taskSummary, setTaskSummary] = useState<TaskSummary | null>(null);
   const [contentInfo, setContentInfo] = useState<ContentInfo | null>(null);
   const [initialLoaded, setInitialLoaded] = useState(false);
+  const [helpNeeded, setHelpNeeded] = useState<{ reason: string; category: string } | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const stepCountRef = useRef(0);
   const startTimeRef = useRef(Date.now());
   const switchingRef = useRef(false);
+  // ★ 初始加载后如果任务已终态，跳过 socket 连接和轮询
+  const isTerminalRef = useRef(false);
 
   // 通用 fetch headers
   const authHeaders = () => {
@@ -112,8 +115,12 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
   }, [isMultiTask, allTasks, resetForNewTask]);
 
   // 初始化时从 API 加载任务状态（刷新后恢复）
+  // ★ 用 loadedOnceRef 防止 setActiveTaskId 触发的级联重载，但保证首次加载完整执行
+  const loadedOnceRef = useRef(false);
   useEffect(() => {
     if (!activeTaskId) return;
+    if (loadedOnceRef.current) return; // 只执行一次
+    loadedOnceRef.current = true;
     
     const loadTaskState = async () => {
       try {
@@ -133,6 +140,12 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
           }
           
           if (data.contents?.length > 0) setContentInfo(data.contents[0]);
+
+          // ★ 恢复浏览器截图（刷新后保留最后一帧画面）
+          if (data.lastScreenshot) {
+            setBrowserScreenshot(data.lastScreenshot);
+            if (task.currentStep) setBrowserUrl(task.currentStep);
+          }
           
           if (data.steps?.length > 0) {
             const restoredSteps: StepItem[] = data.steps.map((s: any, idx: number) => ({
@@ -147,13 +160,57 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
           }
           
           if (["completed", "failed", "cancelled"].includes(task.status)) {
-            // ★ 多账号场景：如果当前任务已完成，尝试切换到下一个
             if (isMultiTask) {
+              // ★ 历史卡片优化：直接跳到最后一个任务的最终状态，不逐个 switchToNextTask
+              const lastTask = allTasks![allTasks!.length - 1];
+              const lastIsThis = lastTask.taskId === activeTaskId;
+              
+              if (!lastIsThis) {
+                // 直接加载最后一个任务的状态
+                try {
+                  const lastRes = await fetch(`/api/automation/tasks/${lastTask.taskId}`, {
+                    credentials: "include",
+                    headers: authHeaders(),
+                  });
+                  if (lastRes.ok) {
+                    const lastData = await lastRes.json();
+                    const lastTaskData = lastData.task;
+                    if (["completed", "failed", "cancelled"].includes(lastTaskData.status)) {
+                      // 所有任务都已终态 — 直接标记整批完成，不触发逐个切换
+                      isTerminalRef.current = true;
+                      // 构建已完成列表
+                      const completed = allTasks!.map(t => ({
+                        taskId: t.taskId,
+                        username: t.username,
+                        success: true, // 简化，详情可展开查看
+                      }));
+                      setCompletedTasks(completed);
+                      setActiveTaskId(lastTask.taskId);
+                      setActiveTaskIndex(allTasks!.length - 1);
+                      setStatus(lastTaskData.status);
+                      setProgress(lastTaskData.progress || 100);
+                      setCurrentStep(lastTaskData.status === "completed" ? "任务完成" : "任务结束");
+                      if (lastTaskData.resultSummary) {
+                        try { setTaskSummary(JSON.parse(lastTaskData.resultSummary)); } catch {}
+                      }
+                      if (lastData.contents?.length > 0) setContentInfo(lastData.contents[0]);
+                      return; // 跳过下面的 switchToNextTask
+                    }
+                  }
+                } catch { /* fall through to switchToNextTask */ }
+              }
+              
+              // 最后一个任务不在终态或加载失败，走正常切换逻辑
               const summary = task.resultSummary ? JSON.parse(task.resultSummary) : null;
               const content = data.contents?.[0] || null;
               switchToNextTask(activeTaskId, summary, content);
+              const idx = allTasks!.findIndex(t => t.taskId === activeTaskId);
+              if (idx >= allTasks!.length - 1) {
+                isTerminalRef.current = true;
+              }
             } else {
               setCurrentStep(task.status === "completed" ? "任务完成" : "任务结束");
+              isTerminalRef.current = true;
             }
           } else if (task.currentStep) {
             setCurrentStep(task.currentStep);
@@ -249,6 +306,17 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
         addStep(event);
         break;
       case "task_status":
+        // ★ 忽略 completed_summary（它只是附加数据，不应覆盖真实的 completed/failed 状态）
+        if (event.payload.status === "completed_summary" || event.payload.status === "batch_complete") {
+          // 从 completed_summary 中提取数据
+          if (event.payload.status === "completed_summary" && event.payload.resultSummary) {
+            setTaskSummary(event.payload.resultSummary);
+            if (event.payload.resultSummary.contentInfo) {
+              setContentInfo(event.payload.resultSummary.contentInfo);
+            }
+          }
+          break;
+        }
         setStatus(event.payload.status);
         if (event.payload.message) setCurrentStep(event.payload.message);
         if (["completed", "failed", "cancelled"].includes(event.payload.status)) {
@@ -262,12 +330,25 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
       case "browser_loading":
         setBrowserUrl(event.payload.url || "");
         break;
+      // ★ AI 请求用户协同
+      case "help_needed" as any:
+        setHelpNeeded({ reason: event.payload.reason || '', category: event.payload.category || 'other' });
+        break;
+      // ★ 接管状态变化（用户接管/归还）
+      case "takeover_status" as any:
+        if (!event.payload.active) {
+          setHelpNeeded(null); // 归还后清除求助状态
+        }
+        break;
     }
   }, [activeTaskId, addStep, loadCompletionData]);
 
   // 连接 Socket.io — ★ 当 activeTaskId 变化时重新连接
+  // ★ 等初始加载完成，如果任务已终态则跳过连接
   useEffect(() => {
     if (!activeTaskId) return;
+    if (!initialLoaded) return; // 等初始加载完成再决定是否连接
+    if (isTerminalRef.current) return; // 任务已结束，不需要 socket
 
     const authToken = localStorage.getItem('auth_token') || '';
     const socket = io({
@@ -298,10 +379,13 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [activeTaskId, handleSandboxEvent]);
+  }, [activeTaskId, initialLoaded, handleSandboxEvent]);
 
   // 轮询任务状态（socket 备份）
   useEffect(() => {
+    if (!initialLoaded) return; // 等初始加载完成
+    if (isTerminalRef.current) return; // ★ 任务已结束，不需要轮询
+
     if (["completed", "failed", "cancelled"].includes(status)) {
       // ★ 多账号场景：当前任务完成后不停止轮询，可能需要切换
       if (!isMultiTask) return;
@@ -316,30 +400,33 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
           credentials: "include",
           headers: authHeaders(),
         });
-        if (res.ok) {
-          const data = await res.json();
-          const task = data.task;
-          setStatus(task.status);
-          setProgress(task.progress || 0);
-          if (task.currentStep) setCurrentStep(task.currentStep);
-          if (["completed", "failed", "cancelled"].includes(task.status)) {
-            if (task.resultSummary) {
-              try { setTaskSummary(JSON.parse(task.resultSummary)); } catch {}
-            }
-            if (data.contents?.length > 0) setContentInfo(data.contents[0]);
+        if (!res.ok) {
+          // ★ 任务不存在（已清理/404）→ 停止轮询
+          if (res.status === 404) { clearInterval(interval); isTerminalRef.current = true; }
+          return;
+        }
+        const data = await res.json();
+        const task = data.task;
+        setStatus(task.status);
+        setProgress(task.progress || 0);
+        if (task.currentStep) setCurrentStep(task.currentStep);
+        if (["completed", "failed", "cancelled"].includes(task.status)) {
+          if (task.resultSummary) {
+            try { setTaskSummary(JSON.parse(task.resultSummary)); } catch {}
+          }
+          if (data.contents?.length > 0) setContentInfo(data.contents[0]);
             
-            // ★ 多账号场景：触发切换
-            if (isMultiTask) {
-              const summary = task.resultSummary ? JSON.parse(task.resultSummary) : null;
-              switchToNextTask(activeTaskId, summary, data.contents?.[0] || null);
-            }
+          // ★ 多账号场景：触发切换
+          if (isMultiTask) {
+            const summary = task.resultSummary ? JSON.parse(task.resultSummary) : null;
+            switchToNextTask(activeTaskId, summary, data.contents?.[0] || null);
           }
         }
       } catch {}
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [activeTaskId, status, isMultiTask, allTasks, switchToNextTask]);
+  }, [activeTaskId, status, initialLoaded, isMultiTask, allTasks, switchToNextTask]);
 
   // ★ 多账号进度指示器
   const multiTaskHeader = isMultiTask ? (
@@ -347,8 +434,9 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
       <span className="text-xs text-muted-foreground">批量执行：</span>
       <div className="flex items-center gap-1">
         {allTasks!.map((t, idx) => {
-          const isCompleted = completedTasks.some(ct => ct.taskId === t.taskId);
-          const isActive = t.taskId === activeTaskId;
+          const isCompleted = completedTasks.some(ct => ct.taskId === t.taskId)
+            || (t.taskId === activeTaskId && ['completed', 'failed', 'cancelled'].includes(status));
+          const isActive = t.taskId === activeTaskId && !isCompleted;
           const isPending = !isCompleted && !isActive;
           return (
             <div
@@ -391,6 +479,9 @@ export function AutomationTaskCard({ taskId, taskName, siteName, allTasks }: Aut
         thinking={thinking}
         browserUrl={browserUrl}
         browserScreenshot={browserScreenshot}
+        helpNeeded={helpNeeded}
+        socket={socketRef.current}
+        onDismissHelp={() => setHelpNeeded(null)}
       />
     </div>
   );

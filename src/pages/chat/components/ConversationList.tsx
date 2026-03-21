@@ -177,9 +177,9 @@ export const ConversationList = memo(function ConversationList({
 
   return (
     <>
-      {/* ═══════════ 移动端对话列表抽屉 ═══════════ */}
+      {/* ═══════════ 对话列表抽屉（移动端+桌面端通用） ═══════════ */}
       {showMobileSidebar && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-50">
           {/* 背景遮罩 */}
           <div className="absolute inset-0 bg-black/50" onClick={closeMobileSidebar} />
           {/* 侧边栏内容 */}
@@ -234,56 +234,8 @@ export const ConversationList = memo(function ConversationList({
         </div>
       )}
 
-      {/* ═══════════ 桌面端对话列表 ═══════════ */}
-      {/* 折叠后的展开按钮 */}
-      {isHistoryCollapsed && (
-        <Button
-          variant="ghost" size="sm"
-          onClick={() => setIsHistoryCollapsed(false)}
-          className="hidden md:flex h-10 w-10 p-0 flex-shrink-0 rounded-full"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </Button>
-      )}
-
-      {!isHistoryCollapsed && (
-        <Card className="hidden md:flex w-64 flex-shrink-0 overflow-hidden flex-col min-h-0 py-0 gap-0">
-          <CardContent className="p-4 overflow-y-auto flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">对话历史</h3>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost" size="sm"
-                  onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
-                  className="h-8 w-8 p-0" title="搜索对话 (Ctrl+K)"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setIsHistoryCollapsed(true)} className="h-8 w-8 p-0">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {conversations?.map((conv: any) => (
-                <ConversationItem
-                  key={conv.id} conv={conv} isSelected={selectedConversationId === conv.id}
-                  onSelect={() => {
-                    setSelectedConversationId(conv.id);
-                    loadConversationMessages(conv.id);
-                  }}
-                  onDelete={handleDeleteConversation}
-                  onExport={(id) => handleExportConversation(id)}
-                  onExportPdf={handleExportPdf}
-                  onManageTags={handleManageTags}
-                    onShare={handleShareConversation}
-                />
-              ))}
-              {(!conversations || conversations.length === 0) && <EmptyState text={t('chat.clickNewToStart')} />}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* ═══════════ 桌面端对话列表 — 隐藏独立面板，统一用抽屉 ═══════════ */}
+      {/* ★ 方案A: 不再显示独立面板。桌面端通过 ChatToolbar 的按钮触发 showMobileSidebar 打开抽屉 */}
     </>
   );
 }, (prev, next) => {

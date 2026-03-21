@@ -15,9 +15,12 @@ import { AutomationTaskCard } from '@/components/AutomationTaskCard';
 import { ResearchFlowSteps } from '@/components/researchFlow';
 import { ArtifactCard } from '@/components/ArtifactCard';
 import { WebSearchSources } from '@/components/WebSearchIndicator';
+import { VideoPlayer } from '@/components/VideoPlayer'; // ★ T12-3
+import { HomeworkResultCard } from '@/components/HomeworkResultCard'; // ★ T14-2
 import { RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 import type { ContentProps } from './types';
 
 export function AssistantTaskCards({ msg, state, handleSendMessage }: ContentProps) {
@@ -88,11 +91,16 @@ export function AssistantTaskCards({ msg, state, handleSendMessage }: ContentPro
     );
   }
 
+  // ★ T14-2: 作业批改结果卡片
+  if ((msg as any).homeworkResult) {
+    return <HomeworkResultCard data={(msg as any).homeworkResult} />;
+  }
+
   return null;
 }
 
 export function AssistantRegularContent({
-  msg, index, displayContent, state,
+  msg, index, displayContent, state, isStreaming,
   handleSendMessage, handleImageDownload, normalizeImageUrl, extractImagesFromMarkdown,
 }: ContentProps) {
   const { t } = useTranslation();
@@ -105,6 +113,23 @@ export function AssistantRegularContent({
 
   return (
     <div className="w-full ml-0 pl-0 space-y-3">
+      {/* ★ T12-3: videoUrl 属性直接渲染播放器 */}
+      {(msg as any).videoUrl && (
+        <div className="w-full mb-3">
+          <VideoPlayer
+            src={(msg as any).videoUrl}
+            autoPlay
+            loop
+            className="max-w-[500px]"
+            onDownload={() => {
+              const a = document.createElement('a');
+              a.href = (msg as any).videoUrl;
+              a.download = (msg as any).videoUrl.split('/').pop() || 'video.mp4';
+              a.click();
+            }}
+          />
+        </div>
+      )}
       {/* 图片区域（全宽，位于顶部） */}
       {msg.images && msg.images.length > 0 && (
         <div className="w-full ml-0 pl-0 mb-3">
@@ -193,6 +218,33 @@ export function AssistantRegularContent({
       )}
 
       {/* 显示文本内容 */}
+      {/* ★ T12-3: 检测视频 URL 并内联播放 */}
+      {displayContent && (() => {
+        const VIDEO_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:mp4|webm|mov)(?:\?[^\s"'<>]*)?/gi;
+        const videoUrls = displayContent.match(VIDEO_URL_RE);
+        if (!videoUrls || videoUrls.length === 0) return null;
+        // 去重
+        const unique = [...new Set(videoUrls)];
+        return (
+          <div className="w-full space-y-2 mb-3">
+            {unique.map((url, i) => (
+              <VideoPlayer
+                key={`video-${i}`}
+                src={url}
+                autoPlay
+                loop
+                className="max-w-[500px]"
+                onDownload={() => {
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = url.split('/').pop() || 'video.mp4';
+                  a.click();
+                }}
+              />
+            ))}
+          </div>
+        );
+      })()}
       {displayContent && displayContent !== '[图片]' && (() => {
         const isErrorMessage = (msg as any).isError;
         const hasImageDescription =
@@ -222,9 +274,15 @@ export function AssistantRegularContent({
                   hasImages={msg.images && msg.images.length > 0}
                   conversationId={state.selectedConversationId ?? undefined}
                   messageIndex={index}
-                  content={cleanAssistantContent(msg.content)}
+                  content={cleanAssistantContent(displayContent)}
                   filePackageUrl={msg.filePackageUrl}
+                  streaming={isStreaming}
                 />
+                {/* ★ 统一渲染：打字光标（流式期间显示，完成后淡出） */}
+                <span className={cn(
+                  "inline-block w-[2px] h-[1.1em] bg-current ml-[1px] align-text-bottom transition-opacity duration-300",
+                  isStreaming ? "opacity-70 animate-pulse" : "opacity-0"
+                )} />
               </div>
             )}
           </div>

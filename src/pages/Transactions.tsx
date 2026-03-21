@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +8,8 @@ import { useState, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from '@/components/DashboardLayout';
+import { parseTransactionDescription, CATEGORY_CONFIG } from '@/lib/transactionDisplay';
+import { TransactionBadge } from '@/components/TransactionItem';
 
 export default function Transactions() {
   const { t } = useTranslation();
@@ -65,28 +66,6 @@ export default function Transactions() {
     return data.slice(-30);
   }, [transactions]);
 
-  const getTransactionTypeBadge = (type: string) => {
-    const badges: Record<string, { label: string; icon: any; className: string }> = {
-      recharge: { 
-        label: t('pages.transactions.type') === '类型' ? '充值' : 'Recharge', 
-        icon: TrendingUp, 
-        className: "bg-green-500/10 text-green-500" 
-      },
-      consume: { 
-        label: t('pages.transactions.type') === '类型' ? '消费' : 'Consume', 
-        icon: TrendingDown, 
-        className: "bg-red-500/10 text-red-500" 
-      },
-    };
-    const badge = badges[type] || badges.consume;
-    const Icon = badge.icon;
-    return (
-      <Badge className={badge.className}>
-        <Icon className="h-3 w-3 mr-1" />
-        {badge.label}
-      </Badge>
-    );
-  };
 
   return (
     <DashboardLayout>
@@ -253,17 +232,23 @@ export default function Transactions() {
                 {filteredTransactions.map((transaction) => {
                   const amount = parseFloat(transaction.amount);
                   const isPositive = amount > 0;
+                  const parsed = parseTransactionDescription(transaction.description);
                   
                   return (
                     <TableRow key={transaction.id}>
-                      <TableCell>{getTransactionTypeBadge(transaction.type)}</TableCell>
+                      <TableCell>
+                        <TransactionBadge category={parsed.category} />
+                      </TableCell>
                       <TableCell>
                         <span className={isPositive ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
                           {isPositive ? "+" : ""}{amount.toFixed(2)} 🐟币
                         </span>
                       </TableCell>
-                      <TableCell className="max-w-md truncate">
-                        {transaction.description || "-"}
+                      <TableCell className="max-w-md">
+                        <div className="truncate text-sm">{parsed.label}</div>
+                        {parsed.detail && (
+                          <div className="text-xs text-muted-foreground truncate">{parsed.detail}</div>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         → {transaction.balanceAfter}

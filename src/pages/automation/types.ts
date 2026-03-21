@@ -54,3 +54,8 @@ export async function apiFetch(path: string, options?: RequestInit) {
   }
   return res.json();
 }
+
+/** 清理系统注入的 [注意：...] 前缀 */
+export function cleanInstruction(raw: string): string {
+  return raw.replace(/^\[注意：[^\]]*\]\s*/g, "").trim();
+}

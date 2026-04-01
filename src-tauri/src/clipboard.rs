@@ -50,21 +50,10 @@ pub fn write_clipboard(text: &str) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        // ★ 使用 stdin pipe 传数据，避免命令行参数注入
-        let mut child = Command::new("powershell")
-            .args(["-Command", "Set-Clipboard -Value ($input | Out-String).TrimEnd()"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("写入剪贴板失败: {}", e))?;
-        if let Some(ref mut stdin) = child.stdin {
-            stdin
-                .write_all(text.as_bytes())
-                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
-        }
-        child
-            .wait()
+        let escaped = text.replace("'", "''");
+        Command::new("powershell")
+            .args(["-Command", &format!("Set-Clipboard -Value '{}'", escaped)])
+            .output()
             .map_err(|e| format!("写入剪贴板失败: {}", e))?;
         Ok(())
     }

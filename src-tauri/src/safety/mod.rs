@@ -89,13 +89,6 @@ pub fn is_dangerous_hotkey(keys: &[String]) -> Option<String> {
         ("ctrl+alt+delete", "系统安全操作"),
         ("ctrl+alt+del", "系统安全操作"),
         ("cmd+option+esc", "强制退出管理器"),
-        // ★ macOS 危险组合
-        ("cmd+shift+q", "退出登录/注销"),
-        ("cmd+ctrl+q", "锁定屏幕"),
-        ("cmd+option+power", "睡眠"),
-        ("cmd+ctrl+power", "强制重启"),
-        // ★ Windows 危险组合
-        ("win+l", "锁定计算机"),
     ];
 
     for (combo, reason) in &blocked {

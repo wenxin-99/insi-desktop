@@ -8,91 +8,81 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #f5f6fa;
-      --card:     #ffffff;
-      --border:   #e2e5ef;
-      --text:     #1a1d2e;
-      --text-sec: #6b7280;
-      --primary:  #3b5bfe;
-      --primary-h:#2d4adb;
-      --success:  #10b981;
-      --warn:     #f59e0b;
-      --danger:   #ef4444;
-      --radius:   12px;
-      --shadow:   0 2px 12px rgba(0,0,0,.06);
+      --bg: #f5f6fa; --card: #ffffff; --border: #e2e5ef;
+      --text: #1a1d2e; --text-sec: #6b7280;
+      --primary: #3b5bfe; --primary-h: #2d4adb; --primary-l: rgba(59,91,254,.08);
+      --success: #10b981; --warn: #f59e0b; --danger: #ef4444;
+      --radius: 12px; --shadow: 0 2px 12px rgba(0,0,0,.06);
+      --screenshot-bg: #1a1d2e;
+      color-scheme: light dark;
+    }
+
+    /* ★ 深色模式 */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117; --card: #1a1d2e; --border: #2d3148;
+        --text: #e4e7ef; --text-sec: #8b92a5;
+        --primary: #6b8aff; --primary-h: #5a76e8; --primary-l: rgba(107,138,255,.12);
+        --shadow: 0 2px 12px rgba(0,0,0,.25);
+        --screenshot-bg: #0a0c14;
+      }
+    }
+    html[data-theme="dark"] {
+      --bg: #0f1117; --card: #1a1d2e; --border: #2d3148;
+      --text: #e4e7ef; --text-sec: #8b92a5;
+      --primary: #6b8aff; --primary-h: #5a76e8; --primary-l: rgba(107,138,255,.12);
+      --shadow: 0 2px 12px rgba(0,0,0,.25);
+      --screenshot-bg: #0a0c14;
+    }
+    html[data-theme="light"] {
+      --bg: #f5f6fa; --card: #ffffff; --border: #e2e5ef;
+      --text: #1a1d2e; --text-sec: #6b7280;
+      --primary: #3b5bfe; --primary-h: #2d4adb; --primary-l: rgba(59,91,254,.08);
+      --shadow: 0 2px 12px rgba(0,0,0,.06);
+      --screenshot-bg: #1a1d2e;
     }
 
     html, body {
       height: 100%;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-      font-size: 14px;
-      color: var(--text);
-      background: var(--bg);
-      -webkit-font-smoothing: antialiased;
-      user-select: none;
-      overflow: hidden;
+      font-size: 14px; color: var(--text); background: var(--bg);
+      -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden;
     }
 
-    #app {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      padding: 20px;
-    }
+    #app { display: flex; flex-direction: column; height: 100%; padding: 16px 20px; }
 
-    /* Brand */
-    .brand {
-      text-align: center;
-      padding: 8px 0 18px;
-    }
+    .brand { text-align: center; padding: 4px 0 14px; }
     .brand-icon {
-      width: 48px; height: 48px;
-      margin: 0 auto 10px;
+      width: 44px; height: 44px; margin: 0 auto 8px;
       background: linear-gradient(135deg, #3b5bfe 0%, #6366f1 100%);
-      border-radius: 14px;
-      display: flex; align-items: center; justify-content: center;
+      border-radius: 13px; display: flex; align-items: center; justify-content: center;
       box-shadow: 0 4px 16px rgba(59,91,254,.3);
     }
-    .brand-icon svg { width: 26px; height: 26px; }
-    .brand h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
-    .brand p { font-size: 12px; color: var(--text-sec); margin-top: 2px; }
+    .brand-icon svg { width: 24px; height: 24px; }
+    .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+    .brand p { font-size: 11px; color: var(--text-sec); margin-top: 2px; }
 
-    /* Card */
     .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 20px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 16px; flex: 1;
+      display: flex; flex-direction: column; overflow-y: auto;
     }
 
-    /* Form */
-    .form-group { margin-bottom: 14px; }
-    .form-group label {
-      display: block; font-size: 13px; font-weight: 600;
-      margin-bottom: 6px; color: var(--text);
-    }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: var(--text); }
     .form-group input {
-      width: 100%; height: 42px; padding: 0 14px;
+      width: 100%; height: 40px; padding: 0 12px;
       border: 1.5px solid var(--border); border-radius: 8px;
-      font-size: 14px; color: var(--text); background: #fafbfc;
+      font-size: 14px; color: var(--text); background: var(--card);
       outline: none; transition: border-color .2s, box-shadow .2s;
     }
-    .form-group input:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(59,91,254,.12);
-      background: #fff;
-    }
-    .form-group input::placeholder { color: #b0b5c3; }
+    .form-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-l); }
+    .form-group input::placeholder { color: var(--text-sec); opacity: .6; }
     .form-group input:disabled { opacity: .55; cursor: not-allowed; }
 
-    /* Buttons */
     .btn {
-      width: 100%; height: 42px; border: none; border-radius: 8px;
+      width: 100%; height: 40px; border: none; border-radius: 8px;
       font-size: 14px; font-weight: 600; cursor: pointer;
       display: flex; align-items: center; justify-content: center; gap: 6px;
       transition: background .15s, transform .1s, opacity .15s;
@@ -102,81 +92,63 @@
     .btn-primary { background: var(--primary); color: #fff; }
     .btn-primary:hover:not(:disabled) { background: var(--primary-h); }
     .btn-success { background: var(--success); color: #fff; }
-    .btn-success:hover:not(:disabled) { background: #0d9668; }
     .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
-    .btn-outline:hover:not(:disabled) { background: #f3f4f6; }
+    .btn-outline:hover:not(:disabled) { background: var(--primary-l); }
     .btn-danger { background: transparent; color: var(--danger); border: 1.5px solid rgba(239,68,68,.25); }
-    .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,.06); }
     .btn-danger-solid { background: var(--danger); color: #fff; }
-    .btn-danger-solid:hover:not(:disabled) { background: #dc2626; }
     .btn-sm { height: 34px; font-size: 13px; }
     .btn-xs { height: 28px; font-size: 12px; border-radius: 6px; }
 
-    /* Alert */
     .alert {
       padding: 10px 14px; border-radius: 8px; font-size: 13px;
-      margin-bottom: 14px; display: none; line-height: 1.4;
+      margin-bottom: 12px; display: none; line-height: 1.4;
     }
     .alert.show { display: block; }
-    .alert-error { background: rgba(239,68,68,.08); color: #b91c1c; border: 1px solid rgba(239,68,68,.15); }
-    .alert-success { background: rgba(16,185,129,.08); color: #047857; border: 1px solid rgba(16,185,129,.15); }
+    .alert-error { background: rgba(239,68,68,.08); color: #ef4444; border: 1px solid rgba(239,68,68,.15); }
+    .alert-success { background: rgba(16,185,129,.08); color: var(--success); border: 1px solid rgba(16,185,129,.15); }
 
-    /* Divider */
-    .divider { display: flex; align-items: center; margin: 16px 0; gap: 12px; }
+    .divider { display: flex; align-items: center; margin: 14px 0; gap: 12px; }
     .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
     .divider span { font-size: 12px; color: var(--text-sec); white-space: nowrap; }
 
-    /* Status */
-    .status-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-    .status-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: #d1d5db; flex-shrink: 0;
-    }
+    .status-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
     .status-dot.connected { background: var(--success); box-shadow: 0 0 8px rgba(16,185,129,.45); }
     .status-dot.connecting { background: var(--warn); animation: pulse 1.2s infinite; }
-    .status-dot.error { background: var(--danger); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
     .status-label { font-size: 15px; font-weight: 600; }
     .status-sub { font-size: 12px; color: var(--text-sec); }
 
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .info-item { padding: 10px 12px; background: #f8f9fc; border-radius: 8px; border: 1px solid var(--border); }
-    .info-item .label { font-size: 11px; color: var(--text-sec); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .info-item { padding: 8px 10px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); }
+    .info-item .label { font-size: 11px; color: var(--text-sec); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
     .info-item .value { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-all; }
 
     .user-badge {
       display: flex; align-items: center; gap: 10px;
-      padding: 12px; background: linear-gradient(135deg, #f0f4ff 0%, #ede9fe 100%);
-      border-radius: 10px; margin-bottom: 14px;
+      padding: 10px; background: var(--primary-l); border-radius: 10px; margin-bottom: 12px;
     }
     .user-avatar {
-      width: 36px; height: 36px; background: var(--primary); border-radius: 10px;
+      width: 34px; height: 34px; background: var(--primary); border-radius: 10px;
       display: flex; align-items: center; justify-content: center;
-      color: #fff; font-weight: 700; font-size: 15px;
+      color: #fff; font-weight: 700; font-size: 14px;
     }
     .user-name { font-weight: 600; font-size: 14px; }
     .user-id { font-size: 11px; color: var(--text-sec); }
 
-    /* Permission banner */
     .perm-banner {
-      padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
+      padding: 8px 12px; border-radius: 8px; margin-bottom: 12px;
       display: flex; align-items: center; justify-content: space-between;
-      font-size: 13px; gap: 10px;
+      font-size: 13px; gap: 8px;
     }
-    .perm-banner.not-auth {
-      background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2);
-      color: #92400e;
-    }
-    .perm-banner.authed {
-      background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2);
-      color: #065f46;
-    }
+    .perm-banner.not-auth { background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2); color: #d97706; }
+    .perm-banner.authed { background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2); color: var(--success); }
 
-    .footer { margin-top: auto; padding-top: 10px; }
-    .footer .btn + .btn { margin-top: 8px; }
-    .footer-links { display: flex; justify-content: center; gap: 16px; margin-top: 10px; }
+    .footer { margin-top: auto; padding-top: 8px; }
+    .footer .btn + .btn { margin-top: 6px; }
+    .footer-links { display: flex; justify-content: center; gap: 16px; margin-top: 8px; }
     .footer-links a { font-size: 12px; color: var(--primary); text-decoration: none; cursor: pointer; }
-    .footer-links a:hover { text-decoration: underline; }
 
     .spinner {
       display: inline-block; width: 16px; height: 16px;
@@ -187,29 +159,239 @@
 
     .view { display: none; flex-direction: column; flex: 1; }
     .view.active { display: flex; }
+    .version-text { text-align: center; font-size: 11px; color: var(--text-sec); opacity: .5; padding-top: 6px; }
 
-    .version-text { text-align: center; font-size: 11px; color: #c0c5d0; padding-top: 8px; }
+    /* ★ 权限引导 */
+    .perm-wizard { text-align: center; }
+    .perm-wizard h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+    .perm-wizard .perm-desc { font-size: 13px; color: var(--text-sec); line-height: 1.5; margin-bottom: 16px; }
+    .perm-step {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px; border-radius: 10px; margin-bottom: 10px;
+      border: 1.5px solid var(--border); text-align: left;
+    }
+    .perm-step.granted { border-color: rgba(16,185,129,.3); background: rgba(16,185,129,.04); }
+    .perm-step.missing { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.04); }
+    .perm-step-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+    .perm-step.granted .perm-step-icon { background: rgba(16,185,129,.12); }
+    .perm-step.missing .perm-step-icon { background: rgba(245,158,11,.12); }
+    .perm-step-content { flex: 1; }
+    .perm-step-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+    .perm-step-hint { font-size: 12px; color: var(--text-sec); line-height: 1.4; }
+    .perm-step-action { margin-top: 8px; }
+    .perm-step-action .btn { width: auto; display: inline-flex; padding: 0 16px; }
+    .perm-recheck { margin-top: 16px; }
+
+    /* ★ 预览面板 */
+    .preview-panel { border: 1.5px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 10px; transition: border-color .3s; }
+    .preview-panel.active { border-color: rgba(59,91,254,.35); }
+    .preview-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg); border-bottom: 1px solid var(--border); cursor: pointer; }
+    .preview-header-left { display: flex; align-items: center; gap: 8px; }
+    .preview-pulse { width: 8px; height: 8px; border-radius: 50%; background: #d1d5db; }
+    .preview-pulse.running { background: var(--primary); animation: pulse 1s infinite; }
+    .preview-pulse.completed { background: var(--success); }
+    .preview-pulse.failed { background: var(--danger); }
+    .preview-title { font-size: 13px; font-weight: 600; }
+    .preview-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+    .preview-badge.running { background: var(--primary-l); color: var(--primary); }
+    .preview-badge.completed { background: rgba(16,185,129,.1); color: var(--success); }
+    .preview-badge.failed { background: rgba(239,68,68,.1); color: var(--danger); }
+    .preview-badge.idle { background: var(--bg); color: var(--text-sec); }
+    .preview-body { max-height: 0; overflow: hidden; transition: max-height .3s ease-out; }
+    .preview-body.expanded { max-height: 400px; overflow-y: auto; }
+    .preview-screenshot { padding: 10px; background: var(--screenshot-bg); }
+    .preview-screenshot img { width: 100%; border-radius: 6px; }
+    .preview-goal { padding: 8px 12px; font-size: 12px; color: var(--text-sec); border-bottom: 1px solid var(--border); }
+    .preview-goal strong { color: var(--text); }
+    .preview-steps { padding: 8px 0; max-height: 180px; overflow-y: auto; }
+    .step-item { display: flex; align-items: flex-start; gap: 10px; padding: 5px 12px; font-size: 12px; }
+    .step-indicator { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 10px; font-weight: 700; margin-top: 1px; }
+    .step-indicator.success { background: rgba(16,185,129,.12); color: var(--success); }
+    .step-indicator.running { background: var(--primary-l); color: var(--primary); animation: pulse 1s infinite; }
+    .step-indicator.failed { background: rgba(239,68,68,.1); color: var(--danger); }
+    .step-indicator.pending { background: var(--bg); color: var(--text-sec); }
+    .step-content { flex: 1; }
+    .step-tool { font-weight: 600; color: var(--text); }
+    .step-desc { color: var(--text-sec); margin-top: 1px; }
+    .step-error { color: var(--danger); font-size: 11px; margin-top: 2px; }
+    .preview-empty { padding: 24px 12px; text-align: center; color: var(--text-sec); font-size: 13px; }
+    .preview-empty svg { margin-bottom: 8px; opacity: .4; }
+    .preview-progress { height: 3px; background: var(--border); border-radius: 2px; margin: 0 12px 8px; overflow: hidden; }
+    .preview-progress-bar { height: 100%; background: var(--primary); border-radius: 2px; transition: width .3s ease; }
+
+    /* ★ Tab bar */
+    .tab-bar { display: flex; gap: 2px; margin-bottom: 10px; background: var(--bg); border-radius: 8px; padding: 3px; }
+    .tab-item {
+      flex: 1; text-align: center; padding: 6px 0; font-size: 12px; font-weight: 600;
+      border-radius: 6px; cursor: pointer; color: var(--text-sec); transition: all .2s;
+    }
+    .tab-item.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .tab-item:hover:not(.active) { color: var(--text); }
+    .tab-content { display: none; flex-direction: column; flex: 1; overflow-y: auto; }
+    .tab-content.active { display: flex; }
+
+    /* ★ History */
+    .history-empty { text-align: center; padding: 30px 10px; color: var(--text-sec); font-size: 13px; }
+    .history-item {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+    .history-icon.ok { background: rgba(16,185,129,.1); }
+    .history-icon.fail { background: rgba(239,68,68,.1); }
+    .history-detail { flex: 1; min-width: 0; }
+    .history-goal { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-meta { font-size: 11px; color: var(--text-sec); margin-top: 2px; }
+    .history-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+
+    /* ★ Settings */
+    .settings-section { margin-bottom: 16px; }
+    .settings-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+    .settings-desc { font-size: 12px; color: var(--text-sec); margin-bottom: 10px; line-height: 1.4; }
+    .radio-group { display: flex; flex-direction: column; gap: 6px; }
+    .radio-item {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+      border: 1.5px solid var(--border); border-radius: 8px; cursor: pointer; transition: all .2s;
+    }
+    .radio-item.selected { border-color: var(--primary); background: var(--primary-l); }
+    .radio-dot {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
+    }
+    .radio-item.selected .radio-dot { border-color: var(--primary); }
+    .radio-item.selected .radio-dot::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+    .radio-label { font-size: 13px; font-weight: 600; }
+    .radio-desc { font-size: 11px; color: var(--text-sec); margin-top: 2px; }
+
+    /* ★ Language toggle */
+    .lang-toggle {
+      position: absolute; top: 16px; right: 52px; width: 28px; height: 28px;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--card);
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      font-size: 11px; font-weight: 700; color: var(--text-sec); transition: background .2s;
+    }
+    .lang-toggle:hover { background: var(--primary-l); }
+
+    /* ★ Onboarding */
+    .onboarding { text-align: center; }
+    .onboarding h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+    .ob-steps { margin: 16px 0; }
+    .ob-step { display: flex; align-items: flex-start; gap: 12px; padding: 12px; text-align: left; margin-bottom: 8px; background: var(--bg); border-radius: 10px; }
+    .ob-num { width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ob-text { flex: 1; }
+    .ob-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+    .ob-text span { font-size: 12px; color: var(--text-sec); line-height: 1.4; }
+
+    /* ★ 网络状态 */
+    .net-indicator {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; color: var(--text-sec); padding: 2px 0;
+    }
+    .net-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .net-dot.ok { background: var(--success); }
+    .net-dot.fail { background: var(--danger); }
+    .net-dot.checking { background: var(--warn); animation: pulse 1s infinite; }
+
+    /* ★ Toast 通知 */
+    .toast-container { position: fixed; top: 12px; left: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    .toast {
+      padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.4;
+      pointer-events: auto; animation: slideIn .3s ease-out;
+      box-shadow: 0 4px 20px rgba(0,0,0,.15);
+    }
+    .toast.success { background: var(--success); color: #fff; }
+    .toast.error { background: var(--danger); color: #fff; }
+    .toast.info { background: var(--primary); color: #fff; }
+    .toast.warning { background: var(--warn); color: #fff; }
+    @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* ★ 主题切换 */
+    .theme-toggle {
+      position: absolute; top: 16px; right: 20px; width: 28px; height: 28px;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--card);
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      font-size: 14px; transition: background .2s;
+    }
+    .theme-toggle:hover { background: var(--primary-l); }
   </style>
 </head>
 <body>
+  <div class="toast-container" id="toastContainer"></div>
   <div id="app">
+    <button class="lang-toggle" onclick="toggleLang()" id="langBtn" title="切换语言">EN</button>
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn" title="切换主题">🌙</button>
     <div class="brand">
       <div class="brand-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-          <line x1="8" y1="21" x2="16" y2="21"/>
-          <line x1="12" y1="17" x2="12" y2="21"/>
+          <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
         </svg>
       </div>
       <h1>Insi Desktop</h1>
       <p>AI 桌面控制代理</p>
     </div>
-
     <div class="card">
-      <!-- ══════ Login View ══════ -->
+
+      <!-- Permission Wizard (macOS) -->
+      <div id="permissionView" class="view">
+        <div class="perm-wizard">
+          <h2>系统权限设置</h2>
+          <p class="perm-desc">Insi Desktop 需要以下 macOS 系统权限才能正常工作。<br>请按步骤授权，授权后点击「重新检测」。</p>
+          <div class="perm-step" id="permStepScreen">
+            <div class="perm-step-icon" id="permIconScreen">🖥</div>
+            <div class="perm-step-content">
+              <div class="perm-step-title">屏幕录制权限</div>
+              <div class="perm-step-hint" id="permHintScreen">AI 需要截取屏幕内容来理解当前画面。</div>
+              <div class="perm-step-action" id="permActionScreen">
+                <button class="btn btn-primary btn-xs" onclick="handleRequestScreenRecording()">授权屏幕录制</button>
+              </div>
+            </div>
+          </div>
+          <div class="perm-step" id="permStepAccessibility">
+            <div class="perm-step-icon" id="permIconAccessibility">⌨️</div>
+            <div class="perm-step-content">
+              <div class="perm-step-title">辅助功能权限</div>
+              <div class="perm-step-hint" id="permHintAccessibility">AI 需要控制鼠标和键盘来代替你执行操作。</div>
+              <div class="perm-step-action" id="permActionAccessibility">
+                <button class="btn btn-primary btn-xs" onclick="handleRequestAccessibility()">授权辅助功能</button>
+              </div>
+            </div>
+          </div>
+          <div class="perm-recheck">
+            <button class="btn btn-outline btn-sm" onclick="recheckPermissions()">🔄 重新检测</button>
+            <div style="margin-top:10px;"><a style="font-size:12px;color:var(--text-sec);cursor:pointer;" onclick="skipPermissionCheck()">跳过</a></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Onboarding -->
+      <div id="onboardingView" class="view">
+        <div class="onboarding">
+          <h2>欢迎使用 Insi Desktop</h2>
+          <p style="font-size:13px;color:var(--text-sec);margin-bottom:4px;">3 步开始 AI 桌面控制</p>
+          <div class="ob-steps">
+            <div class="ob-step">
+              <div class="ob-num">1</div>
+              <div class="ob-text"><strong>登录账号</strong><span>使用 insights.ren 账号登录，客户端会自动连接服务端</span></div>
+            </div>
+            <div class="ob-step">
+              <div class="ob-num">2</div>
+              <div class="ob-text"><strong>授权桌面控制</strong><span>连接成功后，点击「授权」按钮允许 AI 操作你的桌面</span></div>
+            </div>
+            <div class="ob-step">
+              <div class="ob-num">3</div>
+              <div class="ob-text"><strong>在网页端发指令</strong><span>回到 insights.ren 网页，发送「打开浏览器搜索…」等指令，AI 会在桌面执行</span></div>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--text-sec);margin-bottom:12px;">按 <kbd style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:11px;">Escape</kbd> 随时紧急停止所有操作</p>
+          <button class="btn btn-primary" onclick="finishOnboarding()">开始使用</button>
+        </div>
+      </div>
+
+      <!-- Login -->
       <div id="loginView" class="view active">
         <div id="alertBox" class="alert"></div>
-
         <div class="form-group">
           <label for="username">用户名或邮箱</label>
           <input type="text" id="username" placeholder="请输入用户名或邮箱" autocomplete="username" />
@@ -218,18 +400,12 @@
           <label for="password">密码</label>
           <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password" />
         </div>
-
-        <button class="btn btn-primary" id="loginBtn" onclick="handleLogin()">
-          <span id="loginText">登 录</span>
-        </button>
-
+        <button class="btn btn-primary" id="loginBtn" onclick="handleLogin()"><span id="loginText">登 录</span></button>
         <div class="divider"><span>其他方式</span></div>
-
         <button class="btn btn-outline" onclick="openGitHubLogin()">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
           GitHub 登录
         </button>
-
         <div class="footer">
           <div class="footer-links">
             <a onclick="openExternal('https://mpsboring.com/register')">注册账号</a>
@@ -238,7 +414,7 @@
         </div>
       </div>
 
-      <!-- ══════ Status View ══════ -->
+      <!-- Status -->
       <div id="statusView" class="view">
         <div id="userBadge" class="user-badge" style="display:none;">
           <div class="user-avatar" id="userAvatar">U</div>
@@ -247,94 +423,252 @@
             <div class="user-id" id="userIdText"></div>
           </div>
         </div>
-
         <div class="status-header">
           <div class="status-dot" id="statusDot"></div>
           <div>
             <div class="status-label" id="statusLabel">未连接</div>
             <div class="status-sub" id="statusSub">等待连接...</div>
           </div>
+          <div style="margin-left:auto;" id="netIndicator" class="net-indicator"></div>
         </div>
-
-        <!-- ★ 权限状态横幅 -->
         <div id="permBanner" class="perm-banner not-auth">
           <span id="permText">⚠️ AI 桌面控制未授权</span>
-          <button class="btn btn-success btn-xs" id="permBtn" onclick="handleAuthorize()" style="width:auto;padding:0 14px;">
-            ✓ 授权
-          </button>
+          <button class="btn btn-success btn-xs" id="permBtn" onclick="handleAuthorize()" style="width:auto;padding:0 14px;">✓ 授权</button>
+        </div>
+        <div class="info-grid">
+          <div class="info-item"><div class="label">系统</div><div class="value" id="infoPlatform">—</div></div>
+          <div class="info-item"><div class="label">分辨率</div><div class="value" id="infoScreen">—</div></div>
+          <div class="info-item"><div class="label">客户端</div><div class="value" id="infoVersion">—</div></div>
+          <div class="info-item"><div class="label">权限</div><div class="value" id="infoAuth">未授权</div></div>
         </div>
 
-        <div class="info-grid">
-          <div class="info-item">
-            <div class="label">系统</div>
-            <div class="value" id="infoPlatform">—</div>
+        <!-- ★ Tab bar -->
+        <div class="tab-bar">
+          <div class="tab-item active" onclick="switchTab('control')" id="tabControl" data-i18n="tab_control">控制</div>
+          <div class="tab-item" onclick="switchTab('history')" id="tabHistory" data-i18n="tab_history">历史</div>
+          <div class="tab-item" onclick="switchTab('settings')" id="tabSettings" data-i18n="tab_settings">设置</div>
+        </div>
+
+        <!-- Tab: Control (default) -->
+        <div class="tab-content active" id="tabContentControl">
+        <!-- Preview Panel -->
+        <div class="preview-panel" id="previewPanel">
+          <div class="preview-header" onclick="togglePreview()">
+            <div class="preview-header-left">
+              <div class="preview-pulse" id="previewPulse"></div>
+              <span class="preview-title" id="previewTitle">操作预览</span>
+            </div>
+            <span class="preview-badge idle" id="previewBadge">待机</span>
           </div>
-          <div class="info-item">
-            <div class="label">分辨率</div>
-            <div class="value" id="infoScreen">—</div>
+          <div class="preview-body" id="previewBody">
+            <div id="previewContent">
+              <div class="preview-empty">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 9l3 3-3 3"/><line x1="13" y1="15" x2="17" y2="15"/></svg>
+                <div>等待 AI 执行操作</div>
+                <div style="font-size:11px;margin-top:2px;color:var(--text-sec);opacity:.6;">在网页端发送桌面控制指令后，操作过程将在这里实时展示</div>
+              </div>
+            </div>
           </div>
-          <div class="info-item">
-            <div class="label">客户端</div>
-            <div class="value" id="infoVersion">—</div>
+        </div>
+
+        </div><!-- end tabContentControl -->
+
+        <!-- Tab: History -->
+        <div class="tab-content" id="tabContentHistory">
+          <div id="historyList">
+            <div class="history-empty" id="historyEmpty" data-i18n="history_empty">暂无操作记录</div>
           </div>
-          <div class="info-item">
-            <div class="label">权限</div>
-            <div class="value" id="infoAuth">未授权</div>
+          <div class="history-actions">
+            <button class="btn btn-outline btn-xs" onclick="loadHistory()" style="width:auto;padding:0 14px;" data-i18n="history_refresh">刷新</button>
+            <button class="btn btn-danger btn-xs" onclick="clearHistory()" style="width:auto;padding:0 14px;margin-left:6px;" data-i18n="history_clear">清除</button>
+          </div>
+        </div>
+
+        <!-- Tab: Settings -->
+        <div class="tab-content" id="tabContentSettings">
+          <div class="settings-section">
+            <div class="settings-title" data-i18n="settings_perm_title">权限级别</div>
+            <div class="settings-desc" data-i18n="settings_perm_desc">控制 AI 可以执行的操作范围</div>
+            <div class="radio-group" id="permLevelGroup">
+              <div class="radio-item selected" data-level="standard" onclick="setPermLevel('standard')">
+                <div class="radio-dot"></div>
+                <div><div class="radio-label" data-i18n="perm_standard">标准模式</div><div class="radio-desc" data-i18n="perm_standard_desc">允许所有安全操作</div></div>
+              </div>
+              <div class="radio-item" data-level="cautious" onclick="setPermLevel('cautious')">
+                <div class="radio-dot"></div>
+                <div><div class="radio-label" data-i18n="perm_cautious">谨慎模式</div><div class="radio-desc" data-i18n="perm_cautious_desc">禁止文件操作，每步需确认</div></div>
+              </div>
+              <div class="radio-item" data-level="restricted" onclick="setPermLevel('restricted')">
+                <div class="radio-dot"></div>
+                <div><div class="radio-label" data-i18n="perm_restricted">严格模式</div><div class="radio-desc" data-i18n="perm_restricted_desc">仅允许截图和读取</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-title" data-i18n="settings_about">关于</div>
+            <div style="font-size:12px;color:var(--text-sec);line-height:1.6;">
+              Insi Desktop Agent · <span id="settingsVersion">v0.4.3</span><br>© 2026 Insi AI
+            </div>
           </div>
         </div>
 
         <div class="footer">
-          <!-- ★ Kill Switch -->
-          <button class="btn btn-danger-solid btn-sm" id="killSwitchBtn" onclick="handleKillSwitch()" style="display:none;">
-            ⏹ 紧急停止所有操作
-          </button>
+          <button class="btn btn-danger-solid btn-sm" id="killSwitchBtn" onclick="handleKillSwitch()" style="display:none;">⏹ 紧急停止所有操作</button>
           <button class="btn btn-danger btn-sm" onclick="handleDisconnect()">断开连接并退出登录</button>
           <div class="footer-links">
             <a onclick="openExternal('https://insights.ren')">访问网页版</a>
+            <a onclick="runNetworkCheck()">网络诊断</a>
           </div>
         </div>
       </div>
     </div>
-
-    <div class="version-text" id="versionText">Insi Desktop</div>
+    <div class="version-text" id="versionText">Insi Desktop v0.4.3</div>
   </div>
 
   <script>
-    // ═══════════════════════════════════════════
-    // Tauri IPC
-    // ═══════════════════════════════════════════
-    const SERVER = 'https://insights.ren';
+    var SERVER = 'https://insights.ren';
 
     async function invoke(cmd, args) {
-      const t = window.__TAURI_INTERNALS__;
-      if (!t || !t.invoke) {
-        console.warn('[Tauri] __TAURI_INTERNALS__ not available');
-        return null;
-      }
+      var t = window.__TAURI_INTERNALS__;
+      if (!t || !t.invoke) return null;
       return t.invoke(cmd, args || {});
     }
-
     function openExternal(url) {
-      invoke('plugin:shell|open', { path: url }).catch(function() {
-        window.open(url, '_blank');
-      });
+      invoke('plugin:shell|open', { path: url }).catch(function() { window.open(url, '_blank'); });
     }
 
     // ═══════════════════════════════════════════
-    // View helpers
+    // Views & Alerts
     // ═══════════════════════════════════════════
     function showView(id) {
       document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
       document.getElementById(id).classList.add('active');
     }
+    function showAlert(msg, type) { var el = document.getElementById('alertBox'); el.textContent = msg; el.className = 'alert show alert-' + type; }
+    function hideAlert() { document.getElementById('alertBox').className = 'alert'; }
 
-    function showAlert(msg, type) {
-      var el = document.getElementById('alertBox');
-      el.textContent = msg;
-      el.className = 'alert show alert-' + type;
+    // ═══════════════════════════════════════════
+    // ★ Theme
+    // ═══════════════════════════════════════════
+    function getTheme() { return localStorage.getItem('theme') || 'auto'; }
+    function applyTheme(t) {
+      if (t === 'auto') { document.documentElement.removeAttribute('data-theme'); }
+      else { document.documentElement.setAttribute('data-theme', t); }
+      var isDark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.getElementById('themeBtn').textContent = isDark ? '☀️' : '🌙';
     }
-    function hideAlert() {
-      document.getElementById('alertBox').className = 'alert';
+    function toggleTheme() {
+      var current = getTheme();
+      var next = current === 'auto' ? 'dark' : current === 'dark' ? 'light' : 'auto';
+      localStorage.setItem('theme', next);
+      applyTheme(next);
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ Toast Notifications
+    // ═══════════════════════════════════════════
+    function showToast(title, body, level) {
+      var container = document.getElementById('toastContainer');
+      // 限制最多同时 3 条 toast
+      while (container.children.length >= 3) { container.removeChild(container.firstChild); }
+      var toast = document.createElement('div');
+      toast.className = 'toast ' + (level || 'info');
+      toast.innerHTML = '<strong>' + esc(title) + '</strong>' + (body ? '<br>' + esc(body) : '');
+      container.appendChild(toast);
+      setTimeout(function() { toast.style.opacity = '0'; toast.style.transform = 'translateY(-10px)'; toast.style.transition = 'all .3s'; }, 3500);
+      setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 4000);
+
+      // 系统级通知（Tauri 2 notification plugin）
+      try {
+        invoke('plugin:notification|notify', {
+          title: title || 'Insi Desktop',
+          body: body || title || '',
+        });
+      } catch(e) { /* 通知插件不可用时静默 */ }
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ macOS Permissions
+    // ═══════════════════════════════════════════
+    async function checkAndShowPermissions() {
+      try {
+        var r = await invoke('check_permissions');
+        if (!r || !r.platformRequiresCheck) return true;
+        updatePermUI('Screen', r.screenRecording);
+        updatePermUI('Accessibility', r.accessibility);
+        if (r.allGranted) return true;
+        showView('permissionView');
+        return false;
+      } catch (e) { return true; }
+    }
+    function updatePermUI(name, granted) {
+      var step = document.getElementById('permStep' + name);
+      var icon = document.getElementById('permIcon' + name);
+      var hint = document.getElementById('permHint' + name);
+      var action = document.getElementById('permAction' + name);
+      if (granted) {
+        step.className = 'perm-step granted'; icon.textContent = '✅';
+        hint.textContent = (name === 'Screen' ? t('perm_screen_ok') : t('perm_acc_ok'));
+        action.style.display = 'none';
+      } else {
+        step.className = 'perm-step missing';
+        icon.textContent = name === 'Screen' ? '🖥' : '⌨️';
+        hint.textContent = name === 'Screen' ? t('perm_screen_hint') : t('perm_acc_hint');
+        action.style.display = '';
+      }
+    }
+    async function handleRequestScreenRecording() {
+      await invoke('request_screen_recording');
+      await invoke('open_permission_settings', { permissionType: 'screen_recording' }).catch(function(){});
+    }
+    async function handleRequestAccessibility() {
+      try { await invoke('request_accessibility'); } catch(e) {
+        try { await invoke('open_permission_settings', { permissionType: 'accessibility' }); } catch(e2) {}
+      }
+    }
+    async function recheckPermissions() {
+      var r = await invoke('check_permissions');
+      if (!r) return;
+      updatePermUI('Screen', r.screenRecording);
+      updatePermUI('Accessibility', r.accessibility);
+      if (r.allGranted) { proceedAfterPermissions(); }
+    }
+    function skipPermissionCheck() { proceedAfterPermissions(); }
+    function proceedAfterPermissions() {
+      if (!localStorage.getItem('onboarding_done')) { showView('onboardingView'); }
+      else { showView('loginView'); tryAutoLogin(); }
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ Onboarding
+    // ═══════════════════════════════════════════
+    function finishOnboarding() {
+      localStorage.setItem('onboarding_done', '1');
+      invoke('complete_onboarding').catch(function(){});
+      showView('loginView');
+      tryAutoLogin();
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ Network Check
+    // ═══════════════════════════════════════════
+    async function runNetworkCheck() {
+      var ind = document.getElementById('netIndicator');
+      ind.innerHTML = '<span class="net-dot checking"></span> ' + t('net_checking');
+      try {
+        var r = await invoke('check_network');
+        if (r && r.reachable) {
+          ind.innerHTML = '<span class="net-dot ok"></span> ' + t('net_ok');
+          showToast(t('net_diag'), t('net_server_ok'), 'success');
+        } else {
+          ind.innerHTML = '<span class="net-dot fail"></span> ' + t('net_fail');
+          showToast(t('net_diag'), (r && r.message) || t('net_server_fail'), 'error');
+        }
+      } catch (e) {
+        ind.innerHTML = '<span class="net-dot fail"></span> 错误';
+        showToast(t('net_diag'), e + '', 'error');
+      }
+      setTimeout(function() { ind.innerHTML = ''; }, 8000);
     }
 
     // ═══════════════════════════════════════════
@@ -342,68 +676,40 @@
     // ═══════════════════════════════════════════
     async function handleLogin() {
       hideAlert();
-      var username = document.getElementById('username').value.trim();
-      var password = document.getElementById('password').value.trim();
-
-      if (!username || !password) {
-        showAlert('请输入用户名和密码', 'error');
-        return;
-      }
-
+      var u = document.getElementById('username').value.trim();
+      var p = document.getElementById('password').value.trim();
+      if (!u || !p) { showAlert(t('login_empty'), 'error'); return; }
       var btn = document.getElementById('loginBtn');
-      var textEl = document.getElementById('loginText');
-      btn.disabled = true;
-      textEl.innerHTML = '<span class="spinner"></span> 登录中...';
-
+      var txt = document.getElementById('loginText');
+      btn.disabled = true; txt.innerHTML = '<span class="spinner"></span> 登录中...';
       try {
         var res = await fetch(SERVER + '/api/forum/password-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username, password: password }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p }),
         });
         var data = await res.json();
-
         if (data.success && data.token) {
           localStorage.setItem('auth_token', data.token);
-          if (data.user) {
-            localStorage.setItem('user_info', JSON.stringify(data.user));
-          }
-          showAlert('登录成功，正在连接...', 'success');
-
+          if (data.user) localStorage.setItem('user_info', JSON.stringify(data.user));
+          showAlert(t('login_ok'), 'success');
           await invoke('login', { token: data.token });
-
-          setTimeout(function() { switchToStatus(); }, 800);
-        } else {
-          showAlert(data.message || '登录失败，请检查用户名和密码', 'error');
-        }
-      } catch (err) {
-        console.error('Login error:', err);
-        showAlert('网络错误，请检查网络连接后重试', 'error');
-      } finally {
-        btn.disabled = false;
-        textEl.textContent = '登 录';
-      }
+          setTimeout(switchToStatus, 800);
+        } else { showAlert(data.message || t('login_fail'), 'error'); }
+      } catch (e) { showAlert(t('login_net_err'), 'error'); }
+      finally { btn.disabled = false; txt.textContent = '登 录'; }
     }
-
-    function openGitHubLogin() {
-      openExternal(SERVER + '/api/github/login');
-    }
+    function openGitHubLogin() { openExternal(SERVER + '/api/github/login'); }
 
     // ═══════════════════════════════════════════
-    // Status panel
+    // Status
     // ═══════════════════════════════════════════
-    function switchToStatus() {
-      showView('statusView');
-      renderUserBadge();
-      pollStatus();
-    }
-
+    function switchToStatus() { showView('statusView'); renderUserBadge(); pollStatus(); }
     function renderUserBadge() {
       try {
         var raw = localStorage.getItem('user_info');
         if (raw) {
           var user = JSON.parse(raw);
-          var name = user.username || user.name || '用户';
+          var name = user.username || user.name || t('user_fallback');
           document.getElementById('userName').textContent = name;
           document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
           document.getElementById('userIdText').textContent = user.email || '';
@@ -412,232 +718,348 @@
       } catch(e) {}
     }
 
-    var statusTimer = null;
+    var statusTimer = null, previewExpanded = false, lastTaskStatus = 'idle';
+    function togglePreview() {
+      previewExpanded = !previewExpanded;
+      document.getElementById('previewBody').classList.toggle('expanded', previewExpanded);
+    }
 
     async function pollStatus() {
       if (statusTimer) clearInterval(statusTimer);
-
       async function update() {
         try {
           var s = await invoke('get_status');
           if (!s) return;
 
-          var dot = document.getElementById('statusDot');
-          var label = document.getElementById('statusLabel');
-          var sub = document.getElementById('statusSub');
-
           var map = {
-            'Connected':    { cls: 'connected',  text: '已连接',   sub: '服务端通信正常' },
-            'Connecting':   { cls: 'connecting', text: '连接中...', sub: '正在建立连接' },
-            'Reconnecting': { cls: 'connecting', text: '重连中...', sub: '连接断开，尝试重连' },
-            'Disconnected': { cls: '',           text: '未连接',   sub: '等待连接...' },
+            'Connected':    { cls: 'connected',  text: t('status_connected'),    sub: t('status_sub_ok') },
+            'Connecting':   { cls: 'connecting', text: t('status_connecting'),   sub: '' },
+            'Reconnecting': { cls: 'connecting', text: t('status_reconnecting'), sub: '' },
+            'Disconnected': { cls: '',           text: t('status_disconnected'), sub: '' },
           };
           var st = map[s.status] || map['Disconnected'];
-          dot.className = 'status-dot ' + st.cls;
-          label.textContent = st.text;
-          sub.textContent = st.sub;
+          document.getElementById('statusDot').className = 'status-dot ' + st.cls;
+          document.getElementById('statusLabel').textContent = st.text;
+          document.getElementById('statusSub').textContent = st.sub;
 
           var pn = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
           document.getElementById('infoPlatform').textContent = pn[s.platform] || s.platform || '—';
           document.getElementById('infoVersion').textContent = 'v' + (s.clientVersion || '?');
-          // ★ 动态更新底部版本号
-          document.getElementById('versionText').textContent = 'Insi Desktop v' + (s.clientVersion || '?');
+          document.getElementById('versionText').textContent = 'Insi Desktop v' + (s.clientVersion || '0.4.3');
+          if (document.getElementById('settingsVersion')) {
+            document.getElementById('settingsVersion').textContent = 'v' + (s.clientVersion || '0.4.3');
+          }
 
-          // ★ 权限状态更新
           var authEl = document.getElementById('infoAuth');
-          var permBanner = document.getElementById('permBanner');
-          var permText = document.getElementById('permText');
-          var permBtn = document.getElementById('permBtn');
-          var killBtn = document.getElementById('killSwitchBtn');
-
+          var pb = document.getElementById('permBanner');
+          var pt = document.getElementById('permText');
+          var pbtn = document.getElementById('permBtn');
+          var kb = document.getElementById('killSwitchBtn');
           if (s.authorized) {
-            authEl.textContent = '已授权';
-            authEl.style.color = 'var(--success)';
-            permBanner.className = 'perm-banner authed';
-            permText.textContent = '✓ AI 桌面控制已授权';
-            permBtn.textContent = '撤销';
-            permBtn.className = 'btn btn-outline btn-xs';
-            permBtn.style.width = 'auto';
-            permBtn.style.padding = '0 14px';
-            permBtn.onclick = handleRevoke;
-            killBtn.style.display = '';
+            authEl.textContent = t('auth_granted'); authEl.style.color = 'var(--success)';
+            pb.className = 'perm-banner authed'; pt.textContent = t('perm_authed');
+            pbtn.textContent = t('btn_revoke'); pbtn.className = 'btn btn-outline btn-xs';
+            pbtn.style.width = 'auto'; pbtn.style.padding = '0 14px'; pbtn.onclick = handleRevoke;
+            kb.style.display = '';
           } else {
-            authEl.textContent = '未授权';
-            authEl.style.color = 'var(--warn)';
-            permBanner.className = 'perm-banner not-auth';
-            permText.textContent = '⚠️ AI 桌面控制未授权';
-            permBtn.textContent = '✓ 授权';
-            permBtn.className = 'btn btn-success btn-xs';
-            permBtn.style.width = 'auto';
-            permBtn.style.padding = '0 14px';
-            permBtn.onclick = handleAuthorize;
-            killBtn.style.display = 'none';
+            authEl.textContent = t('auth_not'); authEl.style.color = 'var(--warn)';
+            pb.className = 'perm-banner not-auth'; pt.textContent = t('perm_not_authed');
+            pbtn.textContent = t('btn_authorize'); pbtn.className = 'btn btn-success btn-xs';
+            pbtn.style.width = 'auto'; pbtn.style.padding = '0 14px'; pbtn.onclick = handleAuthorize;
+            kb.style.display = 'none';
           }
-
-          // 未连接时隐藏权限横幅
-          if (s.status === 'Disconnected') {
-            permBanner.style.display = 'none';
-          } else {
-            permBanner.style.display = '';
-          }
-
+          pb.style.display = s.status === 'Disconnected' ? 'none' : '';
           if (s.screen) {
-            document.getElementById('infoScreen').textContent =
-              s.screen.width + '×' + s.screen.height +
-              (s.screen.scale > 1 ? ' @' + s.screen.scale + 'x' : '');
+            document.getElementById('infoScreen').textContent = s.screen.width + '×' + s.screen.height + (s.screen.scale > 1 ? ' @' + s.screen.scale + 'x' : '');
           }
-        } catch (err) {
-          console.warn('Status poll error:', err);
-        }
-      }
 
+          // ★ 处理通知
+          if (s.notifications && s.notifications.length > 0) {
+            s.notifications.forEach(function(n) { showToast(n.title, n.body, n.level); });
+          }
+
+          // ★ 预览面板
+          updatePreview(s.task);
+        } catch (e) { console.warn('Poll error:', e); }
+      }
       await update();
-      statusTimer = setInterval(update, 2000);
+      statusTimer = setInterval(update, 1500);
     }
 
     // ═══════════════════════════════════════════
-    // ★ Authorization
+    // ★ Preview Panel
     // ═══════════════════════════════════════════
-    async function handleAuthorize() {
-      try {
-        var result = await invoke('authorize');
-        if (result && result.success) {
-          console.log('[Auth] Authorize requested');
-        }
-      } catch (err) {
-        console.error('Authorize error:', err);
+    function updatePreview(task) {
+      if (!task) return;
+      var panel = document.getElementById('previewPanel');
+      var pulse = document.getElementById('previewPulse');
+      var title = document.getElementById('previewTitle');
+      var badge = document.getElementById('previewBadge');
+      var content = document.getElementById('previewContent');
+      var status = task.status || 'idle';
+
+      panel.classList.toggle('active', task.active);
+      pulse.className = 'preview-pulse ' + status;
+      title.textContent = task.active && task.goal ? (task.goal.length > 20 ? task.goal.substring(0,20) + '...' : task.goal) : status === 'completed' ? t('preview_done') : status === 'failed' ? t('preview_fail') : t('preview_title');
+
+      var bm = { idle: [t('preview_idle'),'idle'], running: [t('preview_running'),'running'], completed: [t('preview_done'),'completed'], failed: [t('preview_fail'),'failed'], paused: [t('preview_idle'),'idle'] };
+      var b = bm[status] || bm.idle;
+      badge.textContent = b[0]; badge.className = 'preview-badge ' + b[1];
+
+      if (status === 'running' && lastTaskStatus !== 'running') {
+        previewExpanded = true; document.getElementById('previewBody').classList.add('expanded');
       }
-    }
+      lastTaskStatus = status;
 
-    async function handleRevoke() {
-      try {
-        var result = await invoke('revoke');
-        if (result && result.success) {
-          console.log('[Auth] Revoke requested');
-        }
-      } catch (err) {
-        console.error('Revoke error:', err);
+      if (!task.active && status === 'idle' && (!task.steps || !task.steps.length)) {
+        content.innerHTML = '<div class="preview-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 9l3 3-3 3"/><line x1="13" y1="15" x2="17" y2="15"/></svg><div>' + t('preview_empty') + '</div></div>';
+        return;
       }
-    }
-
-    async function handleKillSwitch() {
-      try {
-        var result = await invoke('kill_switch');
-        if (result && result.success) {
-          console.log('[KillSwitch] Activated');
-        }
-      } catch (err) {
-        console.error('Kill switch error:', err);
+      var h = '';
+      if (task.latest_screenshot) h += '<div class="preview-screenshot"><img src="data:image/webp;base64,' + task.latest_screenshot + '"/></div>';
+      if (task.goal) h += '<div class="preview-goal"><strong>目标：</strong>' + esc(task.goal) + '</div>';
+      if (task.total_steps > 0) { var pct = Math.min(100, Math.round((task.current_step / task.total_steps) * 100)); h += '<div class="preview-progress"><div class="preview-progress-bar" style="width:' + pct + '%"></div></div>'; }
+      if (task.steps && task.steps.length) {
+        h += '<div class="preview-steps">';
+        task.steps.slice(-20).forEach(function(s) {
+          var ss = s.status || 'pending';
+          var sym = ss === 'success' ? '✓' : ss === 'failed' ? '✗' : ss === 'running' ? '▶' : (s.index + 1);
+          h += '<div class="step-item"><div class="step-indicator ' + ss + '">' + sym + '</div><div class="step-content"><div class="step-tool">' + esc(fmtTool(s.tool)) + '</div>';
+          if (s.description) h += '<div class="step-desc">' + esc(s.description) + '</div>';
+          if (s.error) h += '<div class="step-error">' + esc(s.error) + '</div>';
+          h += '</div></div>';
+        });
+        h += '</div>';
       }
+      content.innerHTML = h;
+      var sc = content.querySelector('.preview-steps'); if (sc) sc.scrollTop = sc.scrollHeight;
     }
+    function fmtTool(t) {
+      var m = {'desktop.click':'🖱 点击','desktop.double_click':'🖱 双击','desktop.type':'⌨️ 输入','desktop.hotkey':'⌨️ 快捷键','desktop.scroll':'🔄 滚动','desktop.drag':'↔️ 拖拽','desktop.screenshot':'📸 截图','desktop.clipboard_read':'📋 读剪贴板','desktop.clipboard_write':'📋 写剪贴板','desktop.wait':'⏱ 等待','desktop.app_focus':'🪟 切换窗口'};
+      return m[t] || t;
+    }
+    function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
 
     // ═══════════════════════════════════════════
-    // Disconnect
+    // Auth / Disconnect
     // ═══════════════════════════════════════════
+    async function handleAuthorize() { try { await invoke('authorize'); } catch(e) {} }
+    async function handleRevoke() { try { await invoke('revoke'); } catch(e) {} }
+    async function handleKillSwitch() { try { await invoke('kill_switch'); showToast(t('kill_title'), t('kill_body'), 'warning'); } catch(e) {} }
     async function handleDisconnect() {
       await invoke('disconnect');
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_info');
+      localStorage.removeItem('auth_token'); localStorage.removeItem('user_info');
       if (statusTimer) clearInterval(statusTimer);
-      hideAlert();
-      document.getElementById('username').value = '';
-      document.getElementById('password').value = '';
+      hideAlert(); document.getElementById('username').value = ''; document.getElementById('password').value = '';
       showView('loginView');
     }
 
     // ═══════════════════════════════════════════
-    // Auto-login on launch
+    // Auto-login / Token refresh / Update
     // ═══════════════════════════════════════════
     async function tryAutoLogin() {
       var token = localStorage.getItem('auth_token');
       if (!token) return;
-
       try {
-        var res = await fetch(SERVER + '/api/trpc/auth.me', {
-          headers: { 'Authorization': 'Bearer ' + token },
-        });
+        var res = await fetch(SERVER + '/api/trpc/auth.me', { headers: { 'Authorization': 'Bearer ' + token } });
         var data = await res.json();
         var user = data && data.result && data.result.data && data.result.data.json;
-
         if (user && user.id) {
           localStorage.setItem('user_info', JSON.stringify(user));
-          await invoke('login', { token: token });
-          switchToStatus();
+          await invoke('login', { token: token }); switchToStatus();
         } else {
-          // Token 过期，尝试 refresh
-          var refreshed = await tryRefreshToken(token);
-          if (!refreshed) {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user_info');
-          }
+          if (!(await tryRefreshToken(token))) { localStorage.removeItem('auth_token'); localStorage.removeItem('user_info'); }
         }
-      } catch (e) {
-        await invoke('login', { token: token });
-        switchToStatus();
-      }
+      } catch (e) { await invoke('login', { token: token }); switchToStatus(); }
     }
-
-    // ★ Token 过期自动刷新
-    async function tryRefreshToken(oldToken) {
+    async function tryRefreshToken(old) {
       try {
-        var res = await fetch(SERVER + '/api/auth/refresh', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + oldToken,
-          },
-        });
+        var res = await fetch(SERVER + '/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + old } });
         if (!res.ok) return false;
         var data = await res.json();
-        if (data.token) {
-          localStorage.setItem('auth_token', data.token);
-          await invoke('login', { token: data.token });
-          switchToStatus();
-          return true;
-        }
-      } catch (e) {
-        console.warn('[Auth] Token refresh failed:', e);
-      }
-      return false;
+        if (data.token) { localStorage.setItem('auth_token', data.token); await invoke('login', { token: data.token }); switchToStatus(); return true; }
+      } catch(e) {} return false;
     }
-
-    // ★ 自动检查更新（每次启动时）
     async function checkForUpdate() {
       try {
-        var result = await invoke('plugin:updater|check');
-        if (result && result.available) {
-          var confirmed = confirm(
-            '发现新版本 ' + result.version + '！\n\n' +
-            (result.body || '包含 bug 修复和新功能') +
-            '\n\n是否立即更新？'
-          );
-          if (confirmed) {
+        var r = await invoke('plugin:updater|check');
+        if (r && r.available) {
+          if (confirm(t('update_found') + ' ' + r.version + '!\n\n' + (r.body || t('update_body')) + '\n\n' + t('update_ask'))) {
             await invoke('plugin:updater|download_and_install');
           }
         }
-      } catch (e) {
-        // updater 不可用（开发模式）或网络错误，静默忽略
-        console.log('[Updater]', e);
-      }
+      } catch(e) {}
     }
 
     // ═══════════════════════════════════════════
-    // Global keyboard shortcut: Escape = Kill Switch
+    // ★ i18n
+    // ═══════════════════════════════════════════
+    var I18N = {
+      zh: {
+        tab_control: '控制', tab_history: '历史', tab_settings: '设置',
+        history_empty: '暂无操作记录', history_refresh: '刷新', history_clear: '清除',
+        history_steps: '步', history_secs: '秒', history_completed: '成功', history_failed: '失败',
+        settings_perm_title: '权限级别', settings_perm_desc: '控制 AI 可以执行的操作范围',
+        settings_about: '关于',
+        perm_standard: '标准模式', perm_standard_desc: '允许所有安全操作',
+        perm_cautious: '谨慎模式', perm_cautious_desc: '禁止文件操作，每步需确认',
+        perm_restricted: '严格模式', perm_restricted_desc: '仅允许截图和读取',
+        status_connected: '已连接', status_connecting: '连接中...', status_reconnecting: '重连中...',
+        status_disconnected: '未连接', status_sub_ok: '服务端通信正常',
+        auth_granted: '已授权', auth_not: '未授权',
+        perm_authed: '✓ AI 桌面控制已授权', perm_not_authed: '⚠️ AI 桌面控制未授权',
+        btn_authorize: '✓ 授权', btn_revoke: '撤销',
+        btn_disconnect: '断开连接并退出登录', btn_kill: '⏹ 紧急停止所有操作',
+        preview_idle: '待机', preview_running: '执行中', preview_done: '已完成', preview_fail: '失败',
+        preview_title: '操作预览', preview_empty: '等待 AI 执行操作',
+        net_ok: '网络正常', net_fail: '不通', net_checking: '检测中...',
+        net_diag: '网络诊断', net_server_ok: '服务端连接正常', net_server_fail: '无法连接服务端',
+        login_title: '登 录', login_user: '用户名或邮箱', login_pass: '密码',
+        login_empty: '请输入用户名和密码', login_ok: '登录成功，正在连接...',
+        login_fail: '登录失败', login_net_err: '网络错误，请检查连接',
+        kill_title: '紧急停止', kill_body: '所有操作已终止',
+        update_found: '发现新版本', update_body: '包含 bug 修复和新功能', update_ask: '是否立即更新？',
+        perm_screen_ok: '屏幕录制权限已授权', perm_acc_ok: '辅助功能权限已授权',
+        perm_screen_hint: '点击下方按钮授权屏幕录制', perm_acc_hint: '点击下方按钮授权辅助功能',
+        user_fallback: '用户',
+      },
+      en: {
+        tab_control: 'Control', tab_history: 'History', tab_settings: 'Settings',
+        history_empty: 'No operation records', history_refresh: 'Refresh', history_clear: 'Clear',
+        history_steps: 'steps', history_secs: 's', history_completed: 'OK', history_failed: 'Failed',
+        settings_perm_title: 'Permission Level', settings_perm_desc: 'Control the scope of AI operations',
+        settings_about: 'About',
+        perm_standard: 'Standard', perm_standard_desc: 'Allow all safe operations',
+        perm_cautious: 'Cautious', perm_cautious_desc: 'Block file ops, confirm each step',
+        perm_restricted: 'Restricted', perm_restricted_desc: 'Screenshot & read only',
+        status_connected: 'Connected', status_connecting: 'Connecting...', status_reconnecting: 'Reconnecting...',
+        status_disconnected: 'Disconnected', status_sub_ok: 'Server communication OK',
+        auth_granted: 'Authorized', auth_not: 'Not authorized',
+        perm_authed: '✓ Desktop control authorized', perm_not_authed: '⚠️ Desktop control not authorized',
+        btn_authorize: '✓ Authorize', btn_revoke: 'Revoke',
+        btn_disconnect: 'Disconnect & Logout', btn_kill: '⏹ Emergency Stop',
+        preview_idle: 'Idle', preview_running: 'Running', preview_done: 'Done', preview_fail: 'Failed',
+        preview_title: 'Operation Preview', preview_empty: 'Waiting for AI operation',
+        net_ok: 'OK', net_fail: 'Unreachable', net_checking: 'Checking...',
+        net_diag: 'Network', net_server_ok: 'Server reachable', net_server_fail: 'Cannot reach server',
+        login_title: 'Login', login_user: 'Username or email', login_pass: 'Password',
+        login_empty: 'Please enter username and password', login_ok: 'Login successful, connecting...',
+        login_fail: 'Login failed', login_net_err: 'Network error, please check connection',
+        kill_title: 'Emergency Stop', kill_body: 'All operations terminated',
+        update_found: 'New version available', update_body: 'Includes bug fixes and new features', update_ask: 'Update now?',
+        perm_screen_ok: 'Screen recording authorized', perm_acc_ok: 'Accessibility authorized',
+        perm_screen_hint: 'Click below to authorize screen recording', perm_acc_hint: 'Click below to authorize accessibility',
+        user_fallback: 'User',
+      }
+    };
+    var currentLang = localStorage.getItem('lang') || (navigator.language.startsWith('zh') ? 'zh' : 'en');
+
+    function t(key) { return (I18N[currentLang] || I18N.zh)[key] || (I18N.zh[key]) || key; }
+
+    function applyI18n() {
+      document.querySelectorAll('[data-i18n]').forEach(function(el) {
+        el.textContent = t(el.getAttribute('data-i18n'));
+      });
+      document.getElementById('langBtn').textContent = currentLang === 'zh' ? 'EN' : '中';
+    }
+
+    function toggleLang() {
+      currentLang = currentLang === 'zh' ? 'en' : 'zh';
+      localStorage.setItem('lang', currentLang);
+      applyI18n();
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ Tabs
+    // ═══════════════════════════════════════════
+    function switchTab(name) {
+      document.querySelectorAll('.tab-item').forEach(function(el) { el.classList.remove('active'); });
+      document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+      document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+      document.getElementById('tabContent' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+      if (name === 'history') loadHistory();
+      if (name === 'settings') loadSettings();
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ History
+    // ═══════════════════════════════════════════
+    async function loadHistory() {
+      try {
+        var r = await invoke('get_history');
+        if (!r || !r.records) return;
+        var list = document.getElementById('historyList');
+        if (r.records.length === 0) {
+          list.innerHTML = '<div class="history-empty">' + t('history_empty') + '</div>';
+          return;
+        }
+        var html = '';
+        // 最新在前
+        var records = r.records.slice().reverse();
+        records.forEach(function(rec) {
+          var icon = rec.status === 'completed' ? '✓' : '✗';
+          var iconCls = rec.status === 'completed' ? 'ok' : 'fail';
+          var date = new Date(rec.started_at);
+          var timeStr = date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+          var dateStr = date.toLocaleDateString([], {month:'short',day:'numeric'});
+          html += '<div class="history-item">' +
+            '<div class="history-icon ' + iconCls + '">' + icon + '</div>' +
+            '<div class="history-detail">' +
+            '<div class="history-goal">' + esc(rec.goal || '—') + '</div>' +
+            '<div class="history-meta">' + dateStr + ' ' + timeStr +
+            ' · ' + rec.step_count + ' ' + t('history_steps') +
+            ' · ' + Math.round(rec.duration_secs) + t('history_secs') +
+            '</div></div></div>';
+        });
+        list.innerHTML = html;
+      } catch(e) { console.warn('Load history failed:', e); }
+    }
+
+    async function clearHistory() {
+      await invoke('clear_history');
+      document.getElementById('historyList').innerHTML = '<div class="history-empty">' + t('history_empty') + '</div>';
+    }
+
+    // ═══════════════════════════════════════════
+    // ★ Settings
+    // ═══════════════════════════════════════════
+    async function loadSettings() {
+      try {
+        var r = await invoke('get_settings');
+        if (r && r.permissionLevel) updatePermLevelUI(r.permissionLevel);
+      } catch(e) {}
+    }
+
+    async function setPermLevel(level) {
+      await invoke('set_permission_level', { level: level });
+      updatePermLevelUI(level);
+    }
+
+    function updatePermLevelUI(level) {
+      document.querySelectorAll('#permLevelGroup .radio-item').forEach(function(el) {
+        el.classList.toggle('selected', el.getAttribute('data-level') === level);
+      });
+    }
+
+    // ═══════════════════════════════════════════
+    // Keys
     // ═══════════════════════════════════════════
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && document.getElementById('loginView').classList.contains('active')) {
-        handleLogin();
-      }
-      // Escape 键作为全局 Kill Switch
-      if (e.key === 'Escape' && document.getElementById('statusView').classList.contains('active')) {
-        handleKillSwitch();
-      }
+      if (e.key === 'Enter' && document.getElementById('loginView').classList.contains('active')) handleLogin();
+      if (e.key === 'Escape' && document.getElementById('statusView').classList.contains('active')) handleKillSwitch();
     });
 
+    // ═══════════════════════════════════════════
     // Boot
-    window.addEventListener('DOMContentLoaded', function() {
-      tryAutoLogin();
-      // 延迟检查更新，不阻塞启动
+    // ═══════════════════════════════════════════
+    window.addEventListener('DOMContentLoaded', async function() {
+      applyTheme(getTheme());
+      applyI18n();
+      var permOk = await checkAndShowPermissions();
+      if (permOk) {
+        if (!localStorage.getItem('onboarding_done')) { showView('onboardingView'); }
+        else { tryAutoLogin(); }
+      }
       setTimeout(checkForUpdate, 3000);
     });
   </script>

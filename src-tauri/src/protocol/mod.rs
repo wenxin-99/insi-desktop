@@ -20,9 +20,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// 心跳计数器（线程安全）
-static HEARTBEAT_COUNTER: AtomicU32 = AtomicU32::new(0);
-
 /// 服务端发来的消息
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerMessage {
@@ -190,9 +187,10 @@ async fn try_connect(
         }
 
         // 心跳（降低频率，不需要每 3 秒都发）
+        static HEARTBEAT_COUNTER: AtomicU32 = AtomicU32::new(0);
         let count = HEARTBEAT_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let hb_divisor = (heartbeat_interval as u32 / 3000).max(1);
-        if count % hb_divisor == 0 {
+        let interval_mod = (heartbeat_interval as u32 / 3000).max(1);
+        if count % interval_mod == 0 {
             if let Err(e) = client.emit("client_heartbeat", json!({})).await {
                 log::warn!("[Protocol] Heartbeat failed: {}", e);
                 break;
@@ -248,6 +246,132 @@ async fn handle_server_message(
                 }
             }
         }
+
+        // ═══════════════════════════════════════════
+        // ★ 操作实时预览事件
+        // ═══════════════════════════════════════════
+
+        // 任务开始
+        "task_start" => {
+            if let Some(payload) = &msg.payload {
+                let goal = payload.get("goal").and_then(|v| v.as_str()).unwrap_or("AI 正在执行任务");
+                let total = payload.get("totalSteps").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                let mut task = state.current_task.write();
+                task.active = true;
+                task.goal = goal.to_string();
+                task.current_step = 0;
+                task.total_steps = total;
+                task.status = "running".into();
+                task.steps.clear();
+                task.latest_screenshot = None;
+                task.started_at = Some(chrono::Utc::now().timestamp_millis());
+                log::info!("[Protocol] Task started: {}", goal);
+            }
+        }
+
+        // 任务步骤更新
+        "task_step" => {
+            if let Some(payload) = &msg.payload {
+                let index = payload.get("stepIndex").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                let tool = payload.get("tool").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let desc = payload.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                let step_status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("running");
+                let error = payload.get("error").and_then(|v| v.as_str()).map(String::from);
+
+                let step = crate::state::TaskStep {
+                    index,
+                    tool: tool.to_string(),
+                    description: desc.to_string(),
+                    status: step_status.to_string(),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    error,
+                };
+
+                let mut task = state.current_task.write();
+                task.current_step = index;
+                if index >= task.total_steps {
+                    task.total_steps = index + 1;
+                }
+
+                // 更新已有步骤或新增
+                if let Some(existing) = task.steps.iter_mut().find(|s| s.index == index) {
+                    *existing = step;
+                } else {
+                    task.steps.push(step);
+                }
+
+                log::info!("[Protocol] Task step {}: {} - {}", index, tool, desc);
+            }
+        }
+
+        // 任务截图更新（缩略图用于前端预览）
+        "task_screenshot" => {
+            if let Some(payload) = &msg.payload {
+                let image = payload.get("thumbnail").and_then(|v| v.as_str()).map(String::from);
+                let w = payload.get("width").and_then(|v| v.as_u64()).map(|v| v as u32);
+                let h = payload.get("height").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+                let mut task = state.current_task.write();
+                task.latest_screenshot = image;
+                task.screenshot_width = w;
+                task.screenshot_height = h;
+            }
+        }
+
+        // 任务完成
+        "task_complete" => {
+            if let Some(payload) = &msg.payload {
+                let result_status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("completed");
+                let goal = {
+                    let task = state.current_task.read();
+                    task.goal.clone()
+                };
+                {
+                    let mut task = state.current_task.write();
+                    task.status = result_status.to_string();
+                    task.active = false;
+                }
+                log::info!("[Protocol] Task completed with status: {}", result_status);
+
+                // ★ 推送系统通知
+                let (title, body, level) = if result_status == "completed" {
+                    ("任务已完成".to_string(),
+                     if goal.is_empty() { "AI 操作已成功完成".into() } else { format!("「{}」已成功完成", goal) },
+                     "success".to_string())
+                } else {
+                    ("任务执行失败".to_string(),
+                     if goal.is_empty() { "AI 操作执行失败".into() } else { format!("「{}」执行失败", goal) },
+                     "error".to_string())
+                };
+                state.pending_notifications.write().push(crate::state::PendingNotification {
+                    title, body, level,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                });
+
+                // ★ 记录到操作历史
+                let now = chrono::Utc::now().timestamp_millis();
+                let (started, step_count) = {
+                    let task = state.current_task.read();
+                    (task.started_at.unwrap_or(now), task.steps.len() as u32)
+                };
+                let record = crate::state::OperationRecord {
+                    goal: goal.clone(),
+                    status: result_status.to_string(),
+                    step_count,
+                    started_at: started,
+                    ended_at: now,
+                    duration_secs: (now - started) as f64 / 1000.0,
+                };
+                {
+                    let mut history = state.operation_history.write();
+                    history.push(record);
+                    // 保留最近 100 条
+                    if history.len() > 100 {
+                        history.drain(0..history.len() - 100);
+                    }
+                }
+            }
+        }
         _ => {
             log::warn!("[Protocol] Unknown message type: {}", msg.msg_type);
         }
@@ -280,6 +404,18 @@ async fn handle_screenshot_request(
 
     match result {
         Ok(capture) => {
+            // ★ 更新任务预览截图
+            {
+                let mut task = state.current_task.write();
+                if task.active {
+                    // 传完整 base64 给前端预览（前端 <img> 可直接渲染）
+                    // 注: 如果图太大(>500KB base64), 前端 CSS 限制了显示尺寸
+                    task.latest_screenshot = Some(capture.image_base64.clone());
+                    task.screenshot_width = Some(capture.width);
+                    task.screenshot_height = Some(capture.height);
+                }
+            }
+
             let data = json!({
                 "image": capture.image_base64,
                 "width": capture.width,
@@ -393,6 +529,62 @@ async fn handle_execute_action(
     // 执行操作
     let exec_result = execute_tool(tool, &params).await;
 
+    // ★ 更新本地任务预览（即使没有 task_step 事件从服务端来）
+    {
+        let mut task = state.current_task.write();
+        if task.active {
+            // 自增步骤索引（本地追踪时服务端可能不发 task_step）
+            let step_idx = task.steps.len() as u32;
+            task.current_step = step_idx;
+            if step_idx >= task.total_steps {
+                task.total_steps = step_idx + 1;
+            }
+
+            let tool_desc = match tool {
+                "desktop.click" => format!("点击 ({}, {})", 
+                    params.get("x").and_then(|v| v.as_i64()).unwrap_or(0),
+                    params.get("y").and_then(|v| v.as_i64()).unwrap_or(0)),
+                "desktop.double_click" => format!("双击 ({}, {})",
+                    params.get("x").and_then(|v| v.as_i64()).unwrap_or(0),
+                    params.get("y").and_then(|v| v.as_i64()).unwrap_or(0)),
+                "desktop.type" => {
+                    let text = params.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                    // UTF-8 安全截断（避免中文字符边界 panic）
+                    let preview_text: String = text.chars().take(20).collect();
+                    if text.chars().count() > 20 {
+                        format!("输入「{}…」", preview_text)
+                    } else {
+                        format!("输入「{}」", preview_text)
+                    }
+                }
+                "desktop.hotkey" => {
+                    let keys = params.get("keys").and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("+"))
+                        .unwrap_or_default();
+                    format!("快捷键 {}", keys)
+                }
+                "desktop.scroll" => format!("滚动"),
+                "desktop.drag" => format!("拖拽"),
+                "desktop.clipboard_read" => format!("读取剪贴板"),
+                "desktop.clipboard_write" => format!("写入剪贴板"),
+                "desktop.wait" => format!("等待"),
+                _ => format!("{}", tool),
+            };
+
+            let step = crate::state::TaskStep {
+                index: step_idx,
+                tool: tool.to_string(),
+                description: tool_desc,
+                status: if exec_result.is_ok() { "success".into() } else { "failed".into() },
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                error: exec_result.as_ref().err().cloned(),
+            };
+
+            // 本地步骤总是新增（不覆盖服务端发来的）
+            task.steps.push(step);
+        }
+    }
+
     match exec_result {
         Ok(()) => {
             // 剪贴板读取需要附带读取到的文字
@@ -418,14 +610,12 @@ async fn handle_execute_action(
     }
 }
 
-/// 检查是否为 P3/P4 结构化数据工具
+/// 检查是否为 P3 结构化数据工具
 fn is_p3_tool(tool: &str) -> bool {
     matches!(tool,
         "desktop.list_monitors" | "desktop.switch_monitor" |
         "desktop.app_info" | "desktop.app_list" | "desktop.app_focus" |
-        "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive" |
-        // ★ P4 视觉能力工具
-        "desktop.window_bounds" | "desktop.taskbar_info"
+        "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive"
     )
 }
 
@@ -541,6 +731,14 @@ fn handle_config(payload: serde_json::Value, state: &AppState) {
         config.heartbeat_interval = h;
     }
 
+    // ★ 权限级别（从服务端同步）
+    if let Some(level) = payload.get("permissionLevel").and_then(|v| v.as_str()) {
+        if matches!(level, "standard" | "cautious" | "restricted") {
+            *state.permission_level.write() = level.to_string();
+            log::info!("[Protocol] Permission level updated: {}", level);
+        }
+    }
+
     log::info!("[Protocol] Config updated: quality={}, format={}, maxSteps={}",
         config.screenshot_quality, config.screenshot_format, config.max_steps);
 }
@@ -635,66 +833,6 @@ async fn handle_p3_tool(
             let output = params.get("outputPath").and_then(|v| v.as_str()).unwrap_or("archive.zip");
             match crate::system::create_archive(&sources, output) {
                 Ok(()) => Some(json!({ "archived": true, "outputPath": output })),
-                Err(e) => Some(json!({ "success": false, "error": e })),
-            }
-        }
-
-        // ── P4: 视觉能力增强 ──
-        "desktop.window_bounds" => {
-            let app_name = params.get("appName").and_then(|v| v.as_str());
-            match if app_name.is_some() {
-                // 指定应用 → 通过 list_windows 查找
-                crate::system::list_windows().map(|windows| {
-                    let target = app_name.unwrap().to_lowercase();
-                    windows.into_iter().find(|w| w.app_name.to_lowercase().contains(&target))
-                })
-            } else {
-                // 前台窗口
-                crate::system::get_active_window().map(|w| Some(crate::system::WindowListItem {
-                    app_name: w.app_name.clone(),
-                    title: w.window_title.clone(),
-                    pid: w.pid,
-                    focused: true,
-                }))
-            } {
-                Ok(Some(w)) => {
-                    // 通过 xcap 获取窗口边界
-                    match crate::system::get_active_window() {
-                        Ok(info) => Some(json!({
-                            "success": true,
-                            "bounds": info.bounds,
-                            "appName": w.app_name,
-                            "title": w.title,
-                        })),
-                        Err(e) => Some(json!({ "success": false, "error": e })),
-                    }
-                }
-                Ok(None) => Some(json!({ "success": false, "error": format!("未找到窗口: {}", app_name.unwrap_or("?")) })),
-                Err(e) => Some(json!({ "success": false, "error": e })),
-            }
-        }
-        "desktop.taskbar_info" => {
-            // 通过屏幕尺寸和工作区域推算任务栏位置
-            let platform = if cfg!(target_os = "windows") { "windows" }
-                           else if cfg!(target_os = "macos") { "macos" }
-                           else { "linux" };
-            match crate::screenshot::get_primary_monitor() {
-                Ok((w, h, _scale)) => {
-                    let (position, tb_w, tb_h, auto_hide) = match platform {
-                        "windows" => ("bottom", w, 48, false),
-                        "macos"   => ("bottom", w, 70, false),    // Dock 默认底部
-                        _         => ("top",    w, 28, false),
-                    };
-                    Some(json!({
-                        "success": true,
-                        "taskbar": {
-                            "position": position,
-                            "width": tb_w,
-                            "height": tb_h,
-                            "autoHide": auto_hide,
-                        }
-                    }))
-                }
                 Err(e) => Some(json!({ "success": false, "error": e })),
             }
         }

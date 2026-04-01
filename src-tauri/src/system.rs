@@ -154,30 +154,20 @@ pub fn focus_window(app_name: &str, window_title: Option<&str>) -> Result<(), St
 
     #[cfg(target_os = "windows")]
     {
-        // ★ 使用 stdin 传搜索词，避免 PowerShell 命令注入
-        use std::io::Write;
-        let search_term = window_title.unwrap_or(app_name);
-        let script = r#"
-            $search = $input | Out-String
-            $search = $search.Trim()
-            $procs = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -match $search -or $_.MainWindowTitle -match $search) }
-            $p = $procs | Select-Object -First 1
-            if ($p) {
-                $wshell = New-Object -ComObject wscript.shell
-                $wshell.AppActivate($p.Id)
-            }
-        "#;
-        let mut child = Command::new("powershell")
-            .args(["-Command", script])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
+        // 使用 PowerShell 激活窗口
+        let script = if let Some(title) = window_title {
+            format!(
+                r#"$w = Get-Process | Where-Object {{$_.MainWindowTitle -match '{}'}} | Select-Object -First 1; if($w) {{ [void][System.Runtime.InteropServices.Marshal]::GetActiveObject(''); $wshell = New-Object -ComObject wscript.shell; $wshell.AppActivate($w.Id) }}"#,
+                title.replace("'", "''")
+            )
+        } else {
+            format!(
+                r#"$w = Get-Process -Name '*{}*' | Where-Object {{$_.MainWindowHandle -ne 0}} | Select-Object -First 1; if($w) {{ $wshell = New-Object -ComObject wscript.shell; $wshell.AppActivate($w.Id) }}"#,
+                app_lower.replace("'", "''")
+            )
+        };
+        Command::new("powershell").args(["-Command", &script]).output()
             .map_err(|e| format!("窗口切换失败: {}", e))?;
-        if let Some(ref mut stdin) = child.stdin {
-            let _ = stdin.write_all(search_term.as_bytes());
-        }
-        child.wait().map_err(|e| format!("窗口切换失败: {}", e))?;
         Ok(())
     }
 

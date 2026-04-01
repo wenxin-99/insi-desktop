@@ -430,10 +430,7 @@ fn main() {
             });
 
             // ── ★ 托盘状态更新循环 ──
-            let tray_state = app_state.clone();
-            let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                update_tray_loop(tray_state, app_handle).await;
             });
 
             log::info!("[Insi Desktop] App started v{}", env!("CARGO_PKG_VERSION"));
@@ -452,7 +449,6 @@ fn main() {
 // ★ 托盘状态更新循环
 // ═══════════════════════════════════════════
 
-async fn update_tray_loop(state: Arc<AppState>, app: tauri::AppHandle) {
     let mut last_status = String::new();
 
     loop {

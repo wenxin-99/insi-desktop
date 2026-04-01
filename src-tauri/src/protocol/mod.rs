@@ -206,8 +206,17 @@ async fn handle_server_message(
                 handle_config(payload, &state);
             }
         }
+        // ★ 心跳应答（携带 authorized 状态，自愈同步）
         "heartbeat_ack" => {
-            // 心跳确认，更新活动时间
+            if let Some(payload) = &msg.payload {
+                if let Some(authorized) = payload.get("authorized").and_then(|v| v.as_bool()) {
+                    let current = *state.authorized.read();
+                    if current != authorized {
+                        *state.authorized.write() = authorized;
+                        log::info!("[Protocol] Heartbeat sync: authorized {} → {}", current, authorized);
+                    }
+                }
+            }
         }
         _ => {
             log::warn!("[Protocol] Unknown message type: {}", msg.msg_type);

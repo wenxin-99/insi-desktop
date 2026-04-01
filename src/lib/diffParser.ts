@@ -70,11 +70,32 @@ export function parseCodeDiffs(content: string): CodeDiff[] {
 }
 
 function _parseBody(file: string, body: string, raw: string): CodeDiff | null {
+  // 格式 1: <search>...</search> + <replacement>...</replacement>
   const s = body.match(/<search>([\s\S]*?)<\/search>/i);
   const r = body.match(/<replacement>([\s\S]*?)<\/replacement>/i);
   const n = body.match(/<reason>([\s\S]*?)<\/reason>/i);
-  if (!s || !r) return null;
-  return { file, search: _trim(s[1]), replacement: _trim(r[1]), reason: n ? n[1].trim() : '', rawXml: raw };
+  if (s && r) {
+    return { file, search: _trim(s[1]), replacement: _trim(r[1]), reason: n ? n[1].trim() : '', rawXml: raw };
+  }
+
+  // 格式 2: <<<< (旧代码) >>>> (新代码) — LLM 常用的简写格式
+  const chevronMatch = body.match(/^[\s\n]*<{3,4}\s*\n([\s\S]*?)\n\s*>{3,4}\s*\n([\s\S]*?)$/);
+  if (chevronMatch) {
+    return { file, search: _trim(chevronMatch[1]), replacement: _trim(chevronMatch[2]), reason: '', rawXml: raw };
+  }
+
+  // 格式 3: ===== 或 ----- 分隔（找到→替换为）
+  const sepMatch = body.match(/^[\s\n]*([\s\S]*?)\n\s*(?:={4,}|={3,}>|→+|=+\s*>\s*)\s*\n([\s\S]*?)$/);
+  if (sepMatch && sepMatch[1].trim() && sepMatch[2].trim()) {
+    return { file, search: _trim(sepMatch[1]), replacement: _trim(sepMatch[2]), reason: '', rawXml: raw };
+  }
+
+  // 格式 4: 无分隔符 — 视为完整文件替换（没有 search，整个 body 就是 replacement）
+  if (body.trim().length > 20) {
+    return { file, search: '', replacement: _trim(body), reason: '完整文件内容', rawXml: raw };
+  }
+
+  return null;
 }
 
 function _trim(code: string): string {

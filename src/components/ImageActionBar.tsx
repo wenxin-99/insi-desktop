@@ -126,24 +126,24 @@ export function ImageActionBar({
 
       {/* 底部 hover 工具栏 */}
       <div className={cn(
-        "absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1 py-1.5 px-2",
-        "bg-gradient-to-t from-black/60 via-black/30 to-transparent",
-        "opacity-0 group-hover:opacity-100 transition-opacity duration-200",
-        "pr-10"
+        "absolute bottom-0 left-0 right-0 flex items-center justify-center gap-0.5 md:gap-1 py-2 px-2",
+        "bg-gradient-to-t from-black/70 via-black/40 to-transparent",
+        "opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200",
+        "pr-12"
       )}>
         {/* 重试 */}
         {imagePrompt && (
           <button
             onClick={handleRetry}
             disabled={isRetrying}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-white/90 hover:text-white hover:bg-white/20 transition-colors text-[11px]"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white/90 hover:text-white hover:bg-white/20 active:bg-white/30 transition-colors text-xs min-h-[32px]"
             title="重试（不扣费）"
           >
             {isRetrying
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <RotateCcw className="h-3 w-3" />
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <RotateCcw className="h-3.5 w-3.5" />
             }
-            重试
+            <span className="hidden sm:inline">重试</span>
           </button>
         )}
         {/* ★ 高清放大 */}
@@ -151,37 +151,37 @@ export function ImageActionBar({
           onClick={handleUpscale}
           disabled={isUpscaling || isUpscaled}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-[11px]",
+            "flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors text-xs min-h-[32px]",
             isUpscaled
               ? "text-emerald-300 cursor-default"
-              : "text-white/90 hover:text-white hover:bg-white/20"
+              : "text-white/90 hover:text-white hover:bg-white/20 active:bg-white/30"
           )}
           title={isUpscaled ? '已放大' : '超分辨率放大 2x'}
         >
           {isUpscaling
-            ? <Loader2 className="h-3 w-3 animate-spin" />
-            : <ZoomIn className="h-3 w-3" />
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <ZoomIn className="h-3.5 w-3.5" />
           }
-          {isUpscaled ? '已高清' : '高清'}
+          <span className="hidden sm:inline">{isUpscaled ? '已高清' : '高清'}</span>
         </button>
         {/* 下载 */}
         <button
           onClick={(e) => { e.stopPropagation(); onDownload(); }}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-white/90 hover:text-white hover:bg-white/20 transition-colors text-[11px]"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white/90 hover:text-white hover:bg-white/20 active:bg-white/30 transition-colors text-xs min-h-[32px]"
           title="下载"
         >
-          <Download className="h-3 w-3" />
-          下载
+          <Download className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">下载</span>
         </button>
         {/* 画廊 */}
         {onOpenGallery && (
           <button
             onClick={(e) => { e.stopPropagation(); onOpenGallery(); }}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-white/90 hover:text-white hover:bg-white/20 transition-colors text-[11px]"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white/90 hover:text-white hover:bg-white/20 active:bg-white/30 transition-colors text-xs min-h-[32px]"
             title="查看画廊"
           >
-            <Images className="h-3 w-3" />
-            画廊
+            <Images className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">画廊</span>
           </button>
         )}
       </div>

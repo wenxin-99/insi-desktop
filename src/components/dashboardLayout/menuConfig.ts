@@ -4,7 +4,7 @@
  */
 import {
   LayoutDashboard, MessageSquare, Image, Video, Coins, ShoppingBag,
-  Receipt, Crown, UserPlus, MessageCircle, Bot, Brain, Clock, HelpCircle, Headphones,
+  Receipt, UserPlus, MessageCircle, Bot, Brain, Clock, HelpCircle, Headphones,
   Users, Ticket, Bell, Network, TrendingUp, TestTube, Package, Mic2,
   Gauge, Percent, CreditCard, Settings, HardDrive, FileText, Terminal,
   Download, Cpu, Sparkles, Shield,
@@ -29,9 +29,8 @@ export function getUserMenuItems(t: (key: string, fallback?: string) => string):
     { icon: Image, label: t('dashboard.menu.user.imageHistory'), path: "/images" },
     { icon: Video, label: t('dashboard.menu.user.videoHistory'), path: "/video-history" },
     { icon: Coins, label: t('dashboard.menu.user.coinManagement'), path: "/transactions" },
-    { icon: ShoppingBag, label: t('dashboard.menu.user.productPurchase'), path: "/pricing" },
-    { icon: Receipt, label: t('dashboard.menu.user.orderHistory'), path: "/orders" },
-    { icon: Crown, label: t('dashboard.menu.user.subscriptionManagement'), path: "/subscription" },
+    { icon: ShoppingBag, label: t('dashboard.menu.user.productPurchase'), path: "/recharge" },
+    { icon: Receipt, label: "充值订单", path: "/orders" },
     { icon: UserPlus, label: t('dashboard.menu.user.inviteFriends'), path: "/invite" },
     { icon: MessageCircle, label: t('dashboard.menu.user.userFeedback'), path: "/feedback" },
     { icon: Bot, label: t('dashboard.menu.user.automationSandbox'), path: "/automation" },
@@ -61,7 +60,6 @@ export function getAdminMenuGroups(t: (key: string, fallback?: string) => string
     { label: t('dashboard.menu.admin.group.billing', '套餐与计费'), items: [
       { icon: Package, label: t('dashboard.menu.admin.group.packagePricing', '套餐与定价'), path: "/admin/packages" },
       { icon: Mic2, label: '语音套餐', path: "/admin/voice-packages" },
-      { icon: Gauge, label: t('dashboard.menu.admin.quotaManagement'), path: "/admin/quota" },
       { icon: Percent, label: t('dashboard.menu.admin.discountManagement'), path: "/admin/discount" },
       { icon: Coins, label: t('dashboard.menu.admin.coinManagement'), path: "/admin/fish-coin-management" },
       { icon: CreditCard, label: t('dashboard.menu.admin.paymentConfig'), path: "/admin/payment-config" },

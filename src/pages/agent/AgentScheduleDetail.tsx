@@ -41,11 +41,17 @@ export function AgentScheduleDetail({
   const packages = packagesQuery.data || [];
   const taskConfig = typeof task.config === "string" ? JSON.parse(task.config || "{}") : (task.config || {});
   const [selectedPackageId, setSelectedPackageId] = useState<number>(taskConfig._schedulePackageId || 0);
+  const [skipConfirmation, setSkipConfirmation] = useState<boolean>(taskConfig.skipConfirmation !== false);
   const updateConfigMut = trpc.agent.updateScheduleConfig.useMutation();
 
   const handlePackageChange = (pkgId: number) => {
     setSelectedPackageId(pkgId);
     updateConfigMut.mutate({ taskId: task.id, schedulePackageId: pkgId });
+  };
+
+  const handleSkipConfirmationChange = (skip: boolean) => {
+    setSkipConfirmation(skip);
+    updateConfigMut.mutate({ taskId: task.id, skipConfirmation: skip });
   };
 
   const successRate = schedule && schedule.totalRuns > 0
@@ -210,7 +216,7 @@ export function AgentScheduleDetail({
                 </div>
               </div>
 
-              {/* 统计条 */}
+              {/* 统计条 + 确认开关 */}
               <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border/50">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-muted-foreground" />
@@ -241,6 +247,16 @@ export function AgentScheduleDetail({
                     </div>
                   </div>
                 )}
+                {/* ★ P2⑨：操作确认开关 */}
+                <div className={`flex items-center gap-2 ${successRate === null ? "ml-auto" : ""}`}>
+                  <span className="text-[10px] text-muted-foreground">执行前确认</span>
+                  <button
+                    onClick={() => handleSkipConfirmationChange(!skipConfirmation)}
+                    className={`relative w-8 h-[18px] rounded-full transition-colors ${skipConfirmation ? "bg-muted" : "bg-primary"}`}
+                  >
+                    <span className={`absolute top-[2px] w-[14px] h-[14px] bg-white rounded-full shadow transition-transform ${skipConfirmation ? "left-[2px]" : "left-[14px]"}`} />
+                  </button>
+                </div>
               </div>
               {/* ★ 最近执行结果迷你图 */}
               {runs.length > 0 && (

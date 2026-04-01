@@ -19,8 +19,11 @@ import { VideoPlayer } from '@/components/VideoPlayer'; // ★ T12-3
 import { HomeworkResultCard } from '@/components/HomeworkResultCard'; // ★ T14-2
 import { RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { MessageTableOfContents } from '@/components/MessageTableOfContents';
+import { FilePreviewCard } from '@/components/FilePreviewCard';
 import type { ContentProps } from './types';
 
 export function AssistantTaskCards({ msg, state, handleSendMessage }: ContentProps) {
@@ -111,8 +114,11 @@ export function AssistantRegularContent({
     setLightboxImages, setLightboxIndex, setLightboxOpen,
   } = state;
 
+  // ★ P0-2: 消息内目录导航 ref
+  const contentRef = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="w-full ml-0 pl-0 space-y-3">
+    <div className="w-full ml-0 pl-0 space-y-1" ref={contentRef}>
       {/* ★ T12-3: videoUrl 属性直接渲染播放器 */}
       {(msg as any).videoUrl && (
         <div className="w-full mb-3">
@@ -133,7 +139,10 @@ export function AssistantRegularContent({
       {/* 图片区域（全宽，位于顶部） */}
       {msg.images && msg.images.length > 0 && (
         <div className="w-full ml-0 pl-0 mb-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-[600px]">
+          <div className={cn(
+            "grid gap-3 max-w-[600px]",
+            msg.images.length === 1 ? "grid-cols-1 max-w-[400px]" : "grid-cols-1 md:grid-cols-2"
+          )}>
             {msg.images.map((img, imgIndex) => {
               const isGenAnimating = !!(img as any).isGenerating;
               return (
@@ -144,7 +153,7 @@ export function AssistantRegularContent({
                   isGenerating={isGenAnimating}
                   generatingPrompt={isGenAnimating ? img.name : undefined}
                   alt={img.name}
-                  className="w-full h-auto max-w-[400px] max-h-[400px] object-contain cursor-pointer rounded-xl border border-gray-100"
+                  className="w-full h-auto max-w-[400px] max-h-[400px] object-contain cursor-pointer rounded-xl border border-border/40 dark:border-border/20"
                   onClick={() => {
                     if (isGenAnimating) return;
                     setLightboxImages(msg.images!.map(i => ({...i, url: normalizeImageUrl(i.url)})));
@@ -218,6 +227,14 @@ export function AssistantRegularContent({
       )}
 
       {/* 显示文本内容 */}
+      {/* ★ 优化③: 首 token 前思考指示器 — 流式开始但无内容时显示脉冲圆点 */}
+      {isStreaming && !displayContent && (
+        <div className="flex items-center gap-1.5 py-2 pl-1">
+          <span className="thinking-dot" style={{ animationDelay: '0ms' }} />
+          <span className="thinking-dot" style={{ animationDelay: '160ms' }} />
+          <span className="thinking-dot" style={{ animationDelay: '320ms' }} />
+        </div>
+      )}
       {/* ★ T12-3: 检测视频 URL 并内联播放 */}
       {displayContent && (() => {
         const VIDEO_URL_RE = /https?:\/\/[^\s"'<>]+\.(?:mp4|webm|mov)(?:\?[^\s"'<>]*)?/gi;
@@ -247,9 +264,6 @@ export function AssistantRegularContent({
       })()}
       {displayContent && displayContent !== '[图片]' && (() => {
         const isErrorMessage = (msg as any).isError;
-        const hasImageDescription =
-          displayContent.includes('![AI_IMG]') ||
-          (displayContent.includes('图片描述') && msg.images && (msg as any).images?.length > 0);
 
         return (
           <div className={`w-full ml-0 pl-0 space-y-2 ${
@@ -257,19 +271,7 @@ export function AssistantRegularContent({
               ? 'bg-destructive/5 border border-destructive/20 rounded-lg p-4 md:p-5'
               : ''
           }`}>
-            {hasImageDescription && (
-              <ImageDescriptionToggle
-                msg={msg}
-                messages={messages}
-                collapsedDescriptions={collapsedDescriptions}
-                setCollapsedDescriptions={setCollapsedDescriptions}
-                labelExpand={t("chat.expand")}
-                labelCollapse={t("chat.collapse")}
-                label={t("chat.imageDescription")}
-              />
-            )}
-            {!collapsedDescriptions.has(messages.indexOf(msg)) && (
-              <div className="pt-2">
+              <div className={isStreaming ? 'streaming-content' : ''}>
                 <HighlightedContent
                   hasImages={msg.images && msg.images.length > 0}
                   conversationId={state.selectedConversationId ?? undefined}
@@ -277,14 +279,11 @@ export function AssistantRegularContent({
                   content={cleanAssistantContent(displayContent)}
                   filePackageUrl={msg.filePackageUrl}
                   streaming={isStreaming}
+                  webSearchSources={(msg as any).webSearchSources}
                 />
-                {/* ★ 统一渲染：打字光标（流式期间显示，完成后淡出） */}
-                <span className={cn(
-                  "inline-block w-[2px] h-[1.1em] bg-current ml-[1px] align-text-bottom transition-opacity duration-300",
-                  isStreaming ? "opacity-70 animate-pulse" : "opacity-0"
-                )} />
+                {/* ★ 打字光标：流式期间 blink，完成后淡出 */}
+                <span className={isStreaming ? "streaming-cursor" : "streaming-cursor-out"} />
               </div>
-            )}
           </div>
         );
       })()}
@@ -357,6 +356,16 @@ export function AssistantRegularContent({
           sources={(msg as any).webSearchSources}
           query={(msg as any).webSearchQuery}
         />
+      )}
+
+      {/* ★ 文件预览卡片（AI 生成的文件自动渲染） */}
+      {!isStreaming && (msg as any).files && (msg as any).files.length > 0 && (
+        <FilePreviewCard fileData={(msg as any).files} />
+      )}
+
+      {/* ★ P0-2: 消息内目录导航（≥3 个标题时显示） */}
+      {!isStreaming && displayContent && (
+        <MessageTableOfContents content={displayContent} containerRef={contentRef} />
       )}
     </div>
   );
@@ -461,8 +470,8 @@ export function cleanAssistantContent(content: string): string {
   cleaned = cleaned.replace(/AI_IMG/g, '');
   cleaned = cleaned.replace(/🎨\s*正在为您生成图片，请稍候\.\.\.?/g, '');
   cleaned = cleaned.replace(/🔍\s*正在识别图片.*?…/g, '');
-  cleaned = cleaned.replace(/\*\*图片描述：?\s*\*\*/g, '');
-  cleaned = cleaned.replace(/图片描述：?\s*/g, '');
+  // ★ 清理所有 "图片描述" 变体（全角/半角冒号、加粗、独立行）
+  cleaned = cleaned.replace(/\*{0,2}图片描述[：:]*\s*\*{0,2}\s*/g, '');
   cleaned = cleaned.trim();
   return cleaned;
 }

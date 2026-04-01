@@ -162,8 +162,11 @@ export const ChatInput = memo(forwardRef<ChatInputRef, ChatInputProps>(
           // 重置高度
           if (textareaRef.current) {
             textareaRef.current.style.height = '36px';
-            // 移动端：收起键盘
-            textareaRef.current.blur();
+            // ★ 仅移动端收起键盘，桌面端保持焦点方便连续对话
+            const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+            if (isMobile) {
+              textareaRef.current.blur();
+            }
           }
         }
       }

@@ -14,6 +14,8 @@
 //!   protocol  — WebSocket/Socket.IO 通信
 //!   safety    — 安全沙箱
 //!   state     — 全局应用状态
+//!   system    — 系统能力（多显示器、窗口、文件系统）
+//!   clipboard — 剪贴板读写
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -92,6 +94,7 @@ fn disconnect(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.should_connect.write() = false;
     *state.connection_status.write() = ConnectionStatus::Disconnected;
     *state.auth_token.write() = None;
+    *state.authorized.write() = false;
 
     serde_json::json!({
         "success": true,
@@ -110,16 +113,56 @@ fn test_screenshot() -> Result<serde_json::Value, String> {
     }))
 }
 
-/// 授权截屏/输入权限
+/// ★ 授权 AI 控制桌面（通过 WebSocket 通知服务端）
 #[tauri::command]
 fn authorize(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
-    // TODO: 在 macOS 上引导用户到系统偏好设置授权屏幕录制权限
-    // 目前直接标记为已授权
+    // 检查是否已连接
+    let connected = matches!(*state.connection_status.read(), ConnectionStatus::Connected);
+    if !connected {
+        return serde_json::json!({
+            "success": false,
+            "message": "未连接服务端，无法授权",
+        });
+    }
+
+    // 设置 pending 标志，下次心跳循环中会发送 client_authorize 给服务端
+    *state.pending_authorize.write() = true;
+    // 同时本地也标记（乐观更新，服务端会通过 permission_update 确认）
     *state.authorized.write() = true;
+
+    log::info!("[Main] User authorized desktop control from client UI");
 
     serde_json::json!({
         "success": true,
-        "message": "已授权",
+        "message": "已授权，等待服务端确认...",
+    })
+}
+
+/// ★ 撤销 AI 桌面控制权限
+#[tauri::command]
+fn revoke(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
+    *state.authorized.write() = false;
+    *state.pending_revoke.write() = true;
+
+    log::info!("[Main] User revoked desktop control from client UI");
+
+    serde_json::json!({
+        "success": true,
+        "message": "已撤销授权",
+    })
+}
+
+/// ★ 紧急停止（Kill Switch）— 立即撤销所有权限
+#[tauri::command]
+fn kill_switch(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
+    *state.authorized.write() = false;
+    *state.pending_revoke.write() = true;
+
+    log::warn!("[Main] KILL SWITCH activated! All desktop control revoked.");
+
+    serde_json::json!({
+        "success": true,
+        "message": "紧急停止已激活，所有操作已终止",
     })
 }
 
@@ -144,6 +187,8 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .manage(app_state.clone())
         .invoke_handler(tauri::generate_handler![
             get_status,
@@ -151,6 +196,8 @@ fn main() {
             disconnect,
             test_screenshot,
             authorize,
+            revoke,
+            kill_switch,
         ])
         .setup(move |app| {
             // ── 系统托盘 ──
@@ -193,14 +240,22 @@ fn main() {
                 })
                 .build(app)?;
 
+            // ── 关闭窗口时隐藏到托盘（不退出） ──
+            let main_window = app.get_webview_window("main").unwrap();
+            let win_clone = main_window.clone();
+            main_window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = win_clone.hide();
+                    log::info!("[Main] Window hidden to tray");
+                }
+            });
+
             // ── 启动 WebSocket 连接线程 ──
             let state_ws = state_for_ws.clone();
             tauri::async_runtime::spawn(async move {
                 protocol::connect_and_serve(state_ws, shutdown_rx).await;
             });
-
-            // ── 检查自动登录（从 localStorage 恢复 token） ──
-            // 由前端 WebView 在加载时调用 login() 命令完成
 
             log::info!("[Insi Desktop] App started, waiting for login...");
             Ok(())

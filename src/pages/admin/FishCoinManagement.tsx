@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
 
 import { UsersTab } from "./fishCoinManagement/UsersTab";
 import { TransactionsTab } from "./fishCoinManagement/TransactionsTab";
 import { SyncTab } from "./fishCoinManagement/SyncTab";
+import { RefundTab } from "./fishCoinManagement/RefundTab";
 
 export default function FishCoinManagement() {
   const [, setLocation] = useLocation();
@@ -71,7 +73,8 @@ export default function FishCoinManagement() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 md:p-8">
+    <DashboardLayout>
+    <div className="p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/admin")}>
@@ -87,6 +90,7 @@ export default function FishCoinManagement() {
           <TabsList className="bg-white/80 backdrop-blur-sm">
             <TabsTrigger value="users">用户余额</TabsTrigger>
             <TabsTrigger value="transactions">交易记录</TabsTrigger>
+            <TabsTrigger value="refund">退款管理</TabsTrigger>
             <TabsTrigger value="sync">同步状态</TabsTrigger>
           </TabsList>
 
@@ -116,6 +120,10 @@ export default function FishCoinManagement() {
             />
           </TabsContent>
 
+          <TabsContent value="refund" className="space-y-4">
+            <RefundTab />
+          </TabsContent>
+
           <TabsContent value="sync" className="space-y-4">
             <SyncTab
               syncStatus={syncStatus} syncStatusLoading={syncStatusLoading}
@@ -125,5 +133,6 @@ export default function FishCoinManagement() {
         </Tabs>
       </div>
     </div>
+    </DashboardLayout>
   );
 }

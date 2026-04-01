@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { SafeMarkdownWithDownload } from './SafeMarkdownWithDownload';
+import { CitationOverlay, citationStyles } from './CitationOverlay';
 
 /**
  * 关键信息高亮组件
@@ -17,6 +18,8 @@ interface HighlightedContentProps {
   filePackageUrl?: string;
   /** ★ 统一渲染：流式输出时跳过 Prism 高亮，用轻量高亮 */
   streaming?: boolean;
+  /** ★ 联网搜索来源（用于内联引用角标） */
+  webSearchSources?: Array<{ title: string; url: string }>;
 }
 
 // 定义关键词类别和对应的样式
@@ -66,7 +69,10 @@ const KEYWORD_CATEGORIES = {
   }
 };
 
-export function HighlightedContent({ content, hasImages = false, conversationId, messageIndex, filePackageUrl, streaming }: HighlightedContentProps) {
+export function HighlightedContent({ content, hasImages = false, conversationId, messageIndex, filePackageUrl, streaming, webSearchSources }: HighlightedContentProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const hasCitations = !streaming && webSearchSources && webSearchSources.length > 0;
+
   // 只对包含图片的消息进行高亮处理
   const processedContent = useMemo(() => {
     if (!hasImages || !content) {
@@ -114,8 +120,10 @@ export function HighlightedContent({ content, hasImages = false, conversationId,
   }, [content, hasImages]);
 
   return (
-    <div className="highlighted-content-wrapper">
+    <div className="highlighted-content-wrapper" ref={contentRef}>
       <SafeMarkdownWithDownload content={processedContent} conversationId={conversationId} messageIndex={messageIndex} filePackageUrl={filePackageUrl} streaming={streaming} />
+      {hasCitations && <CitationOverlay containerRef={contentRef} sources={webSearchSources!} />}
+      {hasCitations && <style>{citationStyles}</style>}
       {hasImages && (
         <style>{`
           .highlighted-content-wrapper strong {

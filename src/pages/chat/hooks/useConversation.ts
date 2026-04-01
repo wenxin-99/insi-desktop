@@ -17,6 +17,8 @@ export function useConversation(state: ChatStateReturn) {
     t, utils, messages, setMessages,
     selectedConversationId, setSelectedConversationId,
     selectedPackageId, setSelectedPackageId,
+    currentProjectId, setCurrentProjectId,
+    activeBotId,
     selectedModelId,
     modelPackages, chatModels, currentUser,
     createConversationMutation, deleteConversationMutation,
@@ -306,6 +308,12 @@ export function useConversation(state: ChatStateReturn) {
       setOperationLogs(savedLogs);
 
       const conversation = await utils.conversation.getById.fetch({ id: conversationId });
+      // ★ P0: 同步对话所属项目到 state
+      setCurrentProjectId((conversation as any)?.projectId || null);
+      // ★ BUG-4 fix: sync botId from loaded conversation
+      if (typeof (state as any).setActiveBotId === 'function') {
+        (state as any).setActiveBotId((conversation as any)?.botId || null);
+      }
       if (conversation && conversation.messages) {
         const parsedMessages = JSON.parse(conversation.messages as string);
         const displayMessages = parseDisplayMessages(parsedMessages);
@@ -367,6 +375,8 @@ export function useConversation(state: ChatStateReturn) {
       modelId: 0,
       title: '新对话',
       packageId: pkgId,
+      projectId: currentProjectId || undefined,  // ★ P0: 在当前项目中创建对话
+      botId: activeBotId || undefined,  // ★ Bot P0
     });
   };
 

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { BrowserPreview } from "@/components/sandboxPanel/BrowserPreview";
 import { CodeEditor } from "@/components/sandboxPanel/CodeEditor";
 import { TerminalView } from "@/components/sandboxPanel/TerminalView";
+import { TaskInstructionInput } from "@/components/sandboxPanel/TaskInstructionInput";
 import type { BrowserState, CodeState, TerminalState } from "@/hooks/useSandboxSocket";
 import type { Socket } from "socket.io-client";
 import { SandboxFAB } from "./mobileSandbox/SandboxFAB";
@@ -27,6 +28,9 @@ interface MobileSandboxSheetProps {
   taskId?: number | null;
   socket?: Socket | null;
   isActive: boolean;
+  pendingConfirmation?: { action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number } | null;
+  onConfirmationResolved?: () => void;
+  cursorPosition?: { x: number; y: number } | null;
 }
 
 const TABS = [
@@ -42,6 +46,7 @@ const SHEET_HEIGHTS: Record<SheetHeight, string> = {
 
 export const MobileSandboxSheet = memo(function MobileSandboxSheet({
   browser, code, terminal, activeTab, onTabChange, isConnected, taskId, socket, isActive,
+  pendingConfirmation, onConfirmationResolved, cursorPosition,
 }: MobileSandboxSheetProps) {
   const [sheetHeight, setSheetHeight] = useState<SheetHeight>("closed");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -145,9 +150,14 @@ export const MobileSandboxSheet = memo(function MobileSandboxSheet({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden rounded-t-lg mx-1">
-          {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} />}
+          {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} pendingConfirmation={pendingConfirmation} onConfirmationResolved={onConfirmationResolved} cursorPosition={cursorPosition} />}
           {activeTab === "code" && <CodeEditor code={code} />}
           {activeTab === "terminal" && <TerminalView terminal={terminal} />}
+        </div>
+
+        {/* ★ P3⑩：移动端指令输入（替代不可用的截图点击交互） */}
+        <div className="shrink-0 mx-1 mb-1">
+          <TaskInstructionInput taskId={taskId ?? null} socket={socket ?? null} isRunning={!!taskId && isConnected} forceDark />
         </div>
       </div>
     </>

@@ -37,7 +37,16 @@ export function useChatState(): ChatStateReturn {
   const isSidebarOpen = sidebarContext ? sidebarContext.state !== 'collapsed' : true;
 
   // ═══════════ 对话选择 ═══════════
+  // ★ 检测是否从项目页跳转过来要新建对话
+  const _urlProjectParam = new URLSearchParams(window.location.search).get('project');
+  const _isNewProjectChat = !!_urlProjectParam;
+
   const [selectedConversationId, _setSelectedConversationId] = useState<number | null>(() => {
+    // ★ P0: 从项目页跳转来时（?project=N），不恢复旧对话，进入空白新对话状态
+    if (_isNewProjectChat) {
+      localStorage.removeItem('selectedConversationId');
+      return null;
+    }
     const saved = localStorage.getItem('selectedConversationId');
     return saved ? parseInt(saved, 10) : null;
   });
@@ -54,6 +63,50 @@ export function useChatState(): ChatStateReturn {
     const savedPackageId = localStorage.getItem('preferredPackageId');
     return savedPackageId ? parseInt(savedPackageId, 10) : null;
   });
+
+
+  // ═══════════ Bot P0: 自定义 Bot 上下文 ═══════════
+  const [activeBotId, setActiveBotId] = useState<number | null>(() => {
+    const param = new URLSearchParams(window.location.search).get('botId');
+    return param ? parseInt(param, 10) : null;
+  });
+
+  // 清除 URL 中的 botId 参数（防止刷新重复触发）
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('botId')) {
+      url.searchParams.delete('botId');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
+  // 获取 Bot 信息（用于显示名称、开场白等）
+  const { data: activeBotInfo, isLoading: isLoadingBotInfo } = trpc.customBot.getById.useQuery(
+    { id: activeBotId! },
+    { enabled: !!activeBotId }
+  );
+
+  // 使用 Bot 时自动进入空白对话
+  useEffect(() => {
+    if (activeBotId && !selectedConversationId) {
+      setMessages([]);
+    }
+  }, [activeBotId]);
+
+  // ═══════════ 项目上下文 ═══════════
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(() => {
+    const param = new URLSearchParams(window.location.search).get('project');
+    return param ? parseInt(param, 10) : null;
+  });
+
+  // 初始化后清除 URL 中的 ?project= 参数，避免刷新/导航时重复触发
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('project')) {
+      url.searchParams.delete('project');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
 
   // ═══════════ 消息 ═══════════
   const [message, setMessage] = useState('');
@@ -95,6 +148,13 @@ export function useChatState(): ChatStateReturn {
 
   // ═══════════ 流式状态 ═══════════
   const [isStreamingMessage, setIsStreamingMessage] = useState(false);
+  // ★ P1-1: 排队追问消息队列
+  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+  const pendingMessagesRef = useRef<string[]>([]);
+  // 同步 ref
+  useEffect(() => { pendingMessagesRef.current = pendingMessages; }, [pendingMessages]);
+  // ★ P1-1: 切换对话时清空排队消息
+  useEffect(() => { setPendingMessages([]); }, [selectedConversationId]);
   const {
     sendMessage: sendStreamMessage, isStreaming, streamedContent,
     reset: resetStream, abort: abortStream, setOptions: setStreamOptions,
@@ -105,6 +165,22 @@ export function useChatState(): ChatStateReturn {
   const [isResearchMode, setIsResearchMode] = useState(false);
   const [isStartingResearch, setIsStartingResearch] = useState(false);
   const [activeResearchTaskId, setActiveResearchTaskId] = useState<number | null>(null);
+
+  // ★ P0③：页面加载时自动重连正在运行的任务
+  const { data: runningTasks } = trpc.agent.activeRunning.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  useEffect(() => {
+    if (runningTasks && runningTasks.length > 0 && !activeResearchTaskId) {
+      const first = runningTasks[0];
+      const tid = parseInt(String(first.taskId)) || 0;
+      if (tid > 0) {
+        console.log(`[AutoReconnect] Reconnecting to running task ${tid}: "${first.prompt}"`);
+        setActiveResearchTaskId(tid);
+      }
+    }
+  }, [runningTasks, activeResearchTaskId]);
 
   // ═══════════ 沙箱 ═══════════
   const [sandboxActiveTab, setSandboxActiveTab] = useState<'browser' | 'code' | 'terminal'>('browser');
@@ -126,6 +202,14 @@ export function useChatState(): ChatStateReturn {
     setThinkingModeRaw(val);
     try { localStorage.setItem('thinkingMode', String(val)); } catch {}
   }, []);
+  // ★ Auto Mode：自动模型路由
+  const [autoMode, setAutoModeRaw] = useState(() => {
+    try { return localStorage.getItem('autoMode') === 'true'; } catch { return false; }
+  });
+  const setAutoMode = useCallback((val: boolean) => {
+    setAutoModeRaw(val);
+    try { localStorage.setItem('autoMode', String(val)); } catch {}
+  }, []);
   const [reasoningContent, setReasoningContent] = useState('');
   const [thinkingStage, setThinkingStage] = useState<ThinkingStageType>('idle');
   const [thinkingModelName, setThinkingModelName] = useState('');
@@ -143,6 +227,9 @@ export function useChatState(): ChatStateReturn {
 
   // ═══════════ Artifact 右侧面板 ═══════════
   const [activeArtifact, setActiveArtifact] = useState<any>(null);
+
+  // ═══════════ 流式工具组件 ═══════════
+  const [activeToolComponents, setActiveToolComponents] = useState<import('@/types/toolComponent').ToolComponentData[]>([]);
 
   // ═══════════ 折叠/推荐 ═══════════
   const [collapsedDescriptions, setCollapsedDescriptions] = useState<Set<number>>(new Set());
@@ -198,6 +285,8 @@ export function useChatState(): ChatStateReturn {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const chatInputRef = useRef<ChatInputRef>(null);
   const sendingGuardRef = useRef(false);
+  // ★ P1-1: 排队消费回调 ref — 由 Chat 组件设置，useStreamCallbacks 调用
+  const pendingSendRef = useRef<((text: string) => void) | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const hasDetectedToolCallRef = useRef<boolean>(false);
@@ -257,6 +346,7 @@ export function useChatState(): ChatStateReturn {
         setOperationLogs([]);
         setThinkingSummary('');
         setActiveArtifact(null);
+        setActiveToolComponents([]);
         // 停止所有 TTS 播放
         streamingTts.stop();
         setPlayingTtsIndex(null);
@@ -316,6 +406,8 @@ export function useChatState(): ChatStateReturn {
     selectedConversationId, setSelectedConversationId,
     selectedModelId, setSelectedModelId,
     selectedPackageId, setSelectedPackageId,
+    currentProjectId, setCurrentProjectId,
+    activeBotId, setActiveBotId, activeBotInfo, isLoadingBotInfo,
     message, setMessage, messages, setMessages, nextMsgId,
     showShortcutsHelp, setShowShortcutsHelp,
     showMobileSidebar, setShowMobileSidebar,
@@ -345,6 +437,7 @@ export function useChatState(): ChatStateReturn {
     isUploading,
     quotedRef, setQuotedRef,
     isStreamingMessage, setIsStreamingMessage,
+    pendingMessages, setPendingMessages, pendingMessagesRef,
     streamedContent, isStreaming,
     sendStreamMessage, resetStream, abortStream, setStreamOptions,
     isResearchMode, setIsResearchMode,
@@ -358,6 +451,7 @@ export function useChatState(): ChatStateReturn {
     currentThinkingSteps, setCurrentThinkingSteps,
     realtimeThinkingSteps, setRealtimeThinkingSteps,
     thinkingMode, setThinkingMode,
+    autoMode, setAutoMode,
     reasoningContent, setReasoningContent,
     thinkingStage, setThinkingStage,
     thinkingModelName, setThinkingModelName,
@@ -368,6 +462,7 @@ export function useChatState(): ChatStateReturn {
     operationLogs, setOperationLogs, operationLogsRef,
     thinkingSummary, setThinkingSummary,
     activeArtifact, setActiveArtifact,
+    activeToolComponents, setActiveToolComponents,
     collapsedDescriptions, setCollapsedDescriptions,
     suggestedQuestions, setSuggestedQuestions,
     playingTtsIndex, setPlayingTtsIndex,
@@ -382,7 +477,7 @@ export function useChatState(): ChatStateReturn {
     editingMessageIndex, setEditingMessageIndex,
     editText, setEditText,
     messagesEndRef, fileInputRef, imageInputRef, chatInputRef,
-    sendingGuardRef, messagesContainerRef, userScrolledUpRef,
+    sendingGuardRef, pendingSendRef, messagesContainerRef, userScrolledUpRef,
     hasDetectedToolCallRef, streamedContentRef, reasoningContentRef,
     streamingForConvIdRef, selectedConvIdRef,
     messageCacheRef, initialLoadDoneRef, chatContainerRef,

@@ -353,8 +353,12 @@ export function ResearchFlowSteps({ taskId, prompt, onOpenSandbox }: ResearchFlo
                 <div className="absolute left-[-2px] md:left-[-5px] top-[3px] w-[20px] h-[20px] md:w-[28px] md:h-[28px] rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center z-10">
                   <Loader2 className="w-2.5 h-2.5 md:w-4 md:h-4 animate-spin text-blue-500" />
                 </div>
-                <div className="flex items-center gap-1.5 py-1">
-                  <span className="text-[11px] text-blue-500 dark:text-blue-400 animate-pulse">
+                <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100/60 dark:border-blue-800/20">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" />
+                  </span>
+                  <span className="text-[11px] text-blue-600 dark:text-blue-400">
                     {sandbox.thinking
                       ? '正在思考...'
                       : sandbox.currentStep || '执行中...'}
@@ -413,13 +417,50 @@ export function ResearchFlowSteps({ taskId, prompt, onOpenSandbox }: ResearchFlo
 
       {/* 完成/失败报告 */}
       {isFinished && (
-        <ReportBubble
-          report={report}
-          status={status as 'completed' | 'failed'}
-          stepCount={allSteps.length}
-          browseCount={browseCount}
-          duration={duration}
-        />
+        <>
+          {/* ★ 完成动画 — checkmark 过渡效果 */}
+          {status === 'completed' && (
+            <div className="flex justify-center py-3 animate-in zoom-in-50 fade-in duration-500">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/30">
+                <div className="relative w-5 h-5">
+                  {/* 圆环动画 */}
+                  <svg className="w-5 h-5 animate-in spin-in-180 duration-500" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="#22c55e" strokeWidth="2" className="animate-in fade-in duration-300" />
+                  </svg>
+                  {/* 勾号动画 */}
+                  <svg className="w-5 h-5 absolute inset-0 animate-in zoom-in-0 duration-300 delay-300" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="8 12 11 15 16 9" />
+                  </svg>
+                </div>
+                <span className="text-[12px] font-medium text-emerald-700 dark:text-emerald-400">
+                  研究完成
+                </span>
+                <span className="text-[10px] text-emerald-600/60 dark:text-emerald-400/50 font-mono">
+                  {allSteps.length} 步 · {browseCount > 0 ? `${browseCount} 页面 · ` : ''}{duration}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {status === 'failed' && (
+            <div className="flex justify-center py-3 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30">
+                <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+                <span className="text-[12px] font-medium text-red-700 dark:text-red-400">任务失败</span>
+              </div>
+            </div>
+          )}
+
+          <ReportBubble
+            report={report}
+            status={status as 'completed' | 'failed'}
+            stepCount={allSteps.length}
+            browseCount={browseCount}
+            duration={duration}
+          />
+        </>
       )}
 
       <div ref={bottomRef} />

@@ -21,11 +21,12 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, Brain as BrainIcon, PanelLeft, Users, Bot, Ticket, MessageSquare, FileText, Image, Video, Mic, Coins, Settings, Bell, UserCircle, Wallet, HelpCircle, UserPlus, MessageCircle, Download, Gauge, Crown, Package, TrendingUp, Percent, Home, DollarSign, CreditCard, Receipt, ShoppingBag, Network, HardDrive, TestTube, Mic2, Terminal, Clock, ChevronDown, Brain, BarChart3, Cpu, Sparkles, Shield, Headphones, BookOpen, Dna, Database, Github, Store, Search } from "lucide-react";
+import { LayoutDashboard, LogOut, Brain as BrainIcon, PanelLeft, Users, Bot, Ticket, MessageSquare, FileText, Image, Video, Mic, Coins, Settings, Bell, UserCircle, Wallet, HelpCircle, UserPlus, MessageCircle, Download, Gauge, Crown, Package, TrendingUp, Percent, Home, DollarSign, CreditCard, Receipt, ShoppingBag, Network, HardDrive, TestTube, Mic2, Terminal, Clock, ChevronDown, Brain, BarChart3, Cpu, Sparkles, Shield, Headphones, BookOpen, Dna, Database, Github, Store, Search, FolderOpen } from "lucide-react";
 import { SettingsMenu } from "@/components/SettingsMenu";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { SidebarChatList } from '@/components/SidebarChatList';
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { useTranslation } from "react-i18next";
@@ -125,8 +126,6 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   // ============ 路径匹配辅助函数 ============
-  // wouter 的 location 在某些版本/用法下可能包含 query/hash（例如 /chat?conversation=xxx）。
-  // 如果直接用 location === path，会导致侧边栏高亮与移动端标题失效。
   const normalizePath = (path: string) => {
     const base = path.split("?")[0].split("#")[0];
     if (base.length > 1 && base.endsWith("/")) return base.slice(0, -1);
@@ -140,21 +139,26 @@ function DashboardLayoutContent({
     if (target !== "/" && cur.startsWith(`${target}/`)) return true;
     return false;
   };
+
+  // ★ 聊天页路由检测
+  const isChatPage = normalizePath(location) === '/chat';
+
   
   // Generate menu items dynamically
   // ★ 方案 A 侧边栏精简：4 主导航 + 2 折叠分组
   // 主导航（始终可见）
   const primaryNavItems = [
     { icon: MessageSquare, label: "Insi 对话", path: "/chat" },
-    { icon: Search, label: "深度研究", path: "/dashboard" },
-    { icon: LayoutDashboard, label: "创作工坊", path: "/images" },
+    { icon: FolderOpen, label: "项目空间", path: "/projects" },
     { icon: Mic, label: "语音对话", path: "/voice-chat" },
+    { icon: Image, label: "图片历史", path: "/images" },
+    { icon: Video, label: "视频历史", path: "/video-history" },
   ];
 
   // 折叠分组：工具 & 创作
   const studioItems = [
-    { icon: Image, label: "图片历史", path: "/images" },
-    { icon: Video, label: "视频历史", path: "/video-history" },
+    { icon: Bot, label: "Bot 工坊", path: "/bot-store" },
+    { icon: Database, label: "知识库", path: "/knowledge-base" },
     { icon: Github, label: "GitHub 工作区", path: "/github-workspace" },
     { icon: Cpu, label: "Agent 中心", path: "/agent" },
     { icon: Store, label: "自动化市场", path: "/playbooks" },
@@ -164,7 +168,7 @@ function DashboardLayoutContent({
   // 折叠分组：账户 & 个人（合并了原来的"账户"和"设置"）
   const accountItems = [
     { icon: Coins, label: "🐟币管理", path: "/transactions" },
-    { icon: ShoppingBag, label: "产品购买", path: "/pricing" },
+    { icon: ShoppingBag, label: "产品购买", path: "/recharge" },
     { icon: Receipt, label: "订单历史", path: "/orders" },
     { icon: Crown, label: "订阅管理", path: "/subscription" },
     { icon: UserPlus, label: "邀请好友", path: "/invite" },
@@ -174,6 +178,8 @@ function DashboardLayoutContent({
     { icon: Sparkles, label: "AI 人格配置", path: "/settings/persona" },
     { icon: MessageCircle, label: "渠道管理", path: "/settings/channels" },
     { icon: HelpCircle, label: "帮助中心", path: "/help" },
+    { icon: Shield, label: "隐私政策", path: "/privacy" },
+    { icon: FileText, label: "服务条款", path: "/terms" },
   ];
 
   // 完整扁平列表（用于路径匹配）
@@ -219,7 +225,6 @@ function DashboardLayoutContent({
         { icon: Package, label: t('dashboard.menu.admin.group.packagePricing', '套餐与定价'), path: "/admin/packages" },
         { icon: Database, label: "知识库管理", path: "/admin/knowledge-base" },
         { icon: Mic2, label: '语音套餐', path: "/admin/voice-packages" },
-        { icon: Gauge, label: t('dashboard.menu.admin.quotaManagement'), path: "/admin/quota" },
         { icon: Percent, label: t('dashboard.menu.admin.discountManagement'), path: "/admin/discount" },
         { icon: Crown, label: "论坛等级福利", path: "/admin/forum-benefits" },
         { icon: Coins, label: t('dashboard.menu.admin.coinManagement'), path: "/admin/fish-coin-management" },
@@ -380,7 +385,7 @@ function DashboardLayoutContent({
                         <ChevronDown className="ml-auto h-3 w-3 transition-transform duration-200 [[data-state=closed]_&]:rotate-[-90deg]" />
                       </button>
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="group-data-[collapsible=icon]:hidden">
+                    <CollapsibleContent className="overflow-hidden group-data-[collapsible=icon]:hidden">
                       <SidebarMenu className="px-2 py-0.5">
                         {group.items.map(item => {
                           const isActive = activeMenuItem?.path === item.path;
@@ -426,7 +431,7 @@ function DashboardLayoutContent({
               // ★ 方案 A：主导航 + 折叠分组
               <>
                 {/* 主导航（4 个核心入口） */}
-                <SidebarMenu className="px-2 py-1">
+                <SidebarMenu className="px-2 py-1 flex-shrink-0">
                   {primaryNavItems.map((item, idx) => {
                     const isActive = activeMenuItem?.path === item.path;
                     return (
@@ -446,57 +451,71 @@ function DashboardLayoutContent({
                 </SidebarMenu>
 
                 {/* 分隔线 */}
-                <div className="mx-4 my-1 border-t border-border/50 group-data-[collapsible=icon]:hidden" />
+                <div className="mx-4 my-1 border-t border-border/50 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
 
                 {/* 折叠分组：工具 */}
-                <Collapsible defaultOpen={studioItems.some(i => activeMenuItem?.path === i.path)}>
-                  <CollapsibleTrigger asChild>
-                    <button className="flex items-center w-full px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group-data-[collapsible=icon]:hidden">
-                      <span>工具</span>
-                      <ChevronDown className="ml-auto h-3 w-3 transition-transform duration-200 [[data-state=closed]_&]:rotate-[-90deg]" />
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenu className="px-2 py-0.5">
-                      {studioItems.map((item, idx) => {
-                        const isActive = activeMenuItem?.path === item.path;
-                        return (
-                          <SidebarMenuItem key={`studio-${idx}-${item.path}`}>
-                            <SidebarMenuButton isActive={isActive} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-9 transition-colors font-normal text-sm">
-                              <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
-                              <span>{item.label}</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        );
-                      })}
-                    </SidebarMenu>
-                  </CollapsibleContent>
-                </Collapsible>
+                <div className="flex-shrink-0">
+                  <Collapsible defaultOpen={studioItems.some(i => activeMenuItem?.path === i.path)}>
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center w-full px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group-data-[collapsible=icon]:hidden">
+                        <span>工具</span>
+                        <ChevronDown className="ml-auto h-3 w-3 transition-transform duration-200 [[data-state=closed]_&]:rotate-[-90deg]" />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="overflow-hidden data-[state=closed]:hidden">
+                      <SidebarMenu className="px-2 py-0.5">
+                        {studioItems.map((item, idx) => {
+                          const isActive = activeMenuItem?.path === item.path;
+                          return (
+                            <SidebarMenuItem key={`studio-${idx}-${item.path}`}>
+                              <SidebarMenuButton isActive={isActive} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-9 transition-colors font-normal text-sm">
+                                <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                                <span>{item.label}</span>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          );
+                        })}
+                      </SidebarMenu>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
 
                 {/* 折叠分组：账户与个人 */}
-                <Collapsible defaultOpen={accountItems.some(i => activeMenuItem?.path === i.path)}>
-                  <CollapsibleTrigger asChild>
-                    <button className="flex items-center w-full px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group-data-[collapsible=icon]:hidden">
-                      <span>账户</span>
-                      <ChevronDown className="ml-auto h-3 w-3 transition-transform duration-200 [[data-state=closed]_&]:rotate-[-90deg]" />
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenu className="px-2 py-0.5">
-                      {accountItems.map((item, idx) => {
-                        const isActive = activeMenuItem?.path === item.path;
-                        return (
-                          <SidebarMenuItem key={`account-${idx}-${item.path}`}>
-                            <SidebarMenuButton isActive={isActive} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-9 transition-colors font-normal text-sm">
-                              <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
-                              <span>{item.label}</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        );
-                      })}
-                    </SidebarMenu>
-                  </CollapsibleContent>
-                </Collapsible>
+                <div className="flex-shrink-0">
+                  <Collapsible defaultOpen={accountItems.some(i => activeMenuItem?.path === i.path)}>
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center w-full px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group-data-[collapsible=icon]:hidden">
+                        <span>账户</span>
+                        <ChevronDown className="ml-auto h-3 w-3 transition-transform duration-200 [[data-state=closed]_&]:rotate-[-90deg]" />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="overflow-hidden data-[state=closed]:hidden">
+                      <SidebarMenu className="px-2 py-0.5">
+                        {accountItems.map((item, idx) => {
+                          const isActive = activeMenuItem?.path === item.path;
+                          return (
+                            <SidebarMenuItem key={`account-${idx}-${item.path}`}>
+                              <SidebarMenuButton isActive={isActive} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-9 transition-colors font-normal text-sm">
+                                <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                                <span>{item.label}</span>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          );
+                        })}
+                      </SidebarMenu>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              </>
+            )}
+
+            {/* ★ 聊天页：导航下方显示对话历史列表 */}
+            {isChatPage && !isCollapsed && (
+              <>
+                <div className="mx-3 my-1 border-t border-border/50 flex-shrink-0" />
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <SidebarChatList closeSidebar={isSidebarMobile ? () => setOpenMobile(false) : undefined} />
+                </div>
               </>
             )}
           </SidebarContent>

@@ -12,6 +12,7 @@ function RedirectTo({ path }: { path: string }) {
 import { AnimatePresence, motion } from "framer-motion";
 import { useSwipeBack } from "./hooks/useSwipeBack";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import { GlobalBackgroundTaskHandler } from "./components/GlobalBackgroundTaskHandler";
@@ -37,6 +38,7 @@ const Recharge              = lazy(() => import("./pages/Recharge"));
 const Help                  = lazy(() => import("./pages/Help"));
 const Invite                = lazy(() => import("./pages/Invite"));
 const Feedback              = lazy(() => import("./pages/Feedback"));
+const WechatBind            = lazy(() => import("./pages/WechatBind"));
 const VIPMembership         = lazy(() => import("./pages/VIPMembership"));
 const ModelComparison       = lazy(() => import("./pages/ModelComparison"));
 const OAuthDiagnostics      = lazy(() => import("./pages/OAuthDiagnostics").then(m => ({ default: m.OAuthDiagnostics })));
@@ -52,6 +54,10 @@ const Memory                = lazy(() => import("./pages/Memory"));
 const ScheduledTasks        = lazy(() => import("./pages/ScheduledTasks"));
 const SkillDetail           = lazy(() => import("./pages/skills/SkillDetail"));
 const PersonaSettings       = lazy(() => import("./pages/PersonaSettings"));
+const BotStore              = lazy(() => import("./pages/BotStore"));
+const BotShare              = lazy(() => import("./pages/BotShare"));
+const KnowledgeBase         = lazy(() => import("./pages/KnowledgeBase"));
+const CompanionSettings     = lazy(() => import("./pages/CompanionSettings"));
 const ChannelBindings       = lazy(() => import("./pages/ChannelBindings"));
 const VoiceChat             = lazy(() => import("./pages/VoiceChat"));
 const HomeworkCorrection    = lazy(() => import("./pages/HomeworkCorrection"));
@@ -70,6 +76,9 @@ const PaymentCancel         = lazy(() => import("./pages/PaymentCancel"));
 const Agent = lazy(() => import("./pages/Agent"));
 const AgentDashboard = lazy(() => import("./pages/admin/AgentDashboard"));
 const PlaybookMarket = lazy(() => import("./pages/PlaybookMarket"));
+const Projects = lazy(() => import("./pages/Projects"));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
+const JoinProject = lazy(() => import("./pages/JoinProject"));
 // 管理员页面（使用量少，最适合懒加载）
 const AdminDashboard        = lazy(() => import("./pages/admin/Dashboard"));
 const AdminUsers            = lazy(() => import("./pages/admin/Users"));
@@ -116,12 +125,27 @@ const CSAnalytics           = lazy(() => import("./pages/admin/CSAnalytics"));
 // GitHub 工作区
 const GitHubWorkspace       = lazy(() => import("./pages/GitHubWorkspace"));
 
+// 政策页面
+const PrivacyPolicy         = lazy(() => import("./pages/PrivacyPolicy"));
+const TermsOfService        = lazy(() => import("./pages/TermsOfService"));
+
 /** 懒加载 fallback：透明占位，避免 layout shift */
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center">
     <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
   </div>
 );
+
+/** ★ P2: 为 lazy route 包装 ErrorBoundary + Suspense */
+function LazyRoute({ children, name }: { children: React.ReactNode; name?: string }) {
+  return (
+    <RouteErrorBoundary routeName={name}>
+      <Suspense fallback={<PageLoader />}>
+        {children}
+      </Suspense>
+    </RouteErrorBoundary>
+  );
+}
 
 function Router() {
   const [location] = useLocation();
@@ -138,9 +162,9 @@ function Router() {
       >
         <Switch location={location}>
           <Route path="/" component={Home} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/chat" component={Chat} />
-      <Route path="/homework" component={HomeworkCorrection} />
+      <Route path="/dashboard">{() => <LazyRoute name="dashboard"><Dashboard /></LazyRoute>}</Route>
+      <Route path="/chat">{() => <LazyRoute name="chat"><Chat /></LazyRoute>}</Route>
+      <Route path="/homework">{() => <LazyRoute name="homework"><HomeworkCorrection /></LazyRoute>}</Route>
       <Route path="/homework/history" component={HomeworkHistory} />
       <Route path="/homework/pricing-config" component={HomeworkPricingConfig} />
       <Route path="/admin/pdf-watermark-config" component={PDFWatermarkConfig} />
@@ -149,17 +173,22 @@ function Router() {
       <Route path="/share/:token" component={CorrectionShare} />
       <Route path="/wrong-questions" component={WrongQuestionBook} />
       <Route path="/storage-stats" component={StorageStats} />
-      <Route path="/images" component={ImageGallery} />
+      <Route path="/images">{() => <LazyRoute name="image-gallery"><ImageGallery /></LazyRoute>}</Route>
       <Route path="/videos" component={VideoGallery} />
       <Route path="/video-history" component={VideoHistory} />
-      <Route path="/research" component={Research} />
-      <Route path="/research/:taskId" component={ResearchTask} />
+      <Route path="/research">{() => <LazyRoute name="research"><Research /></LazyRoute>}</Route>
+      <Route path="/research/:taskId">{({ params }) => <LazyRoute name="research-task"><ResearchTask /></LazyRoute>}</Route>
       <Route path="/memory" component={Memory} />
       <Route path="/skills/mine">{() => <RedirectTo path="/playbooks/mine" />}</Route>
       <Route path="/skills/:id" component={SkillDetail} />
       <Route path="/skills">{() => <RedirectTo path="/playbooks" />}</Route>
       <Route path="/settings/persona" component={PersonaSettings} />
+      <Route path="/bot-store" component={BotStore} />
+      <Route path="/bot/share/:token" component={BotShare} />
+      <Route path="/knowledge-base" component={KnowledgeBase} />
+      <Route path="/settings/companion" component={CompanionSettings} />
       <Route path="/settings/channels" component={ChannelBindings} />
+      <Route path="/settings">{() => <RedirectTo path="/profile" />}</Route>
       {/* /automation 已由 /agent 替代 */}
       <Route path="/scheduled-tasks" component={ScheduledTasks} />
       <Route path="/share/video/:token" component={VideoShare} />
@@ -173,11 +202,14 @@ function Router() {
       <Route path="/oauth-diagnostics" component={OAuthDiagnostics} />
 
       <Route path="/forum-login" component={ForumLogin} />
-      <Route path="/github-workspace" component={GitHubWorkspace} />
+      <Route path="/wechat-bind" component={WechatBind} />
+      <Route path="/github-workspace">{() => <LazyRoute name="github-workspace"><GitHubWorkspace /></LazyRoute>}</Route>
       <Route path="/help" component={Help} />
       <Route path="/invite" component={Invite} />
       <Route path="/feedback" component={Feedback} />
       <Route path="/vip" component={VIPMembership} />
+      <Route path="/privacy" component={PrivacyPolicy} />
+      <Route path="/terms" component={TermsOfService} />
       
       {/* Stripe支付路由 */}
       <Route path="/pricing" component={Pricing} />
@@ -210,7 +242,7 @@ function Router() {
       <Route path="/admin/voice-settings" component={VoiceSettings} />
       <Route path="/admin/voice-packages" component={VoicePackageManagement} />
       <Route path="/admin/token-stats" component={TokenStats} />
-      <Route path="/voice-chat" component={VoiceChat} />
+      <Route path="/voice-chat">{() => <LazyRoute name="voice-chat"><VoiceChat /></LazyRoute>}</Route>
       <Route path="/admin/payment-config" component={PaymentConfig} />
       <Route path="/admin/billing-config" component={BillingConfig} />
 
@@ -235,6 +267,9 @@ function Router() {
       <Route path="/admin/agent-dashboard" component={AgentDashboard} />
       <Route path="/playbooks" component={PlaybookMarket} />
       <Route path="/playbooks/mine" component={PlaybookMarket} />
+      <Route path="/projects" component={Projects} />
+      <Route path="/projects/join/:token" component={JoinProject} />
+      <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/playbooks/new" component={PlaybookMarket} />
       <Route path="/playbooks/:id" component={PlaybookMarket} />
       <Route path="/playbooks/:id/edit" component={PlaybookMarket} />

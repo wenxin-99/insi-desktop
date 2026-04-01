@@ -7,6 +7,36 @@ import type { ChatStateReturn } from '../types';
 import { useMessageUtils } from './useMessageUtils';
 
 /**
+ * P2-1: 将工具类型 + 参数格式化为人类可读的描述
+ */
+function formatToolLabel(toolType: string, meta: any): string {
+  const truncate = (s: string, max: number) => s.length > max ? s.substring(0, max) + '...' : s;
+  switch (toolType) {
+    case 'web_search':
+      return meta?.query ? `搜索: ${truncate(meta.query, 40)}` : '联网搜索';
+    case 'url_fetch':
+      return meta?.url ? `阅读网页: ${truncate(meta.url, 50)}` : '阅读网页';
+    case 'generate_image':
+    case 'image_gen': {
+      const size = meta?.size || meta?.resolution;
+      return size ? `生成图片: ${size}` : '生成图片';
+    }
+    case 'code_gen':
+      return meta?.language ? `生成代码: ${meta.language}` : '生成代码';
+    case 'doc_gen':
+      return meta?.title ? `生成文档: ${truncate(meta.title, 30)}` : '生成文档';
+    case 'file_gen':
+      return meta?.fileName ? `生成文件: ${meta.fileName}` : '生成文件';
+    case 'data_analysis':
+      return '数据分析';
+    case 'code_interpreter':
+      return '代码解释器';
+    default:
+      return meta?.description ? truncate(meta.description, 40) : `工具: ${toolType}`;
+  }
+}
+
+/**
  * SSE 流式回调构建 Hook
  * - _buildStreamCallbacks
  */
@@ -38,6 +68,7 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     setOperationLogs,
     setThinkingSummary,
     setActiveArtifact,
+    setActiveToolComponents,
     setPlayingTtsIndex,
     setPreviewFile,
     setRealtimeThinkingSteps,
@@ -59,6 +90,10 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     saveDraft,
     setUploadedImages,
     setUploadedFiles,
+    // ★ P1-1: 排队追问
+    pendingMessagesRef,
+    setPendingMessages,
+    pendingSendRef,
   } = state as any;
 
   const { generateSuggestedQuestions } = useMessageUtils(state);
@@ -68,6 +103,7 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     let _capturedImagePrompt = ''; // 存储图片生成时 LLM 优化后的 prompt
     // ★ 闭包变量：捕获自动化/视频任务元数据，避免 React 18 批处理导致 onDone 读不到 onAutomationTask 设置的标记
     let _capturedTaskMeta: Record<string, any> | null = null;
+    let _contextWarningData: { level: string; truncatedCount: number; usagePercent: number } | null = null;
     return {
     onStart: (data: any) => {
       _capturedThinkingSummary = '';
@@ -78,6 +114,7 @@ export function useStreamCallbacks(state: ChatStateReturn) {
       setOperationLogs([]);
       setThinkingSummary('');
       setActiveArtifact(null);
+      setActiveToolComponents([]);
       setReasoningContent('');
       reasoningContentRef.current = '';
       setThinkingStage('idle');
@@ -161,23 +198,23 @@ export function useStreamCallbacks(state: ChatStateReturn) {
         previousCode: undefined as string | undefined,
         versions: [] as Array<{ version: number; code: string; timestamp: number }>,
       };
-      // 写入消息
+      // 写入消息 — ★ 创建新 message 对象
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
         if (lastMessage?.role === 'assistant') {
           // ★ T9-1: 如果已有 artifact（即版本迭代），保存旧版本到 versions 数组
           const existing = (lastMessage as any).artifact;
           if (existing && existing.code && existing.status === 'complete') {
             artifactData.previousCode = existing.code;
-            // 继承历史版本 + 追加当前完成版本
             const existingVersions = existing.versions || [];
             artifactData.versions = [
               ...existingVersions,
               { version: existing.version || 1, code: existing.code, timestamp: Date.now() },
             ];
           }
-          (lastMessage as any).artifact = artifactData;
+          newMessages[lastIdx] = { ...lastMessage, artifact: artifactData };
         }
         return newMessages;
       });
@@ -187,12 +224,12 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     onArtifactChunk: (data: any) => {
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
         if (lastMessage?.role === 'assistant' && (lastMessage as any).artifact) {
           const artifact = { ...(lastMessage as any).artifact };
           artifact.code = (artifact.code || '') + (data.chunk || '');
-          (lastMessage as any).artifact = artifact;
-          // 同步到右侧面板
+          newMessages[lastIdx] = { ...lastMessage, artifact };
           setActiveArtifact({ ...artifact });
         }
         return newMessages;
@@ -201,16 +238,165 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     onArtifactEnd: (data: any) => {
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
         if (lastMessage?.role === 'assistant' && (lastMessage as any).artifact) {
           const artifact = { ...(lastMessage as any).artifact };
           artifact.status = 'complete';
           if (data.metadata) {
             artifact.description = data.metadata.description || artifact.description;
           }
-          (lastMessage as any).artifact = artifact;
-          // 同步到右侧面板
+          newMessages[lastIdx] = { ...lastMessage, artifact };
           setActiveArtifact({ ...artifact });
+        }
+        return newMessages;
+      });
+    },
+    // ═══════ 统一流式工具组件 ═══════
+    onToolStart: (data: any) => {
+      const { toolId, toolType, meta } = data;
+      // P2-1: 生成人类可读的工具调用描述
+      const humanLabel = formatToolLabel(toolType, meta);
+      // P2-1: 同时添加一条操作步骤，让工具调用在步骤列表中可见
+      const now = Date.now();
+      // 简单格式（给 InlineStepList 的 thinkingSteps）
+      const simpleStep = { id: `tool-${toolId}-${now}`, content: humanLabel, timestamp: now };
+      setCurrentThinkingSteps((prev) => [...prev, simpleStep]);
+      // 完整格式（给 ThinkingProcessPanel）
+      const toolStep: ThinkingStep = {
+        id: `tool-${toolId}-${now}`,
+        name: humanLabel,
+        status: 'running' as const,
+        startTime: now,
+      };
+      setRealtimeThinkingSteps((prev) => {
+        if (prev.length > 0) {
+          const updated = [...prev];
+          const lastStep = { ...updated[updated.length - 1] };
+          if (lastStep.status === 'running') {
+            lastStep.status = 'completed';
+            lastStep.endTime = now;
+            updated[updated.length - 1] = lastStep;
+          }
+          return [...updated, toolStep];
+        }
+        return [toolStep];
+      });
+      const toolData = {
+        id: toolId,
+        type: toolType,
+        meta: { toolType, ...meta },
+        humanLabel,
+        streamedContent: '',
+        status: 'streaming' as const,
+        createdAt: Date.now(),
+        ...(toolType === 'web_search' ? { searchResults: [], searchRound: 1, currentQuery: meta.query || '' } : {}),
+      };
+      setActiveToolComponents((prev: any[]) => [...prev, toolData]);
+      // 同时写入消息 — ★ 创建新 message 对象
+      setMessages((prev: any[]) => {
+        const newMessages = [...prev];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
+        if (lastMessage?.role === 'assistant') {
+          const existing = (lastMessage as any).toolComponents || [];
+          newMessages[lastIdx] = { ...lastMessage, toolComponents: [...existing, toolData] };
+        }
+        return newMessages;
+      });
+    },
+    onToolChunk: (data: any) => {
+      const { toolId, chunk, field, searchResult, searchRound, currentQuery } = data;
+      // ★ 更新 activeToolComponents
+      setActiveToolComponents((prev: any[]) => prev.map((t: any) => {
+        if (t.id !== toolId) return t;
+        const updated = { ...t };
+        if (chunk) updated.streamedContent = (updated.streamedContent || '') + chunk;
+        if (searchResult) {
+          updated.searchResults = [...(updated.searchResults || []), searchResult];
+        }
+        if (searchRound !== undefined) updated.searchRound = searchRound;
+        if (currentQuery !== undefined) updated.currentQuery = currentQuery;
+        return updated;
+      }));
+      // ★ 同步更新 messages 中的 toolComponents（驱动 MessageItem 实时渲染）
+      // ★ 关键：必须创建 NEW message 对象，不能 mutation，否则 React memo 检测不到变化
+      if (chunk || searchResult) {
+        setMessages((prev: any[]) => {
+          const newMessages = [...prev];
+          const lastIdx = newMessages.length - 1;
+          const lastMessage = newMessages[lastIdx];
+          if (lastMessage?.role === 'assistant' && (lastMessage as any).toolComponents?.length > 0) {
+            const tools = [...(lastMessage as any).toolComponents];
+            const idx = tools.findIndex((t: any) => t.id === toolId);
+            if (idx >= 0) {
+              const updated = { ...tools[idx] };
+              if (chunk) updated.streamedContent = (updated.streamedContent || '') + chunk;
+              if (searchResult) updated.searchResults = [...(updated.searchResults || []), searchResult];
+              if (searchRound !== undefined) updated.searchRound = searchRound;
+              if (currentQuery !== undefined) updated.currentQuery = currentQuery;
+              tools[idx] = updated;
+              // ★ 创建新 message 对象（非突变），确保 React 检测到变化
+              newMessages[lastIdx] = { ...lastMessage, toolComponents: tools };
+            }
+          }
+          return newMessages;
+        });
+      }
+    },
+    onToolEnd: (data: any) => {
+      const { toolId, result } = data;
+      // P2-1: 标记对应的工具步骤为已完成
+      setRealtimeThinkingSteps((prev) => prev.map((s) => {
+        if (s.id?.startsWith(`tool-${toolId}`) && s.status === 'running') {
+          return { ...s, status: 'completed' as const, endTime: Date.now() };
+        }
+        return s;
+      }));
+      setActiveToolComponents((prev: any[]) => prev.map((t: any) =>
+        t.id !== toolId ? t : { ...t, status: 'complete' as const, result }
+      ));
+      // ★ FIX: 直接在 setMessages 内更新，不依赖 setActiveToolComponents 的闭包变量
+      // React 18 批处理下 updater 可能延迟执行 → finalToolData 为 null → setMessages 被跳过 → 搜索卡片永远不关闭
+      setMessages((prev: any[]) => {
+        const newMessages = [...prev];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
+        if (lastMessage?.role === 'assistant') {
+          const tools = [...((lastMessage as any).toolComponents || [])];
+          const idx = tools.findIndex((t: any) => t.id === toolId);
+          if (idx >= 0) {
+            tools[idx] = { ...tools[idx], status: 'complete' as const, result };
+          }
+          newMessages[lastIdx] = { ...lastMessage, toolComponents: tools };
+        }
+        return newMessages;
+      });
+    },
+    onToolError: (data: any) => {
+      const { toolId, error } = data;
+      // P2-1: 标记对应的工具步骤为失败
+      setRealtimeThinkingSteps((prev) => prev.map((s) => {
+        if (s.id?.startsWith(`tool-${toolId}`) && s.status === 'running') {
+          return { ...s, status: 'error' as const, endTime: Date.now() };
+        }
+        return s;
+      }));
+      setActiveToolComponents((prev: any[]) => prev.map((t: any) =>
+        t.id !== toolId ? t : { ...t, status: 'error' as const, error }
+      ));
+      // ★ FIX: 直接在 setMessages 内更新
+      setMessages((prev: any[]) => {
+        const newMessages = [...prev];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
+        if (lastMessage?.role === 'assistant') {
+          const tools = [...((lastMessage as any).toolComponents || [])];
+          const idx = tools.findIndex((t: any) => t.id === toolId);
+          if (idx >= 0) {
+            tools[idx] = { ...tools[idx], status: 'error' as const, error };
+          }
+          newMessages[lastIdx] = { ...lastMessage, toolComponents: tools };
         }
         return newMessages;
       });
@@ -219,42 +405,39 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     onHomeworkResult: (data: any) => {
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
         if (lastMessage?.role === 'assistant') {
-          (lastMessage as any).homeworkResult = data;
+          // ★ 创建新对象，不突变
+          newMessages[lastIdx] = { ...lastMessage, homeworkResult: data };
         }
         return newMessages;
       });
     },
     // ═══════ 方案选择卡片 ═══════
     onSolutionPicker: (data: any) => {
+      const pickerData = {
+        id: data.id,
+        question: data.question,
+        options: data.options || [],
+        allowCustom: data.allowCustom ?? true,
+        allowSkip: data.allowSkip ?? true,
+        status: 'pending',
+      };
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
         if (lastMessage?.role === 'assistant') {
-          (lastMessage as any).solutionPicker = {
-            id: data.id,
-            question: data.question,
-            options: data.options || [],
-            allowCustom: data.allowCustom ?? true,
-            allowSkip: data.allowSkip ?? true,
-            status: 'pending',
-          };
+          // ★ 创建新对象，不突变
+          newMessages[lastIdx] = { ...lastMessage, solutionPicker: pickerData };
         } else {
-          // 如果没有助手消息，创建一个
           newMessages.push({
             id: String(Date.now()),
             role: 'assistant' as const,
             content: '',
             timestamp: Date.now(),
-            solutionPicker: {
-              id: data.id,
-              question: data.question,
-              options: data.options || [],
-              allowCustom: data.allowCustom ?? true,
-              allowSkip: data.allowSkip ?? true,
-              status: 'pending',
-            },
+            solutionPicker: pickerData,
           } as any);
         }
         return newMessages;
@@ -334,19 +517,36 @@ export function useStreamCallbacks(state: ChatStateReturn) {
       };
       setMessages((prev) => {
         const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
+        const lastIdx = newMessages.length - 1;
+        const lastMessage = newMessages[lastIdx];
         if (lastMessage && lastMessage.role === 'assistant') {
-          (lastMessage as any).isAutomationTask = true;
-          (lastMessage as any).automationTaskId = data.taskId;
-          (lastMessage as any).automationTaskName = data.taskName;
-          (lastMessage as any).automationSiteName = data.siteName;
-          // 多账号任务：存储全部任务列表以支持切换
+          // ★ 创建新 message 对象
+          const updated: any = {
+            ...lastMessage,
+            isAutomationTask: true,
+            automationTaskId: data.taskId,
+            automationTaskName: data.taskName,
+            automationSiteName: data.siteName,
+          };
           if (data.allTasks && data.allTasks.length > 1) {
-            (lastMessage as any).automationAllTasks = data.allTasks;
+            updated.automationAllTasks = data.allTasks;
           }
+          newMessages[lastIdx] = updated;
         }
         return [...newMessages];
       });
+    },
+    // ★ Agent 浏览器事件
+    onAgentStep: (data: any) => {
+      // Agent 步骤通过 ChatAgentPanel 组件处理（由 Chat.tsx 中的 useAgentMode hook 管理）
+      // 这里通过 window 事件桥接到 Chat 组件
+      window.dispatchEvent(new CustomEvent('agent:sse', { detail: { type: 'agent_step', ...data } }));
+    },
+    onAgentConfirm: (data: any) => {
+      window.dispatchEvent(new CustomEvent('agent:sse', { detail: { type: 'agent_confirm', ...data } }));
+    },
+    onAgentStatus: (data: any) => {
+      window.dispatchEvent(new CustomEvent('agent:sse', { detail: { type: 'agent_status', ...data } }));
     },
     onIntentConfirm: (data: any) => {
       setIsStreamingMessage(false);
@@ -538,11 +738,16 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     },
     onWebSearchResult: (data: any) => {
       // 将搜索来源存储到最后一条 assistant 消息上
+      // ★ 多轮搜索修复：追加合并而非覆盖，按 URL 去重
+      const newSources = data.sources || [];
       setMessages((prev: any[]) => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
         if (lastMessage?.role === 'assistant') {
-          (lastMessage as any).webSearchSources = data.sources || [];
+          const existing: Array<{ title: string; url: string }> = (lastMessage as any).webSearchSources || [];
+          const existingUrls = new Set(existing.map((s: any) => s.url));
+          const merged = [...existing, ...newSources.filter((s: any) => s.url && !existingUrls.has(s.url))];
+          (lastMessage as any).webSearchSources = merged;
           (lastMessage as any).webSearchQuery = data.query || '';
         }
         return newMessages;
@@ -578,10 +783,8 @@ export function useStreamCallbacks(state: ChatStateReturn) {
     onUrlFetchStart: (data: any) => {
       // 复用 webSearchQuery 状态显示阅读进度
       setWebSearchQuery(`📄 ${data.url?.substring(0, 50) || '网页'}...`);
-      // 如果有浏览会话 ID，打开沙箱面板
-      if (data.browseSessionId) {
-        setActiveResearchTaskId(data.browseSessionId);
-      }
+      // ★ 不再自动打开沙箱面板 — URL 浏览进度已通过搜索卡片展示
+      // 沙箱面板仅在用户主动触发代理任务时打开
     },
     onUrlFetchResult: (data: any) => {
       setWebSearchQuery(null);
@@ -598,6 +801,11 @@ export function useStreamCallbacks(state: ChatStateReturn) {
         }
         return newMessages;
       });
+    },
+    // ★ 上下文窗口警告
+    onContextWarning: (data: any) => {
+      _contextWarningData = data;
+      console.log(`[ContextWarning] level=${data.level}, truncated=${data.truncatedCount}, usage=${data.usagePercent}%`);
     },
     onDone: (data: any) => {
       setThinkingStage('idle');
@@ -679,6 +887,17 @@ export function useStreamCallbacks(state: ChatStateReturn) {
           if ((data as any).truncated) {
             lastMessage.content = (lastMessage.content || '') + '\n\n---\n> ⚠️ 回复内容较长已被截断，发送"继续"可接续阅读。';
           }
+          // ★ 上下文窗口警告：对话过长，AI 已丢失早期记忆
+          if (_contextWarningData) {
+            const w = _contextWarningData;
+            const hint = w.level === 'critical'
+              ? `\n\n---\n> ⚠️ 当前对话已非常长（上下文使用 ${w.usagePercent}%），AI 已压缩 ${w.truncatedCount} 条早期消息，可能无法记住前面的内容。**强烈建议新建对话继续。**`
+              : w.truncatedCount > 0
+                ? `\n\n---\n> 💡 对话较长（上下文 ${w.usagePercent}%），${w.truncatedCount} 条早期消息已被压缩。如果 AI 遗忘了之前的内容，可以新建对话。`
+                : '';
+            if (hint) lastMessage.content = (lastMessage.content || '') + hint;
+            _contextWarningData = null;
+          }
           const msgContent = typeof lastMessage.content === 'string' ? lastMessage.content : '';
           const researchMatch = msgContent.match(/<ResearchTaskCard\s+taskId="(\d+)"/);
           if (researchMatch && !(lastMessage as any).isResearchTask) {
@@ -727,8 +946,15 @@ export function useStreamCallbacks(state: ChatStateReturn) {
       // ★ 自动化任务场景：服务端已通过 saveToConversation 写入完整元数据，
       //   跳过客户端 saveMessages 避免覆盖（客户端消息可能缺少 isAutomationTask 等标记）
       if (_capturedTaskMeta) {
+        setIsStreamingMessage(false);
         onStreamComplete();
-        if (conversationId) refetchConversations();
+        // ★ 不调用 refetchConversations → loadConversationMessages → restoreResearchTaskFromMessages
+        //   否则 DB 消息可能还没写入 isAutomationTask 标记，导致 activeResearchTaskId 被清除
+        //   改为延迟刷新，给服务端 saveToConversation 足够时间
+        if (conversationId) {
+          streamManager.clearTask(conversationId);
+          setTimeout(() => refetchConversations(), 2000);
+        }
         return;
       }
 
@@ -764,22 +990,8 @@ export function useStreamCallbacks(state: ChatStateReturn) {
         });
       }
 
-      // 异步生成标题 — ★ 仅在第一条用户消息时触发（避免每次对话都浪费一次 LLM 调用）
-      if (conversationId) {
-        const userMessages = messages.filter(m => m.role === 'user');
-        if (userMessages.length <= 1) {
-          const userMessageContent = userMessages[0]?.content || '';
-          generateTitleMutation.mutate(
-            { conversationId, userMessage: typeof userMessageContent === 'string' ? userMessageContent : '' },
-            {
-              // ★ 不再在 onSuccess 里 refetchConversations —— 上面 saveMessages 完成后已经刷新
-              // 避免在消息持久化之前触发重新加载（导致读到空消息覆盖 state）
-              onSuccess: () => { /* refetch 已由 saveMessages.then 处理 */ },
-              onError: (error: any) => console.error('生成标题失败:', error),
-            }
-          );
-        }
-      }
+      // ★ 标题生成已由服务端 save.ts triggerAutoTitle 异步处理，
+      //   无需前端再发 generateTitleMutation（双路径竞争会导致 Gemini 空消息超时错误）
 
       // 生成推荐追问（仅当用户仍在当前对话时）
       const hasResearchCard = streamedContent.includes('<ResearchTaskCard') || streamedContent.includes('ResearchTaskCard');
@@ -830,6 +1042,19 @@ export function useStreamCallbacks(state: ChatStateReturn) {
             });
           }, 500);
         }
+      }
+
+      // ★ P1-1: 消费排队消息 — 流完成后自动发送下一条
+      const currentQueue = pendingMessagesRef?.current;
+      if (currentQueue && currentQueue.length > 0) {
+        const [nextMsg, ...rest] = currentQueue;
+        setPendingMessages(rest);
+        // 延迟发送，确保上一条消息完全持久化
+        setTimeout(() => {
+          if (pendingSendRef?.current) {
+            pendingSendRef.current(nextMsg);
+          }
+        }, 500);
       }
     },
     onError: (error: string) => {

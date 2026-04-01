@@ -221,6 +221,39 @@
 }
 
 @layer components {
+  /* Radix Collapsible 动画 */
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+    to {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+  }
+
+  @keyframes collapsible-up {
+    from {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+    to {
+      height: 0;
+      opacity: 0;
+    }
+  }
+
+  [data-slot="collapsible-content"][data-state="open"] {
+    animation: collapsible-down 200ms ease-out;
+    overflow: hidden;
+  }
+
+  [data-slot="collapsible-content"][data-state="closed"] {
+    animation: collapsible-up 200ms ease-out;
+    overflow: hidden;
+  }
+
   /* 消息淡入动画 */
   @keyframes fade-in {
     from {
@@ -1093,4 +1126,100 @@
   0% { transform: translateX(-100%); }
   50% { transform: translateX(200%); }
   100% { transform: translateX(-100%); }
+}
+
+/* React Flow dark mode */
+.dark .react-flow__background pattern circle { fill: rgba(255,255,255,0.08); }
+.dark .react-flow__edge path { stroke: rgba(255,255,255,0.3); }
+.dark .react-flow__controls button { background: var(--background); border-color: var(--border); color: var(--foreground); }
+.dark .react-flow__controls button:hover { background: var(--muted); }
+.dark .react-flow__minimap { background: var(--background); border-color: var(--border); }
+.dark .react-flow__attribution { display: none; }
+
+/* ═══════════════════════════════════════
+   流式打字机效果 — 三项核心 CSS
+   ═══════════════════════════════════════ */
+
+/* ① 光标闪烁：经典 step 跳变（非 pulse 渐变）
+   ChatGPT 风格的硬闪，比 animate-pulse 的渐变更像真实光标 */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.streaming-cursor {
+  display: inline-block;
+  width: 2.5px;
+  height: 1.15em;
+  background: currentColor;
+  opacity: 0.75;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  animation: cursor-blink 1s step-end infinite;
+}
+/* 光标消失过渡（流式结束后）
+   animation:none 确保浏览器从计算样式过渡到 opacity:0，
+   而非 snap 到 animation 被移除后的状态 */
+.streaming-cursor-out {
+  display: inline-block;
+  width: 2.5px;
+  height: 1.15em;
+  background: currentColor;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  animation: none;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  pointer-events: none;
+}
+
+/* ② 入场渐隐效果由 block-fade-in 动画处理，不再使用 mask 遮罩
+   mask 遮罩的问题：短内容整体变暗、暂停时底部文字始终 30% opacity 看起来像 bug */
+
+/* ③ 新段落入场动画：Markdown 渲染出的块级元素首次出现时 fade-in
+   使用后代选择器（SafeMarkdownWithDownload 会在中间插入 wrapper div） */
+.streaming-content .markdown-content .markdown-paragraph:last-child,
+.streaming-content .markdown-content ul:last-child,
+.streaming-content .markdown-content ol:last-child,
+.streaming-content .markdown-content blockquote:last-child,
+.streaming-content .markdown-content h1:last-child,
+.streaming-content .markdown-content h2:last-child,
+.streaming-content .markdown-content h3:last-child,
+.streaming-content .markdown-content h4:last-child,
+.streaming-content .markdown-content table:last-child {
+  animation: block-fade-in 200ms ease-out;
+}
+
+@keyframes block-fade-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ④ 思考指示器脉冲圆点 — 首 token 到达前显示
+   三个圆点交错跳动，类似 Claude 的 thinking 动画 */
+.thinking-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground, #94a3b8);
+  opacity: 0.3;
+  animation: thinking-bounce 1.4s ease-in-out infinite;
+}
+@keyframes thinking-bounce {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 0.9; transform: translateY(-4px); }
+}
+
+/* ⑤ 流式渲染性能提示 — 告知浏览器 contents 会频繁变化 */
+.streaming-content {
+  will-change: contents;
+  contain: content;
 }

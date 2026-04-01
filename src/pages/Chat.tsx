@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react';
+import { Image as ImageIcon, Sparkles, Loader2, Bot, X } from 'lucide-react';
 import { NetworkStatusBar } from '@/components/NetworkStatusBar';
 import { ConversationSearch } from '@/components/ConversationSearch';
 import { RightSidePanel } from '@/components/RightSidePanel';
@@ -31,10 +31,12 @@ import {
   useChatEffects,
 } from './chat/hooks';
 import { useReplyNotification } from '@/hooks/useReplyNotification';
+import { ChatAgentPanel, useAgentMode } from '@/components/agentMode/ChatAgentPanel';
+import { CloudDesktopViewer } from '@/components/desktopPanel/CloudDesktopViewer';
+import type { FixErrorContext } from '@/components/codeCanvas';
 // ── Components ──
 import {
   ChatToolbar,
-  ConversationList,
   MessageList,
   ChatDialogs,
 } from './chat/components';
@@ -136,6 +138,9 @@ export default function Chat() {
     generateSuggestedQuestions,
   } = useSendMessage(state);
 
+  // ★ P1-1: 设置排队消费回调 — useStreamCallbacks 完成后会调用此 ref
+  state.pendingSendRef.current = handleSendMessage;
+
   // ═══════════ 6. 副作用（useEffect 集合） ═══════════
   useChatEffects(state, {
     loadConversationMessages,
@@ -144,8 +149,142 @@ export default function Chat() {
     generateSuggestedQuestions,
   });
 
+  // ★ 侧边栏对话列表事件监听（用 ref 避免 stale closure）
+  const sidebarHandlersRef = useRef({ loadConversationMessages, handleCreateConversation, handleDeleteConversation, handleExportConversation, handleShareConversation, setSelectedConversationId: state.setSelectedConversationId, setMessages: state.setMessages, refetchConversations: state.refetchConversations, selectedConversationId: state.selectedConversationId, setManagingTagsForConversation: state.setManagingTagsForConversation, setShowTagManagement: state.setShowTagManagement });
+  sidebarHandlersRef.current = { loadConversationMessages, handleCreateConversation, handleDeleteConversation, handleExportConversation, handleShareConversation, setSelectedConversationId: state.setSelectedConversationId, setMessages: state.setMessages, refetchConversations: state.refetchConversations, selectedConversationId: state.selectedConversationId, setManagingTagsForConversation: state.setManagingTagsForConversation, setShowTagManagement: state.setShowTagManagement };
+
+  useEffect(() => {
+    const h = sidebarHandlersRef;
+    const onSelect = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id;
+      if (id) { h.current.setSelectedConversationId(id); h.current.loadConversationMessages(id); }
+    };
+    const onCreate = () => h.current.handleCreateConversation();
+    const onDelete = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id;
+      if (!id) return;
+      // ★ FIX: SidebarChatList 已完成确认+删除，这里只做 UI 清理，不再调 handleDeleteConversation（会二次确认+二次删除）
+      const s = h.current;
+      if (s.selectedConversationId === id) {
+        s.setSelectedConversationId(null);
+        s.setMessages([]);
+      }
+      s.refetchConversations();
+    };
+    const onExport = (e: Event) => { const id = (e as CustomEvent).detail?.id; if (id) h.current.handleExportConversation(id); };
+    const onShare = (e: Event) => { const id = (e as CustomEvent).detail?.id; if (id) h.current.handleShareConversation(id); };
+    // ★ P0-1: 管理标签
+    const onManageTags = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id;
+      if (id) { h.current.setManagingTagsForConversation(id); h.current.setShowTagManagement(true); }
+    };
+
+    window.addEventListener('sidebar:selectConversation', onSelect);
+    window.addEventListener('sidebar:createConversation', onCreate);
+    window.addEventListener('sidebar:deleteConversation', onDelete);
+    window.addEventListener('sidebar:exportConversation', onExport);
+    window.addEventListener('sidebar:shareConversation', onShare);
+    window.addEventListener('sidebar:manageTags', onManageTags);
+    return () => {
+      window.removeEventListener('sidebar:selectConversation', onSelect);
+      window.removeEventListener('sidebar:createConversation', onCreate);
+      window.removeEventListener('sidebar:deleteConversation', onDelete);
+      window.removeEventListener('sidebar:exportConversation', onExport);
+      window.removeEventListener('sidebar:shareConversation', onShare);
+      window.removeEventListener('sidebar:manageTags', onManageTags);
+    };
+  }, []);
+
+  // ★ 同步 selectedConversationId 到侧边栏对话列表
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('chat:stateSync', {
+      detail: { selectedConversationId: state.selectedConversationId },
+    }));
+  }, [state.selectedConversationId]);
+
+
+  // ═══════════ Bot P0: Bot 信息栏与开场白 ═══════════
+  const { activeBotId, activeBotInfo, isLoadingBotInfo } = state;
+  const [botStartersDismissed, setBotStartersDismissed] = useState(false);
+  // 切换 Bot 或对话时重置
+  useEffect(() => { setBotStartersDismissed(false); }, [activeBotId, state.selectedConversationId]);
+
 useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isResearchMode });
-  // ═══════════ 7. URL 参数：从语音对话返回时自动恢复对话 ═══════════
+
+  // ═══════════ 7.5 Agent Mode ═══════════
+  const agentMode = useAgentMode();
+  useEffect(() => {
+    const handler = (e: Event) => {
+      agentMode.handleSSEEvent((e as CustomEvent).detail);
+    };
+    window.addEventListener('agent:sse', handler);
+    return () => window.removeEventListener('agent:sse', handler);
+  }, [agentMode.handleSSEEvent]);
+  useEffect(() => { agentMode.reset(); }, [state.selectedConversationId]);
+
+  // ═══════════ 7.55 Desktop Control (Computer Use) ═══════════
+  const [desktopState, setDesktopState] = useState<{
+    status: 'inactive' | 'creating' | 'ready' | 'operating' | 'done' | 'error';
+    viewerUrl?: string;
+    screenshot?: string;
+    screenWidth?: number;
+    screenHeight?: number;
+    statusMessage?: string;
+    steps: Array<{ tool: string; description: string; timestamp: number }>;
+  }>({ status: 'inactive', steps: [] });
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (data.type === 'desktop_screenshot') {
+        setDesktopState(prev => ({
+          ...prev,
+          status: prev.status === 'inactive' ? 'operating' : prev.status,
+          screenshot: data.screenshot,
+          screenWidth: data.width,
+          screenHeight: data.height,
+          steps: [...prev.steps, { tool: 'screenshot', description: '', timestamp: Date.now() }],
+        }));
+      } else if (data.type === 'desktop_status') {
+        setDesktopState(prev => ({
+          ...prev,
+          status: data.status || prev.status,
+          viewerUrl: data.viewerUrl || prev.viewerUrl,
+          screenWidth: data.screenWidth || prev.screenWidth,
+          screenHeight: data.screenHeight || prev.screenHeight,
+          statusMessage: data.message,
+        }));
+      }
+    };
+    window.addEventListener('desktop:sse', handler);
+    return () => window.removeEventListener('desktop:sse', handler);
+  }, []);
+  useEffect(() => { setDesktopState({ status: 'inactive', steps: [] }); }, [state.selectedConversationId]);
+
+  // ═══════════ 7.6 Code Canvas AI 修复 ═══════════
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ctx = (e as CustomEvent<FixErrorContext>).detail;
+      const lang = ctx.language === "python" ? "Python" : ctx.language === "typescript" ? "TypeScript" : "JavaScript";
+      const lineInfo = ctx.errorLine ? ` (第 ${ctx.errorLine} 行)` : "";
+      const prompt = `请修复以下 ${lang} 代码中的错误${lineInfo}：\n\n错误信息：\n${ctx.error}\n\n控制台输出：\n${ctx.consoleOutput || "（无）"}\n\n代码：\n\`\`\`${ctx.language}\n${ctx.code}\n\`\`\`\n\n请直接给出修复后的完整代码，不要省略任何部分。`;
+      handleSendMessage(prompt);
+    };
+    window.addEventListener('code-canvas:fix-error', handler as any);
+    return () => window.removeEventListener('code-canvas:fix-error', handler as any);
+  }, [handleSendMessage]);
+
+  // ═══════════ 7.7 组件内发送消息（DecisionCard 深入分析 / LiveDataCard 刷新） ═══════════
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const prompt = (e as CustomEvent<{ prompt: string }>).detail?.prompt;
+      if (prompt) handleSendMessage(prompt);
+    };
+    window.addEventListener('chat:sendPrompt', handler as any);
+    return () => window.removeEventListener('chat:sendPrompt', handler as any);
+  }, [handleSendMessage]);
+
+  // ═══════════ 8. URL 参数：从语音对话返回时自动恢复对话 ═══════════
   const _urlConvLoaded = useRef(false);
   useEffect(() => {
     if (_urlConvLoaded.current) return;
@@ -221,19 +360,55 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
           )}
 
           {/* 顶部工具栏 */}
+
+          {/* ★ Bot P0: Bot 信息栏 */}
+          {activeBotInfo && (
+            <div className="mx-4 mt-2 p-3 rounded-lg border border-primary/20 bg-primary/5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-xl shrink-0 border border-primary/10">
+                {activeBotInfo.avatar || '🤖'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm flex items-center gap-1.5">
+                  <Bot className="w-3.5 h-3.5 text-primary" />
+                  {activeBotInfo.name}
+                </div>
+                {activeBotInfo.description && (
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{activeBotInfo.description}</p>
+                )}
+              </div>
+              <button
+                onClick={() => state.setActiveBotId(null)}
+                className="p-1 rounded hover:bg-muted text-muted-foreground"
+                title="退出 Bot"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* ★ Bot P0: 开场引导消息 */}
+          {activeBotInfo && messages.length === 0 && !botStartersDismissed &&
+           activeBotInfo.starterMessages?.length > 0 && (
+            <div className="mx-4 mt-3 flex flex-wrap gap-2">
+              {activeBotInfo.starterMessages.map((msg: string, i: number) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setBotStartersDismissed(true);
+                    handleSendMessage(msg);
+                  }}
+                  className="px-3 py-2 text-sm rounded-lg border border-border hover:border-primary/30 hover:bg-primary/5 transition-all text-left max-w-[280px] truncate"
+                >
+                  {msg}
+                </button>
+              ))}
+            </div>
+          )}
+
+
           <ChatToolbar state={state} handleCreateConversation={handleCreateConversation} />
 
           <div className="flex gap-4 flex-1 min-h-0">
-            {/* 左侧对话列表（移动端抽屉 + 桌面端侧边栏） */}
-            <ConversationList
-              state={state}
-              handleCreateConversation={handleCreateConversation}
-              handleDeleteConversation={handleDeleteConversation}
-              handleExportConversation={handleExportConversation}
-              handleExportPdf={handleExportPdf}
-              handleShareConversation={handleShareConversation}
-              loadConversationMessages={loadConversationMessages}
-            />
 
             {/* 消息渲染区 + 输入框 */}
             <MessageList
@@ -248,6 +423,43 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
               normalizeImageUrl={normalizeImageUrl}
               extractImagesFromMarkdown={extractImagesFromMarkdown}
             />
+
+            {/* ★ Agent 浏览器操作面板 */}
+            {agentMode.status !== "inactive" && (
+              <div className="px-4 pb-2">
+                <ChatAgentPanel
+                  steps={agentMode.steps}
+                  status={agentMode.status}
+                  confirmation={agentMode.confirmation}
+                  onConfirm={() => {
+                    agentMode.handleConfirm();
+                    handleSendMessage("确认执行");
+                  }}
+                  onReject={() => {
+                    agentMode.handleReject();
+                    handleSendMessage("取消操作");
+                  }}
+                  onClose={agentMode.handleClose}
+                  error={agentMode.error}
+                />
+              </div>
+            )}
+
+            {/* ★ 云端桌面控制面板 (Computer Use) */}
+            {desktopState.status !== 'inactive' && (
+              <div className="px-4 pb-2">
+                <CloudDesktopViewer
+                  viewerUrl={desktopState.viewerUrl}
+                  screenshot={desktopState.screenshot}
+                  screenWidth={desktopState.screenWidth}
+                  screenHeight={desktopState.screenHeight}
+                  status={desktopState.status as any}
+                  statusMessage={desktopState.statusMessage}
+                  steps={desktopState.steps}
+                  onClose={() => setDesktopState({ status: 'inactive', steps: [] })}
+                />
+              </div>
+            )}
           </div>
           {/* 免责声明 — 移动端仅空对话时显示，桌面端始终显示 */}
           {(!isMobile || messages.length === 0) && (
@@ -293,6 +505,9 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
                       socket={sandboxData.socket}
                       clickIndicator={sandboxData.clickIndicator}
                       screenshotTimeout={sandboxData.screenshotTimeout}
+                      pendingConfirmation={sandboxData.pendingConfirmation}
+                      onConfirmationResolved={() => sandboxData.setPendingConfirmation(null)}
+                      cursorPosition={sandboxData.cursorPosition}
                     />
                   )}
                 </div>
@@ -323,6 +538,17 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
                       chatInputRef.current.setInput(`请调整上面的预览效果：${feedback}`);
                       chatInputRef.current.focus();
                     }
+                  }}
+                  onCanvasAction={(prompt) => {
+                    const { chatInputRef } = state as any;
+                    if (chatInputRef?.current) {
+                      chatInputRef.current.setInput(prompt);
+                      chatInputRef.current.focus();
+                    }
+                  }}
+                  onCodeChange={(code) => {
+                    // 同步手动编辑的代码到 activeArtifact
+                    setActiveArtifact({ ...activeArtifact, code });
                   }}
                   onExport={() => {}}
                 />
@@ -369,6 +595,9 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
             taskId={activeResearchTaskId}
             socket={sandboxData.socket}
             isActive={!!activeResearchTaskId}
+            pendingConfirmation={sandboxData.pendingConfirmation}
+            onConfirmationResolved={() => sandboxData.setPendingConfirmation(null)}
+            cursorPosition={sandboxData.cursorPosition}
           />
         )}
       {/* ═══════ 移动端 Artifact 通知条 + 全屏预览（xl 以下） ═══════ */}
@@ -455,6 +684,17 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
                     chatInputRef.current.setInput(`请调整上面的预览效果：${feedback}`);
                     chatInputRef.current.focus();
                   }
+                }}
+                onCanvasAction={(prompt) => {
+                  closeMobileArtifact();
+                  const { chatInputRef } = state as any;
+                  if (chatInputRef?.current) {
+                    chatInputRef.current.setInput(prompt);
+                    chatInputRef.current.focus();
+                  }
+                }}
+                onCodeChange={(code) => {
+                  setActiveArtifact({ ...activeArtifact, code });
                 }}
                 onExport={() => {}}
               />

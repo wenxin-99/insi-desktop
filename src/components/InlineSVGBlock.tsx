@@ -14,6 +14,7 @@
  * - 全屏查看
  * - 复制 SVG / 下载 SVG
  * - 自适应高度
+ * - ★ 智能色彩增强：检测单色 SVG 自动注入高对比样式
  */
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { Eye, Code2, Copy, Check, Download, Maximize2, Minimize2, X } from 'lucide-react';
@@ -22,25 +23,202 @@ import { toast } from 'sonner';
 
 interface InlineSVGBlockProps {
   code: string;
+  /** 是否正在流式输入中（由 SafeMarkdown 传入） */
+  streaming?: boolean;
 }
 
-export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBlockProps) {
+/* ────────────────────────────────────────────
+ * 分析 SVG 是否为"单色/低色彩"信息卡片类型
+ * 这类 SVG 通常由 LLM 生成，使用灰色系，缺乏视觉层次
+ * ──────────────────────────────────────────── */
+function analyzeSvgStyle(svgCode: string) {
+  const textCount  = (svgCode.match(/<text[\s>]/g) || []).length;
+  const circleCount = (svgCode.match(/<circle[\s>]/g) || []).length;
+  const rectCount  = (svgCode.match(/<rect[\s>]/g) || []).length;
+
+  // 检测是否有丰富的自定义颜色（排除灰色系）
+  const fillMatches = svgCode.match(/fill=["']#[0-9a-fA-F]{3,8}["']/g) || [];
+  let colorfulCount = 0;
+  for (const f of fillMatches) {
+    const hex = f.match(/#([0-9a-fA-F]{3,8})/)?.[1] || '';
+    const full = hex.length === 3
+      ? hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2]
+      : hex;
+    if (full.length < 6) continue;
+    const r = parseInt(full.slice(0,2), 16);
+    const g = parseInt(full.slice(2,4), 16);
+    const b = parseInt(full.slice(4,6), 16);
+    const span = Math.max(r,g,b) - Math.min(r,g,b);
+    if (span >= 35) colorfulCount++;
+  }
+
+  const isMonochrome = colorfulCount < 3;
+  const isInfoCard = textCount > 5 && (circleCount >= 3 || rectCount >= 3);
+
+  return { isMonochrome, isInfoCard, textCount, circleCount, rectCount };
+}
+
+/* ────────────────────────────────────────────
+ * JS 后处理：直接操作 SVG DOM，处理 inline style
+ * 和 CSS 选择器覆盖不到的场景
+ * ──────────────────────────────────────────── */
+function buildPostProcessScript(): string {
+  return `
+  (function() {
+    try {
+      var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var svg = document.querySelector('svg');
+      if (!svg) return;
+
+      /* — 判断灰色 hex — */
+      function isGray(hex) {
+        if (!hex || hex === 'none' || hex === 'transparent') return true;
+        hex = hex.trim().toLowerCase();
+        var namedGrays = ['white','black','gray','grey','darkgray','darkgrey','lightgray','lightgrey','silver','gainsboro','whitesmoke'];
+        if (namedGrays.indexOf(hex) >= 0) return true;
+        var m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/);
+        if (!m) {
+          var m3 = hex.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/);
+          if (m3) m = [null, m3[1]+m3[1], m3[2]+m3[2], m3[3]+m3[3]];
+        }
+        if (!m) return true;
+        var r=parseInt(m[1],16), g=parseInt(m[2],16), b=parseInt(m[3],16);
+        return (Math.max(r,g,b) - Math.min(r,g,b)) < 35;
+      }
+
+      function getFill(el) {
+        return el.style.fill || el.getAttribute('fill') || '';
+      }
+
+      /* — 统计是否已有丰富色彩 — */
+      var allFills = svg.querySelectorAll('[fill]');
+      var richCount = 0;
+      for (var i = 0; i < allFills.length; i++) {
+        if (!isGray(allFills[i].getAttribute('fill'))) richCount++;
+      }
+      if (richCount >= 3) return; // 已有色彩，不干预
+
+      /* — 调色板 — */
+      var palette = {
+        title:     isDark ? '#f1f5f9' : '#1e1b4b',
+        body:      isDark ? '#cbd5e1' : '#334155',
+        sub:       isDark ? '#94a3b8' : '#64748b',
+        dot:       isDark ? '#818cf8' : '#6366f1',
+        line:      isDark ? '#4f46e5' : '#a5b4fc',
+        badgeBg:   isDark ? '#1e1b4b' : '#eef2ff',
+        badgeBd:   isDark ? '#3730a3' : '#c7d2fe',
+        cardBg:    isDark ? '#0f172a' : '#ffffff',
+        cardBd:    isDark ? '#1e293b' : '#e0e7ff',
+      };
+
+      /* 1) 文字增强 */
+      var texts = svg.querySelectorAll('text');
+      for (var i = 0; i < texts.length; i++) {
+        var t = texts[i];
+        var fill = getFill(t);
+        if (fill && !isGray(fill)) continue; // 有颜色的跳过
+        var fs = parseFloat(t.getAttribute('font-size') || t.style.fontSize || '14');
+        if (fs >= 18) {
+          t.style.fill = palette.title;
+          if (!t.getAttribute('font-weight') && !t.style.fontWeight) t.style.fontWeight = '700';
+        } else if (fs >= 14) {
+          t.style.fill = palette.body;
+          if (!t.getAttribute('font-weight') && !t.style.fontWeight) t.style.fontWeight = '500';
+        } else {
+          t.style.fill = palette.sub;
+        }
+      }
+
+      /* 2) 步骤指示圆 */
+      var circles = svg.querySelectorAll('circle');
+      for (var i = 0; i < circles.length; i++) {
+        var c = circles[i];
+        var r = parseFloat(c.getAttribute('r') || '0');
+        if (r > 20) continue;
+        var fill = getFill(c);
+        if (fill && !isGray(fill)) continue;
+        c.style.fill = palette.dot;
+      }
+
+      /* 3) 连线增强 */
+      var lines = svg.querySelectorAll('line');
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i];
+        var stroke = l.style.stroke || l.getAttribute('stroke') || '';
+        if (stroke && !isGray(stroke)) continue;
+        l.style.stroke = palette.line;
+        if (!l.getAttribute('stroke-width')) l.style.strokeWidth = '2';
+        if (!l.getAttribute('stroke-dasharray')) l.style.strokeDasharray = '4 3';
+      }
+
+      /* 4) badge 矩形 */
+      var rects = svg.querySelectorAll('rect');
+      for (var i = 0; i < rects.length; i++) {
+        var rect = rects[i];
+        var rx = parseFloat(rect.getAttribute('rx') || '0');
+        var w = parseFloat(rect.getAttribute('width') || '0');
+        var h = parseFloat(rect.getAttribute('height') || '0');
+        var fill = getFill(rect);
+        if (!isGray(fill)) continue;
+
+        // 外层容器大矩形
+        if (i === 0 && w > 400 && h > 200) {
+          rect.style.fill = palette.cardBg;
+          rect.style.stroke = palette.cardBd;
+          rect.style.strokeWidth = '1.5';
+          if (rx < 8) { rect.setAttribute('rx', '12'); rect.setAttribute('ry', '12'); }
+          continue;
+        }
+        // badge 小矩形
+        if (rx > 0 && w < 200 && h < 50) {
+          rect.style.fill = palette.badgeBg;
+          rect.style.stroke = palette.badgeBd;
+          rect.style.strokeWidth = '1';
+        }
+      }
+
+    } catch(e) { /* 静默 */ }
+  })();
+  `;
+}
+
+export const InlineSVGBlock = memo(function InlineSVGBlock({ code, streaming }: InlineSVGBlockProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
   const [fullscreen, setFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [height, setHeight] = useState(280);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // ★ 唯一实例 ID，防止多个 InlineSVGBlock 的 postMessage 互相干扰
   const instanceId = useRef(`svg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
 
-  // 构建安全的 iframe 文档
+  // ★ 流式防抖：streaming 期间每 500ms 更新一次 iframe，避免高频重载
+  const [renderCode, setRenderCode] = useState(code);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (!streaming) {
+      // 非流式 / 流式结束：立即用最新代码渲染
+      setRenderCode(code);
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = undefined; }
+      return;
+    }
+    // 流式中：防抖 500ms（第一帧立即渲染）
+    if (!renderCode) { setRenderCode(code); return; }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setRenderCode(code), 500);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [code, streaming]);
+
+  // 分析 SVG 特征（用防抖后的代码）
+  const analysis = useMemo(() => analyzeSvgStyle(renderCode), [renderCode]);
+
+  // 构建安全的 iframe 文档（用防抖后的 renderCode）
   const iframeDoc = useMemo(() => {
-    // 清理可能的 XSS：移除 script 标签、event handlers
-    const sanitized = code
+    const sanitized = renderCode
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
 
+    const postProcessJS = analysis.isMonochrome ? buildPostProcessScript() : '';
     const iid = instanceId.current;
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -54,32 +232,34 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
     align-items: center;
     justify-content: center;
     min-height: 100%;
+    /* 加载 web 字体以改善中文渲染 */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   }
   svg { 
     max-width: 100%; 
     height: auto; 
     display: block;
   }
+  /* 基础暗色模式 fallback */
   @media (prefers-color-scheme: dark) {
-    svg text { fill: #e5e5e5; }
-    svg line, svg path, svg rect, svg circle, svg ellipse { 
-      /* 不覆盖有 fill/stroke 的元素 */
-    }
+    svg text:not([fill]) { fill: #e2e8f0; }
   }
 </style>
 </head>
 <body>${sanitized}
 <script>
-  // 自动计算高度并通知父窗口（携带实例 ID 防止多实例冲突）
-  new ResizeObserver(() => {
-    const h = document.body.scrollHeight;
+  // 自动计算高度
+  new ResizeObserver(function() {
+    var h = document.body.scrollHeight;
     window.parent.postMessage({ type: 'svg-height', id: '${iid}', height: h }, '*');
   }).observe(document.body);
+
+  ${postProcessJS}
 </script>
 </body></html>`;
-  }, [code]);
+  }, [renderCode, analysis]);
 
-  // 监听 iframe 高度消息（仅响应自己实例的 ID）
+  // 监听 iframe 高度消息
   useEffect(() => {
     const iid = instanceId.current;
     const handler = (e: MessageEvent) => {
@@ -113,7 +293,6 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
     toast.success('SVG 已下载');
   }, [code]);
 
-  // 提取 SVG 的 viewBox 判断尺寸信息
   const svgInfo = useMemo(() => {
     const vbMatch = code.match(/viewBox=["']([\d.\s-]+)["']/);
     if (vbMatch) {
@@ -128,6 +307,11 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
   const cardClass = fullscreen
     ? 'fixed inset-0 sm:inset-4 z-[60] bg-card sm:border sm:border-border sm:rounded-2xl shadow-2xl flex flex-col'
     : 'my-3 border border-border rounded-xl overflow-hidden bg-card shadow-sm flex flex-col';
+
+  // ★ 信息卡片类 SVG 用纯净白底，非信息卡用棋盘格（透明指示）
+  const previewBg = (analysis.isInfoCard || analysis.isMonochrome)
+    ? 'bg-white dark:bg-slate-950'
+    : 'bg-[repeating-conic-gradient(#f3f4f6_0%_25%,#fff_0%_50%)] dark:bg-[repeating-conic-gradient(#1f2937_0%_25%,#111827_0%_50%)] bg-[length:16px_16px]';
 
   return (
     <>
@@ -152,12 +336,12 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
               <span className="text-sm font-semibold text-foreground">SVG 图形</span>
               <span className="text-[11px] text-muted-foreground">
                 {lines} 行{svgInfo ? ` · ${svgInfo.w}×${svgInfo.h}` : ''}
+                {streaming ? ' · 生成中...' : analysis.isMonochrome ? ' · 已增强' : ''}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-0.5 flex-shrink-0">
-            {/* 预览/代码 切换 */}
             <div className="flex bg-muted rounded-lg p-0.5 mr-1">
               {(['preview', 'code'] as const).map((t) => (
                 <button
@@ -176,7 +360,6 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
               ))}
             </div>
 
-            {/* 操作按钮 */}
             <button
               className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
               onClick={handleCopy}
@@ -216,7 +399,7 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
         )}>
           {tab === 'preview' && (
             <div
-              className="flex items-center justify-center bg-[repeating-conic-gradient(#f3f4f6_0%_25%,#fff_0%_50%)] dark:bg-[repeating-conic-gradient(#1f2937_0%_25%,#111827_0%_50%)] bg-[length:16px_16px] p-4"
+              className={cn('flex items-center justify-center p-4', previewBg)}
               style={{ minHeight: fullscreen ? '100%' : `${height}px` }}
             >
               <iframe
@@ -227,6 +410,11 @@ export const InlineSVGBlock = memo(function InlineSVGBlock({ code }: InlineSVGBl
                 style={{ height: fullscreen ? '100%' : `${height}px` }}
                 title="SVG Preview"
               />
+              {streaming && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-muted overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-primary/30 via-primary to-primary/30 animate-pulse" style={{ width: '100%' }} />
+                </div>
+              )}
             </div>
           )}
           {tab === 'code' && (

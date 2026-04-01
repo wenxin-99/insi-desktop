@@ -14,11 +14,12 @@
  * - MessageActions         → 消息操作按钮栏
  */
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { InlineThinkingBlock } from '@/components/InlineThinkingBlock';
 import { InlineStepList } from '@/components/InlineStepBlock';
 import { ImageGenerationProgress, isImageGenerationFlow } from '@/components/ImageGenerationProgress';
 import { ArtifactInlineTrigger } from '@/components/ArtifactInlineTrigger';
+import { ToolComponentList } from '@/components/streaming';
 import { SolutionPickerCard, SolutionPickerResult } from '@/components/SolutionPickerCard';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { ThinkingAnimation } from '@/components/ThinkingAnimation';
@@ -37,6 +38,7 @@ import {
   AssistantRegularContent,
   UserContent,
   MessageActions,
+  BranchNavigator,
 } from './messageItem';
 
 interface MessageItemProps {
@@ -52,7 +54,8 @@ interface MessageItemProps {
   extractImagesFromMarkdown: (content: string) => { cleanedContent: string; images: Array<{ url: string; name: string }> };
 }
 
-export function MessageItem(props: MessageItemProps) {
+// ★ P2: React.memo 包装，跳过未变化消息的 re-render
+export const MessageItem = memo(function MessageItem(props: MessageItemProps) {
   const {
     msg, index, displayContent, isLastAssistant, isStreaming,
     state, handleSendMessage, handleImageDownload,
@@ -60,7 +63,9 @@ export function MessageItem(props: MessageItemProps) {
   } = props;
   const { t } = useTranslation();
   const { messages, isSidebarOpen, setPreviewFile } = state;
-  const [reasoningCollapsed, setReasoningCollapsed] = useState(true);
+  // ★ 渐进式展开：三档状态 collapsed → preview → full
+  const [reasoningExpandLevel, setReasoningExpandLevel] = useState<'collapsed' | 'preview' | 'full'>('collapsed');
+  const reasoningCollapsed = reasoningExpandLevel === 'collapsed';
 
   // ═══════ 统一渲染：流式 vs 持久化数据源 ═══════
   const effectiveOperationLogs = isStreaming
@@ -82,12 +87,50 @@ export function MessageItem(props: MessageItemProps) {
   const reasoningUserScrolledUpRef = useRef(false);
   const [showReasoningScrollBtn, setShowReasoningScrollBtn] = useState(false);
 
+  // ═══════ P0-1: 推理耗时（完成态从 msg 读取，流式态用 elapsedThinkingTime） ═══════
+  const thinkingTime = isStreaming
+    ? state.elapsedThinkingTime
+    : (msg as any).thinkingTime;
+  const doneTitle = thinkingTime && thinkingTime > 0
+    ? `深度推理 · ${thinkingTime.toFixed(1)}s`
+    : '深度推理过程';
+
+  // ═══════ P0-2: 推理摘要要点（从 reasoning content 提取真实要点） ═══════
+  const streamThinkingSummary = (state as any).thinkingSummary as string | undefined;
+  const msgThinkingSummary = (msg as any).thinkingSummary as string | undefined;
+  const thinkingSummaryPoints = useMemo(() => {
+    // 优先使用服务端推送的 thinkingSummary
+    const serverSummary = isStreaming ? streamThinkingSummary : msgThinkingSummary;
+    if (serverSummary) {
+      return serverSummary.replace(/。$/, '').split('，').filter(Boolean).slice(0, 3);
+    }
+    // fallback: 从 reasoning content 提取关键动作句
+    const content = effectiveReasoningContent || '';
+    if (content.length < 20) return [];
+    const points: string[] = [];
+    const patterns = [
+      /(?:分析|审视|检查|对比|考虑|评估|研究)了?(.{4,20})/g,
+      /(?:发现|注意到|识别出)(.{4,20})/g,
+      /(?:方案|思路|可能性)(?:有|：)(\d+)/g,
+    ];
+    for (const p of patterns) {
+      const matches = content.matchAll(p);
+      for (const m of matches) {
+        const point = m[0].substring(0, 25);
+        if (!points.includes(point)) points.push(point);
+        if (points.length >= 3) break;
+      }
+      if (points.length >= 3) break;
+    }
+    return points;
+  }, [isStreaming, effectiveReasoningContent, streamThinkingSummary, msgThinkingSummary]);
+
   const panelTexts = useMemo(() => {
     const reasoningTexts = ['正在深度推理分析...', '深度思考中...', '仔细推敲问题中...', '展开逻辑推理...'];
     const transitionTexts = ['推理完成，正在生成回答...', '分析完毕，组织回答中...', '推理就绪，输出结果...'];
     const waitingTexts = ['正在生成回答...', '组织语言中...', '整理思路中...', '输出回答中...'];
     const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
-    return { reasoning: pick(reasoningTexts), transition: pick(transitionTexts), done: '深度推理过程', waiting: pick(waitingTexts) };
+    return { reasoning: pick(reasoningTexts), transition: pick(transitionTexts), waiting: pick(waitingTexts) };
   }, []);
 
   useEffect(() => {
@@ -97,10 +140,19 @@ export function MessageItem(props: MessageItemProps) {
   }, [effectiveReasoningContent, isReasoning]);
   useEffect(() => { if (!isReasoning) { reasoningUserScrolledUpRef.current = false; setShowReasoningScrollBtn(false); } }, [isReasoning]);
   useEffect(() => {
-    if (isReasoning) setReasoningCollapsed(false);
-    else if (isGenerating && displayContent) setReasoningCollapsed(true);
-    else if (!isStreaming && effectiveReasoningContent) setReasoningCollapsed(true);
+    if (isReasoning) setReasoningExpandLevel('full');
+    else if (isGenerating && displayContent) setReasoningExpandLevel('collapsed');
+    else if (!isStreaming && effectiveReasoningContent) setReasoningExpandLevel('collapsed');
   }, [isReasoning, isGenerating, isStreaming, displayContent, effectiveReasoningContent]);
+
+  // 预览模式截断内容（~500 字）
+  const isLongReasoning = !!effectiveReasoningContent && effectiveReasoningContent.length > 600;
+  const previewReasoningContent = useMemo(() => {
+    if (!effectiveReasoningContent || !isLongReasoning) return effectiveReasoningContent || '';
+    // 找到 500 字附近的段落边界
+    const cutPoint = effectiveReasoningContent.indexOf('\n', 400);
+    return effectiveReasoningContent.substring(0, cutPoint > 0 && cutPoint < 600 ? cutPoint : 500);
+  }, [effectiveReasoningContent, isLongReasoning]);
 
   return (
     <div
@@ -137,7 +189,7 @@ export function MessageItem(props: MessageItemProps) {
                 </div>
               </div>
 
-              {/* ═══════ 🧠 深度推理面板（统一版） ═══════ */}
+              {/* ═══════ 🧠 深度推理面板（渐进式三档展开） ═══════ */}
               {hasReasoningPanel && (
                 <div
                   className={cn(
@@ -148,8 +200,12 @@ export function MessageItem(props: MessageItemProps) {
                   )}
                   style={{ background: 'var(--color-purple-50, rgba(139,92,246,0.04))' }}
                 >
+                  {/* 标题栏 — 点击循环：短内容 collapsed↔full，长内容 collapsed→preview→full→collapsed */}
                   <button
-                    onClick={() => setReasoningCollapsed(c => !c)}
+                    onClick={() => setReasoningExpandLevel(prev => {
+                      if (!isLongReasoning) return prev === 'collapsed' ? 'full' : 'collapsed';
+                      return prev === 'collapsed' ? 'preview' : prev === 'preview' ? 'full' : 'collapsed';
+                    })}
                     className="flex items-center gap-2 w-full px-3 py-2.5 text-left select-none bg-purple-50/80 dark:bg-purple-900/20 hover:bg-purple-100/80 dark:hover:bg-purple-900/30 transition-colors"
                   >
                     {isReasoning ? (
@@ -158,16 +214,53 @@ export function MessageItem(props: MessageItemProps) {
                       <Brain className="h-4 w-4 text-purple-500 shrink-0" />
                     )}
                     <span className="text-sm font-medium text-purple-700 dark:text-purple-300 flex-1">
-                      {isReasoning ? panelTexts.reasoning : isGenerating ? panelTexts.transition : panelTexts.done}
+                      {isReasoning ? panelTexts.reasoning : isGenerating ? panelTexts.transition : doneTitle}
                     </span>
                     {effectiveReasoningContent && effectiveReasoningContent.length > 0 && (
                       <span className="text-xs text-purple-500/50 mr-1 shrink-0">{effectiveReasoningContent.length} 字</span>
                     )}
                     <div className="text-purple-400/40 shrink-0">
-                      {!reasoningCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      {reasoningExpandLevel === 'full' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </div>
                   </button>
-                  <div className={cn("transition-all duration-300 ease-in-out overflow-hidden relative", !reasoningCollapsed ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0")}>
+
+                  {/* 折叠态：摘要要点 */}
+                  {reasoningCollapsed && thinkingSummaryPoints.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 pb-2 pt-0.5 text-[11px] text-purple-500/60 flex-wrap">
+                      {thinkingSummaryPoints.map((p: string, i: number) => (
+                        <span key={i} className="flex items-center gap-1">
+                          <span className="w-1 h-1 rounded-full bg-purple-400/40 shrink-0" />
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 预览态：仅长内容显示截断 + 渐变遮罩 + 展开按钮 */}
+                  {reasoningExpandLevel === 'preview' && isLongReasoning && effectiveReasoningContent && (
+                    <div className="relative">
+                      <div className="px-3 py-2 max-h-[200px] overflow-hidden text-sm leading-relaxed bg-purple-50/30 dark:bg-purple-900/10 prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2">
+                        <SafeMarkdown>{previewReasoningContent}</SafeMarkdown>
+                      </div>
+                      {/* 渐变遮罩 — 与容器 bg 一致 */}
+                      <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-purple-50/80 dark:from-[rgba(88,28,135,0.15)] to-transparent pointer-events-none" />
+                      <div className="flex justify-center py-2 bg-purple-50/30 dark:bg-purple-900/10 border-t border-purple-200/20 dark:border-purple-800/10">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setReasoningExpandLevel('full'); }}
+                          className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium text-purple-600 dark:text-purple-400 bg-purple-100/60 dark:bg-purple-900/30 hover:bg-purple-200/80 dark:hover:bg-purple-800/40 transition-colors"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                          查看完整推理（{effectiveReasoningContent.length} 字）
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 完全展开态：完整内容 + 滚动 */}
+                  <div className={cn(
+                    "transition-all duration-300 ease-in-out overflow-hidden relative",
+                    reasoningExpandLevel === 'full' ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
+                  )}>
                     <div
                       ref={reasoningRef}
                       className="px-3 py-2 max-h-[500px] overflow-y-auto text-sm leading-relaxed bg-purple-50/30 dark:bg-purple-900/10 prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-pre:my-1 prose-ul:my-1 prose-ol:my-1"
@@ -312,27 +405,58 @@ export function MessageItem(props: MessageItemProps) {
                 ) : (
                   /* ═══════ 常规内容（统一流式+完成态渲染） ═══════ */
                   <>
+                    {/* ★ FIX: 流式期间用 activeToolComponents（每个 chunk 更新），完成态用 msg.toolComponents */}
+                    {(() => {
+                      const liveTools = isStreaming ? (state as any).activeToolComponents : null;
+                      const tools = (liveTools?.length > 0) ? liveTools : (msg as any).toolComponents;
+                      if (!tools?.length) return null;
+                      return (
+                        <ToolComponentList
+                          tools={tools}
+                          isLive={!!isStreaming}
+                          onAction={(toolId, action, payload) => {
+                            if (action === 'apply_code' || action === 'apply_file') {
+                              state.setPreviewFile?.({
+                                name: payload?.fileName || 'file',
+                                content: payload?.code || payload?.content || '',
+                                isLive: false,
+                              });
+                            } else if (action === 'export_document') {
+                              if (state.chatInputRef?.current) {
+                                state.chatInputRef.current.setInput(`请将上面的文档导出为${payload?.format || 'PDF'}格式`);
+                                state.chatInputRef.current.focus();
+                              }
+                            }
+                          }}
+                        />
+                      );
+                    })()}
                     {displayContent ? (
                       <AssistantRegularContent {...props} />
                     ) : isStreaming ? (
-                      /* 等待指示器（流式期间无内容时） */
-                      isImageGenerationFlow(effectiveOperationLogs) ? null : (
-                        effectiveOperationLogs.length > 0 ? (
-                          <div className="flex items-center gap-2 py-2 text-muted-foreground">
-                            <div className="animate-spin w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full" />
-                            <span className="text-sm">{panelTexts.waiting}</span>
-                            {state.elapsedThinkingTime > 0 && (
-                              <span className="text-xs text-muted-foreground/60">{state.elapsedThinkingTime.toFixed(1)}s</span>
-                            )}
-                          </div>
-                        ) : (
-                          <ThinkingAnimation
-                            elapsedTime={state.elapsedThinkingTime}
-                            thinkingStage={state.thinkingStage}
-                            hasOperations={effectiveOperationLogs.length > 0}
-                          />
-                        )
-                      )
+                      /* ★ FIX: 当有工具组件在渲染时（文档生成），不显示 ThinkingAnimation —
+                         文档卡片自身已有进度指示（"撰写中... · N 字"），ThinkingAnimation 多余且误导 */
+                      (() => {
+                        const hasActiveTools = ((state as any).activeToolComponents?.length > 0) || ((msg as any).toolComponents?.length > 0);
+                        if (hasActiveTools) return null;
+                        return isImageGenerationFlow(effectiveOperationLogs) ? null : (
+                          effectiveOperationLogs.length > 0 ? (
+                            <div className="flex items-center gap-2 py-2 text-muted-foreground">
+                              <div className="animate-spin w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full" />
+                              <span className="text-sm">{panelTexts.waiting}</span>
+                              {state.elapsedThinkingTime > 0 && (
+                                <span className="text-xs text-muted-foreground/60">{state.elapsedThinkingTime.toFixed(1)}s</span>
+                              )}
+                            </div>
+                          ) : (
+                            <ThinkingAnimation
+                              elapsedTime={state.elapsedThinkingTime}
+                              thinkingStage={state.thinkingStage}
+                              hasOperations={effectiveOperationLogs.length > 0}
+                            />
+                          )
+                        );
+                      })()
                     ) : null}
                   </>
                 )}
@@ -343,18 +467,42 @@ export function MessageItem(props: MessageItemProps) {
             <UserContent {...props} />
           )}
 
-          {/* 操作按钮 — 流式期间隐藏，完成后渐入（保留占位避免跳动） */}
+          {/* 操作按钮 + 分支导航 — 流式期间隐藏，完成后渐入 */}
           <div className={cn(
             "transition-opacity duration-200 ease-out",
             isStreaming ? "opacity-0 pointer-events-none" : "opacity-100"
           )}>
-            <MessageActions {...props} />
+            <div className={`flex items-center gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {/* 分支导航器（用户消息有分支时显示） */}
+              {msg.role === 'user' && (msg as any)._branches && (msg as any)._branches.length > 0 && (
+                <BranchNavigator
+                  msg={msg}
+                  index={index}
+                  messages={messages}
+                  setMessages={state.setMessages}
+                />
+              )}
+              <MessageActions {...props} />
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // ★ 自定义比较函数：流式消息总是更新，非流式消息只比较关键字段
+  if (nextProps.isStreaming) return false; // 流式消息总是重新渲染
+  // ★ 正在编辑的消息总是重新渲染（editText 变化需要反映）
+  if (nextProps.state.editingMessageIndex === nextProps.index) return false;
+  
+  return (
+    prevProps.msg === nextProps.msg &&
+    prevProps.index === nextProps.index &&
+    prevProps.displayContent === nextProps.displayContent &&
+    prevProps.isLastAssistant === nextProps.isLastAssistant &&
+    prevProps.state.editingMessageIndex === nextProps.state.editingMessageIndex
+  );
+});
 
 /**
  * 文件点击处理：从消息内容中提取对应文件的代码块并预览

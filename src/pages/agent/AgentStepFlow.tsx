@@ -11,6 +11,7 @@ import { useState, useMemo } from "react";
 import {
   Brain, Wrench, Eye, AlertTriangle, CheckCircle, FileText,
   ArrowRight, ChevronDown, ChevronUp, LayoutList, GitBranch,
+  Play, X,
 } from "lucide-react";
 import type { AgentStep } from "./types";
 
@@ -38,9 +39,15 @@ interface Props {
 }
 
 export function AgentStepFlow({ steps, maxDisplay = 100 }: Props) {
-  const [mode, setMode] = useState<"timeline" | "flow">("timeline");
+  const [mode, setMode] = useState<"timeline" | "flow" | "replay">("timeline");
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [expandedScreenshot, setExpandedScreenshot] = useState<string | null>(null);
+
+  // ★ P2⑦：筛选有截图的 action 步骤用于回放
+  const screenshotSteps = useMemo(() =>
+    steps.filter(s => s.type === "action" && s.metadata?.screenshotBase64),
+  [steps]);
 
   const displaySteps = useMemo(() => {
     if (showAll) return steps;
@@ -87,13 +94,32 @@ export function AgentStepFlow({ steps, maxDisplay = 100 }: Props) {
           >
             <GitBranch className="w-3.5 h-3.5" />
           </button>
+          {screenshotSteps.length > 0 && (
+            <button
+              onClick={() => setMode("replay")}
+              className={`p-1.5 rounded-md text-xs ${mode === "replay" ? "bg-background shadow-sm" : "text-muted-foreground"}`}
+              title="截图回放"
+            >
+              <Play className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {mode === "timeline" ? (
-        <TimelineView steps={displaySteps} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
+        <TimelineView steps={displaySteps} expandedSteps={expandedSteps} toggleExpand={toggleExpand} onScreenshotClick={setExpandedScreenshot} />
+      ) : mode === "replay" ? (
+        <ReplayView steps={screenshotSteps} onScreenshotClick={setExpandedScreenshot} />
       ) : (
         <FlowView steps={displaySteps} />
+      )}
+
+      {/* ★ P2⑦：截图全屏弹窗 */}
+      {expandedScreenshot && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 cursor-pointer" onClick={() => setExpandedScreenshot(null)}>
+          <img src={expandedScreenshot} alt="截图" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setExpandedScreenshot(null)} className="absolute top-4 right-4 text-white/60 hover:text-white bg-black/40 rounded-full p-2"><X className="w-5 h-5" /></button>
+        </div>
       )}
     </div>
   );
@@ -103,10 +129,11 @@ export function AgentStepFlow({ steps, maxDisplay = 100 }: Props) {
 // Timeline Mode
 // ═══════════════════════════════════════════
 
-function TimelineView({ steps, expandedSteps, toggleExpand }: {
+function TimelineView({ steps, expandedSteps, toggleExpand, onScreenshotClick }: {
   steps: AgentStep[];
   expandedSteps: Set<number>;
   toggleExpand: (id: number) => void;
+  onScreenshotClick?: (src: string) => void;
 }) {
   return (
     <div className="relative">
@@ -167,13 +194,85 @@ function TimelineView({ steps, expandedSteps, toggleExpand }: {
                 <img
                   src={`data:image/jpeg;base64,${step.metadata.screenshotBase64}`}
                   alt="截图"
-                  className="mt-2 w-48 h-auto rounded-lg border shadow-sm cursor-pointer hover:opacity-90"
+                  className="mt-2 w-48 h-auto rounded-lg border shadow-sm cursor-pointer hover:opacity-90 hover:shadow-md transition-all"
+                  onClick={() => onScreenshotClick?.(`data:image/jpeg;base64,${step.metadata.screenshotBase64}`)}
                 />
               )}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// ★ P2⑦ Replay Mode (截图回放)
+// ═══════════════════════════════════════════
+
+function ReplayView({ steps, onScreenshotClick }: {
+  steps: AgentStep[];
+  onScreenshotClick?: (src: string) => void;
+}) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const step = steps[currentIdx];
+  if (!step) return <div className="text-center text-muted-foreground py-10 text-sm">无可回放的截图步骤</div>;
+
+  const src = `data:image/jpeg;base64,${step.metadata?.screenshotBase64 || ""}`;
+  const total = steps.length;
+
+  return (
+    <div className="space-y-3">
+      {/* 截图主体 */}
+      <div className="relative rounded-xl overflow-hidden border bg-muted/10 cursor-pointer" onClick={() => onScreenshotClick?.(src)}>
+        <img src={src} alt={`步骤 ${step.stepNumber}`} className="w-full h-auto" />
+        {/* 步骤信息叠加 */}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
+          <div className="text-white text-xs font-medium">
+            #{step.stepNumber} {step.toolName || step.type}
+          </div>
+          <div className="text-white/70 text-[10px] line-clamp-1">
+            {step.observation?.substring(0, 100) || ""}
+          </div>
+        </div>
+      </div>
+
+      {/* 进度条 + 控制 */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}
+          disabled={currentIdx === 0}
+          className="text-xs px-2 py-1 rounded-lg border hover:bg-muted disabled:opacity-30"
+        >
+          ← 上一步
+        </button>
+
+        {/* 进度条 */}
+        <div className="flex-1 flex items-center gap-0.5">
+          {steps.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentIdx(i)}
+              className={`flex-1 h-1.5 rounded-full transition-colors ${
+                i === currentIdx ? "bg-primary" : i < currentIdx ? "bg-primary/40" : "bg-muted"
+              }`}
+            />
+          ))}
+        </div>
+
+        <button
+          onClick={() => setCurrentIdx(Math.min(total - 1, currentIdx + 1))}
+          disabled={currentIdx >= total - 1}
+          className="text-xs px-2 py-1 rounded-lg border hover:bg-muted disabled:opacity-30"
+        >
+          下一步 →
+        </button>
+      </div>
+
+      <div className="text-center text-[10px] text-muted-foreground">
+        {currentIdx + 1} / {total} 步
+        {step.metadata?.durationMs && ` · ${step.metadata.durationMs > 1000 ? `${(step.metadata.durationMs / 1000).toFixed(1)}s` : `${step.metadata.durationMs}ms`}`}
+      </div>
     </div>
   );
 }

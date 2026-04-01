@@ -26,6 +26,11 @@ export interface StreamEventHandlers {
   onIntentConfirm?: (data: any) => void;
   onOperation?: (data: any) => void;
   onAutomationTask?: (data: any) => void;
+  onAgentStep?: (data: any) => void;
+  onAgentConfirm?: (data: any) => void;
+  onAgentStatus?: (data: any) => void;
+  onDesktopScreenshot?: (data: any) => void;
+  onDesktopStatus?: (data: any) => void;
   onFilePreview?: (data: { fileName: string; action: string; newContent?: string; oldContent?: string; timestamp: number }) => void;
   onReasoningContent?: (data: { content: string }) => void;
   onThinkingStage?: (data: { stage: string; model?: string; error?: string }) => void;
@@ -35,14 +40,22 @@ export interface StreamEventHandlers {
   onArtifactChunk?: (data: { artifactId: string; chunk: string }) => void;
   onArtifactEnd?: (data: { artifactId: string; metadata?: any }) => void;
   onSolutionPicker?: (data: any) => void;
+  // ★ 作业批改
+  onHomeworkResult?: (data: any) => void;
   // 轻量联网搜索
   onWebSearchStart?: (data: { query: string }) => void;
   onWebSearchResult?: (data: { query: string; sources: Array<{ title: string; url: string }> }) => void;
   onWebSearchProgress?: (data: { phase: string; totalSearches: number; iteration: number; query?: string }) => void;
   onWebSearchDone?: (data: any) => void;
+  onContextWarning?: (data: { level: 'warning' | 'critical'; truncatedCount: number; usagePercent: number; contextWindow: number }) => void;
   // 网页抓取
   onUrlFetchStart?: (data: { url: string }) => void;
   onUrlFetchResult?: (data: { url: string; title: string }) => void;
+  // 统一流式工具组件
+  onToolStart?: (data: { toolId: string; toolType: string; meta: Record<string, any> }) => void;
+  onToolChunk?: (data: { toolId: string; chunk: string; field?: string; searchResult?: any; searchRound?: number; currentQuery?: string }) => void;
+  onToolEnd?: (data: { toolId: string; result?: any }) => void;
+  onToolError?: (data: { toolId: string; error: string }) => void;
   onDone?: (data: any) => void;
   onError?: (error: string) => void;
 }
@@ -125,6 +138,7 @@ export function useBackgroundStream(conversationId: number | null) {
       case 'video_task': h.onVideoTask?.(d); break;
       case 'fallback': h.onFallback?.(d); break;
       case 'thinking': h.onThinking?.(d); break;
+      case 'thinking_step': h.onThinking?.({ step: d.step, details: d.detail || d.details, timestamp: d.timestamp || Date.now() }); break;
       case 'intent_confirmation': h.onIntentConfirm?.(d); break;
       case 'operation':
         h.onOperation?.({
@@ -142,14 +156,25 @@ export function useBackgroundStream(conversationId: number | null) {
       case 'artifact_chunk': h.onArtifactChunk?.(d); break;
       case 'artifact_end': h.onArtifactEnd?.(d); break;
       case 'solution_picker': h.onSolutionPicker?.(d); break;
+      case 'homework_result': h.onHomeworkResult?.(d); break;
       case 'web_search_start': h.onWebSearchStart?.(d); break;
       case 'web_search_result': h.onWebSearchResult?.(d); break;
       case 'web_search_progress': h.onWebSearchProgress?.(d); break;
       case 'web_search_done': h.onWebSearchDone?.(d); break;
+      case 'context_warning': h.onContextWarning?.(d); break;
       case 'url_fetch_start': h.onUrlFetchStart?.(d); break;
       case 'url_fetch_result': h.onUrlFetchResult?.(d); break;
       case 'automation_task': h.onAutomationTask?.(d); break;
+      case 'agent_step': h.onAgentStep?.(d); break;
+      case 'agent_confirm': h.onAgentConfirm?.(d); break;
+      case 'agent_status': h.onAgentStatus?.(d); break;
+      case 'desktop_screenshot': h.onDesktopScreenshot?.(d); break;
+      case 'desktop_status': h.onDesktopStatus?.(d); break;
       case 'file_preview': h.onFilePreview?.(d); break;
+      case 'tool_start': h.onToolStart?.(d); break;
+      case 'tool_chunk': h.onToolChunk?.(d); break;
+      case 'tool_end': h.onToolEnd?.(d); break;
+      case 'tool_error': h.onToolError?.(d); break;
       case 'reasoning_content': h.onReasoningContent?.(d); break;
       case 'thinking_stage': h.onThinkingStage?.(d); break;
       case 'done':
@@ -222,6 +247,7 @@ export function useBackgroundStream(conversationId: number | null) {
       thinkingMode?: boolean,
       userCity?: string | null,
       aspectRatio?: string | null,
+      autoMode?: boolean,
     ) => {
       if (!targetConversationId) return;
 
@@ -243,7 +269,7 @@ export function useBackgroundStream(conversationId: number | null) {
 
       streamManager.startStream(
         targetConversationId,
-        { modelId, messages, conversationId: targetConversationId, packageId, hasVisionContent, thinkingMode, userCity: userCity || undefined, aspectRatio: aspectRatio || undefined },
+        { modelId, messages, conversationId: targetConversationId, packageId, hasVisionContent, thinkingMode, autoMode: autoMode || undefined, userCity: userCity || undefined, aspectRatio: aspectRatio || undefined },
         userText,
       );
     },

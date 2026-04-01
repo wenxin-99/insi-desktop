@@ -85,6 +85,26 @@ export function EmptyConversationState({ onSelectTemplate, onSendMessage }: Empt
     []
   );
 
+  // ★ P3-⑮ 随机建议问题（每次刷新随机 3 个）
+  const suggestedPrompts = useMemo(() => {
+    const allPrompts = [
+      '帮我写一封请假邮件，周五需要去看牙',
+      '用 Python 写一个网站 SEO 分析脚本',
+      '制定一个 30 天健身计划，我是初学者',
+      '帮我分析一下这段代码有什么问题',
+      '用通俗的语言解释量子计算是什么',
+      '帮我写一个简历的自我评价，3年前端经验',
+      '推荐 5 本关于产品设计的好书',
+      '帮我翻译一段技术文档成英文',
+      '解释 TCP 三次握手的过程',
+      '帮我设计一个登录页面的UI方案',
+      '写一个 React 待办清单应用',
+      '帮我整理这周的会议纪要',
+    ];
+    const shuffled = [...allPrompts].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 3);
+  }, []);
+
   /** 引导面板提交 → 直接发送（如果有 onSendMessage），否则填入输入框 */
   const handleGuideSubmit = (prompt: string) => {
     setActiveGuide(null);
@@ -141,6 +161,25 @@ export function EmptyConversationState({ onSelectTemplate, onSendMessage }: Empt
           );
         })}
       </div>
+
+      {/* ★ P3-⑮ 随机建议问题（降低使用门槛） */}
+      {!activeGuide && (
+        <div className="w-full max-w-xl space-y-1.5">
+          <p className="text-xs text-muted-foreground text-center">{t('chat.emptyState.tryAsking', '试试这样问')}</p>
+          <div className="flex flex-col gap-1.5">
+            {suggestedPrompts.map((prompt, i) => (
+              <button
+                key={i}
+                onClick={() => onSendMessage ? onSendMessage(prompt) : onSelectTemplate(prompt)}
+                className="text-left text-sm px-3.5 py-2 rounded-lg border border-border/40 hover:border-primary/30 hover:bg-muted/30 text-foreground/70 hover:text-foreground transition-all duration-150 group flex items-center gap-2"
+              >
+                <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+                <span className="line-clamp-1">{prompt}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ★ 快捷创作 pill 按钮行（可横向滚动） */}
       <div className="flex items-center justify-center gap-2 flex-wrap">

@@ -17,6 +17,7 @@ import { useModelManagement } from "./modelManagement/useModelManagement";
 import { ModelTable } from "./modelManagement/ModelTable";
 import { CreateModelDialog } from "./modelManagement/CreateModelDialog";
 import { EditModelDialog } from "./modelManagement/EditModelDialog";
+import { ModelDiscoverDialog } from "./modelManagement/ModelDiscoverDialog";
 
 export default function ModelManagement() {
   const mgmt = useModelManagement();
@@ -36,7 +37,9 @@ export default function ModelManagement() {
             </div>
           </div>
 
-          <CreateModelDialog
+          <div className="flex items-center gap-2">
+            <ModelDiscoverDialog onSuccess={() => mgmt.models && window.location.reload()} />
+            <CreateModelDialog
             open={mgmt.isCreateDialogOpen}
             onOpenChange={mgmt.setIsCreateDialogOpen}
             formData={mgmt.formData}
@@ -46,6 +49,7 @@ export default function ModelManagement() {
             onCreate={mgmt.handleCreate}
             isPending={mgmt.createPending}
           />
+          </div>
         </div>
 
         {/* 列表 */}

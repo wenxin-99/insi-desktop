@@ -71,6 +71,14 @@ const EMPTY_FORM = {
   dailyFreeRounds: 0,
   highlights: [] as string[],
   tier: "standard" as string,
+  chatPackageId: null as number | null,
+  // ---- VoicePlan 专有字段（编辑时保留，新建时使用默认） ----
+  defaultVoice: "" as string,
+  availableVoices: [] as any[],
+  sttConfig: {} as Record<string, any>,
+  ttsConfig: {} as Record<string, any>,
+  supportsLive: false,
+  liveProvider: "" as string,
 };
 
 export default function VoicePackageManagement({ embedded = false }: { embedded?: boolean }) {
@@ -79,13 +87,15 @@ export default function VoicePackageManagement({ embedded = false }: { embedded?
   const [highlightInput, setHighlightInput] = useState("");
 
   const utils = trpc.useUtils();
-  const { data: packages = [], isLoading } = trpc.system.getAllVoicePackages.useQuery();
+  // ★ 使用新 voicePlan 接口（直接读写 voicePlans 存储，与前端语音页同源）
+  const { data: packages = [], isLoading } = trpc.voicePlan.getAllAdmin.useQuery();
+  const { data: modelPackages = [] } = trpc.modelPackage.getAll.useQuery();
 
-  const saveMutation = trpc.system.saveVoicePackages.useMutation({
+  const saveMutation = trpc.voicePlan.save.useMutation({
     onSuccess: () => {
       toast.success("语音套餐已保存");
-      utils.system.getAllVoicePackages.invalidate();
-      utils.system.getVoicePackages.invalidate();
+      utils.voicePlan.getAllAdmin.invalidate();
+      utils.voicePlan.getAll.invalidate();
       setEditing(null);
     },
     onError: (e) => toast.error(`保存失败: ${e.message}`),
@@ -105,6 +115,14 @@ export default function VoicePackageManagement({ embedded = false }: { embedded?
       dailyFreeRounds: pkg.dailyFreeRounds ?? 0,
       highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
       tier: pkg.tier ?? "standard",
+      chatPackageId: pkg.chatPackageId ?? null,
+      // ★ 保留 VoicePlan 专有字段（不丢失音色列表等）
+      defaultVoice: pkg.defaultVoice ?? pkg.ttsVoice ?? "",
+      availableVoices: Array.isArray(pkg.availableVoices) ? pkg.availableVoices : [],
+      sttConfig: pkg.sttConfig ?? {},
+      ttsConfig: pkg.ttsConfig ?? {},
+      supportsLive: pkg.supportsLive ?? false,
+      liveProvider: pkg.liveProvider ?? "",
     });
     setHighlightInput("");
     setEditing(pkg.id);
@@ -113,9 +131,14 @@ export default function VoicePackageManagement({ embedded = false }: { embedded?
   const savePackage = () => {
     if (!form.displayName.trim()) { toast.error("请填写套餐名称"); return; }
     const isNew = editing === "new";
+    // ★ 映射旧字段到新字段：ttsVoice → defaultVoice
+    const formData = {
+      ...form,
+      defaultVoice: form.defaultVoice || form.ttsVoice || "",
+    };
     const updated = isNew
-      ? [...packages, form]
-      : packages.map((p: any) => (p.id === editing ? form : p));
+      ? [...packages, formData]
+      : packages.map((p: any) => (p.id === editing ? formData : p));
     saveMutation.mutate(updated as any);
   };
 
@@ -199,6 +222,28 @@ export default function VoicePackageManagement({ embedded = false }: { embedded?
               })}
             </div>
             <p className="text-xs text-muted-foreground">影响前端卡片的视觉样式和排版</p>
+          </div>
+
+          {/* ── 关联 AI 模型套餐 ── */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1">🧠 关联 AI 模型套餐</Label>
+            <Select
+              value={form.chatPackageId != null ? String(form.chatPackageId) : "__none__"}
+              onValueChange={v => setForm(p => ({ ...p, chatPackageId: v === "__none__" ? null : Number(v) }))}
+            >
+              <SelectTrigger><SelectValue placeholder="选择模型套餐" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">不关联（使用系统默认模型）</SelectItem>
+                {modelPackages.map((mp: any) => (
+                  <SelectItem key={mp.id} value={String(mp.id)}>
+                    {mp.displayName || mp.name} (ID: {mp.id})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              语音对话使用的 AI 模型。不关联时由系统自动选择首个可用 chat 模型
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -348,13 +393,20 @@ export default function VoicePackageManagement({ embedded = false }: { embedded?
             </div>
           </div>
 
-          <div className="flex items-center gap-4 pt-1">
+          <div className="flex items-center gap-6 pt-1">
             <div className="flex items-center gap-2">
               <Switch
                 checked={form.enabled}
                 onCheckedChange={v => setForm(p => ({ ...p, enabled: v }))}
               />
               <Label>{form.enabled ? "已启用" : "已禁用"}</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={form.supportsLive}
+                onCheckedChange={v => setForm(p => ({ ...p, supportsLive: v, liveProvider: v ? (p.liveProvider || "gemini") : "" }))}
+              />
+              <Label className="text-sm">实时对话{form.supportsLive ? " ✓" : ""}</Label>
             </div>
           </div>
 
@@ -439,6 +491,11 @@ export default function VoicePackageManagement({ embedded = false }: { embedded?
                     {providerLabel(TTS_PROVIDERS, pkg.ttsProvider)}
                   </span>
                   {pkg.ttsVoice && <span>音色: {voiceLabel(pkg.ttsVoice)}</span>}
+                  {pkg.chatPackageId && (
+                    <span className="text-blue-600">
+                      🧠 {modelPackages.find((mp: any) => mp.id === pkg.chatPackageId)?.displayName || `套餐#${pkg.chatPackageId}`}
+                    </span>
+                  )}
                 </div>
                 {/* 卖点标签预览 */}
                 {pkg.highlights && pkg.highlights.length > 0 && (

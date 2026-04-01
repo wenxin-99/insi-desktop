@@ -157,6 +157,49 @@ pub fn key_type(text: &str) -> Result<(), String> {
         .map_err(|e| format!("输入文字失败: {}", e))
 }
 
+/// 切换输入法到英文模式（避免中文输入法干扰快捷键）
+/// 在执行快捷键前调用
+pub fn ensure_english_ime() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: 按一次 Shift 切换中/英（适用于微软拼音等）
+        // 更通用的做法是发送 VK_CAPITAL 检查，但 Shift 切换最常见
+        use std::process::Command;
+        // 使用 PowerShell 获取当前输入法状态并切换
+        let _ = Command::new("powershell")
+            .args(["-Command", r#"
+                Add-Type -AssemblyName System.Windows.Forms
+                $lang = [System.Windows.Forms.InputLanguage]::CurrentInputLanguage
+                # 如果是中文输入法，按 Shift 切换到英文模式
+                if ($lang.Culture.Name -like 'zh-*') {
+                    [System.Windows.Forms.SendKeys]::SendWait('+')
+                    Start-Sleep -Milliseconds 100
+                }
+            "#])
+            .output();
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: 使用 osascript 切换到 ABC
+        use std::process::Command;
+        let _ = Command::new("osascript")
+            .args(["-e", r#"tell application "System Events" to key code 49 using control down"#])
+            .output();
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: ibus 或 fcitx
+        use std::process::Command;
+        let _ = Command::new("ibus")
+            .args(["engine", "xkb:us::eng"])
+            .output()
+            .or_else(|_| Command::new("fcitx5-remote").args(["-c"]).output());
+        Ok(())
+    }
+}
+
 /// 按快捷键组合
 ///
 /// keys 示例: ["ctrl", "c"] / ["cmd", "shift", "n"] / ["alt", "tab"]

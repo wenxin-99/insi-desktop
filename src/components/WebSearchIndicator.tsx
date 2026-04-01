@@ -136,7 +136,7 @@ export function WebSearchSources({ sources, query, className }: WebSearchSources
   };
 
   return (
-    <div className={cn('mt-3', className)}>
+    <div className={cn('mt-1', className)}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -172,9 +172,10 @@ export function WebSearchSources({ sources, query, className }: WebSearchSources
               )}
             >
               <img
-                src={`https://www.google.com/s2/favicons?domain=${getDomain(src.url)}&sz=16`}
-                alt="" className="w-4 h-4 rounded-sm flex-shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                src={`/api/favicon?domain=${getDomain(src.url)}`}
+                alt=""
+                className="w-4 h-4 rounded-sm flex-shrink-0 bg-muted"
+                loading="lazy"
               />
               <span className="flex-1 min-w-0 truncate group-hover:underline">
                 {src.title || getDomain(src.url)}

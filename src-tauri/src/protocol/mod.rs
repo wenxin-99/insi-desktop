@@ -16,8 +16,12 @@ use crate::state::{AppState, ConnectionStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// 心跳计数器（线程安全）
+static HEARTBEAT_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 /// 服务端发来的消息
 #[derive(Debug, Clone, Deserialize)]
@@ -72,6 +76,8 @@ pub async fn connect_and_serve(
         }
 
         *state.connection_status.write() = ConnectionStatus::Disconnected;
+        // 断连时重置授权状态
+        *state.authorized.write() = false;
 
         // 检查是否收到 shutdown 信号
         if shutdown_rx.try_recv().is_ok() {
@@ -94,7 +100,6 @@ async fn try_connect(
     token: &str,
     state: Arc<AppState>,
 ) -> Result<(), String> {
-    // 使用 rust_socketio 的异步客户端
     use rust_socketio::{
         asynchronous::{Client, ClientBuilder},
         Payload,
@@ -103,7 +108,6 @@ async fn try_connect(
     let state_clone = state.clone();
     let state_for_msg = state.clone();
 
-    // 构建 Socket.IO 连接
     let client = ClientBuilder::new(server_url)
         .namespace("/desktop")
         .auth(json!({ "token": token }))
@@ -130,7 +134,6 @@ async fn try_connect(
                 log::info!("[Protocol] Connected! Sending client_auth...");
                 *st.connection_status.write() = ConnectionStatus::Connected;
 
-                // 获取屏幕信息
                 let (width, height, scale) = screenshot::get_primary_monitor()
                     .unwrap_or((1920, 1080, 1.0));
 
@@ -140,7 +143,6 @@ async fn try_connect(
                     scale,
                 });
 
-                // 发送认证信息
                 let auth_data = json!({
                     "platform": st.platform,
                     "screenWidth": width,
@@ -150,10 +152,7 @@ async fn try_connect(
                     "clientVersion": st.client_version,
                 });
 
-                if let Err(e) = client
-                    .emit("client_auth", auth_data)
-                    .await
-                {
+                if let Err(e) = client.emit("client_auth", auth_data).await {
                     log::error!("[Protocol] Failed to send client_auth: {}", e);
                 }
             })
@@ -162,19 +161,42 @@ async fn try_connect(
         .await
         .map_err(|e| format!("连接失败: {}", e))?;
 
-    // 心跳循环
+    // 心跳循环 + 授权信号发送
     let heartbeat_interval = state.server_config.read().heartbeat_interval;
     loop {
-        tokio::time::sleep(Duration::from_millis(heartbeat_interval)).await;
+        tokio::time::sleep(Duration::from_millis(heartbeat_interval.min(3000))).await;
 
         if !*state.should_connect.read() {
             let _ = client.disconnect().await;
             break;
         }
 
-        if let Err(e) = client.emit("client_heartbeat", json!({})).await {
-            log::warn!("[Protocol] Heartbeat failed: {}", e);
-            break;
+        // ★ 检查并发送 pending_authorize
+        if *state.pending_authorize.read() {
+            *state.pending_authorize.write() = false;
+            log::info!("[Protocol] Sending client_authorize to server...");
+            if let Err(e) = client.emit("client_authorize", json!({})).await {
+                log::warn!("[Protocol] Failed to emit client_authorize: {}", e);
+            }
+        }
+
+        // ★ 检查并发送 pending_revoke（如果服务端支持）
+        if *state.pending_revoke.read() {
+            *state.pending_revoke.write() = false;
+            log::info!("[Protocol] Sending client_revoke to server...");
+            if let Err(e) = client.emit("client_revoke", json!({})).await {
+                log::warn!("[Protocol] Failed to emit client_revoke: {}", e);
+            }
+        }
+
+        // 心跳（降低频率，不需要每 3 秒都发）
+        let count = HEARTBEAT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let hb_divisor = (heartbeat_interval as u32 / 3000).max(1);
+        if count % hb_divisor == 0 {
+            if let Err(e) = client.emit("client_heartbeat", json!({})).await {
+                log::warn!("[Protocol] Heartbeat failed: {}", e);
+                break;
+            }
         }
     }
 
@@ -206,8 +228,25 @@ async fn handle_server_message(
                 handle_config(payload, &state);
             }
         }
+        // ★ 权限更新（服务端授权/撤销）
+        "permission_update" => {
+            if let Some(payload) = &msg.payload {
+                let authorized = payload.get("authorized").and_then(|v| v.as_bool()).unwrap_or(false);
+                *state.authorized.write() = authorized;
+                log::info!("[Protocol] Permission updated: authorized={}", authorized);
+            }
+        }
+        // ★ 心跳应答（携带 authorized 状态，自愈同步）
         "heartbeat_ack" => {
-            // 心跳确认，更新活动时间
+            if let Some(payload) = &msg.payload {
+                if let Some(authorized) = payload.get("authorized").and_then(|v| v.as_bool()) {
+                    let current = *state.authorized.read();
+                    if current != authorized {
+                        *state.authorized.write() = authorized;
+                        log::info!("[Protocol] Heartbeat sync: authorized {} → {}", current, authorized);
+                    }
+                }
+            }
         }
         _ => {
             log::warn!("[Protocol] Unknown message type: {}", msg.msg_type);
@@ -278,6 +317,37 @@ async fn handle_execute_action(
     let tool = payload.get("tool").and_then(|v| v.as_str()).unwrap_or("");
     let params = payload.get("params").cloned().unwrap_or(json!({}));
 
+    // ★ P3 结构化数据工具优先处理（不需要屏幕交互，不需要安全检查坐标）
+    if is_p3_tool(tool) {
+        // P3 工具不需要 GUI 授权，但仍需基本连接授权
+        let p3_result = handle_p3_tool(tool, &params).await;
+        if let Some(result_json) = p3_result {
+            let mut data = result_json;
+            data["actionId"] = json!(action_id);
+            if data.get("success").is_none() {
+                data["success"] = json!(true);
+            }
+            if let Err(e) = client.emit("client_action_result", data).await {
+                log::error!("[Protocol] Failed to send P3 result: {}", e);
+            }
+        } else {
+            send_action_result(client, &action_id, false, Some(&format!("P3 工具 {} 处理失败", tool))).await;
+        }
+        return;
+    }
+
+    // ★ 授权检查（GUI 操作需要用户授权）
+    if !*state.authorized.read() {
+        // 截图和等待始终允许（不涉及 GUI 输入）
+        if tool != "desktop.screenshot" && tool != "desktop.wait" {
+            send_action_result(
+                client, &action_id, false,
+                Some("桌面控制未授权。请在网页端点击「授权」按钮，或在桌面客户端中授权。")
+            ).await;
+            return;
+        }
+    }
+
     // 获取屏幕信息用于安全检查
     let screen = state.screen_info.read().clone();
     let (sw, sh) = screen
@@ -294,6 +364,7 @@ async fn handle_execute_action(
         "desktop.scroll" => safety::ActionType::Scroll,
         "desktop.screenshot" => safety::ActionType::Screenshot,
         "desktop.wait" => safety::ActionType::Wait,
+        "desktop.clipboard_read" | "desktop.clipboard_write" => safety::ActionType::Clipboard,
         _ => {
             send_action_result(client, &action_id, false, Some(&format!("未知工具: {}", tool))).await;
             return;
@@ -316,18 +387,6 @@ async fn handle_execute_action(
     if !safety_check.allowed {
         let reason = safety_check.reason.unwrap_or_else(|| "安全限制".into());
         send_action_result(client, &action_id, false, Some(&reason)).await;
-        return;
-    }
-
-    // ── P3: 结构化数据工具（需要返回额外字段） ──
-    let p3_result = handle_p3_tool(tool, &params).await;
-    if let Some(result_json) = p3_result {
-        let mut data = result_json;
-        data["actionId"] = json!(action_id);
-        data["success"] = json!(true);
-        if let Err(e) = client.emit("client_action_result", data).await {
-            log::error!("[Protocol] Failed to send P3 result: {}", e);
-        }
         return;
     }
 
@@ -357,6 +416,17 @@ async fn handle_execute_action(
             send_action_result(client, &action_id, false, Some(&e)).await;
         }
     }
+}
+
+/// 检查是否为 P3/P4 结构化数据工具
+fn is_p3_tool(tool: &str) -> bool {
+    matches!(tool,
+        "desktop.list_monitors" | "desktop.switch_monitor" |
+        "desktop.app_info" | "desktop.app_list" | "desktop.app_focus" |
+        "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive" |
+        // ★ P4 视觉能力工具
+        "desktop.window_bounds" | "desktop.taskbar_info"
+    )
 }
 
 /// 执行具体工具操作
@@ -401,6 +471,8 @@ async fn execute_tool(tool: &str, params: &serde_json::Value) -> Result<(), Stri
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
+            // ★ 快捷键前切换到英文输入法，避免中文IME拦截
+            let _ = input::ensure_english_ime();
             input::key_press(&keys)
         }
 
@@ -412,13 +484,11 @@ async fn execute_tool(tool: &str, params: &serde_json::Value) -> Result<(), Stri
         }
 
         "desktop.screenshot" => {
-            // 截图在服务端单独处理，这里不需要执行
+            // 截图在服务端通过 request_screenshot 单独处理
             Ok(())
         }
 
         "desktop.clipboard_read" => {
-            // 剪贴板读取由客户端执行，结果通过 action_result 返回
-            // 注意：实际的文字内容需要通过扩展的 action_result 传递
             crate::clipboard::read_clipboard().map(|_| ())
         }
 
@@ -430,17 +500,6 @@ async fn execute_tool(tool: &str, params: &serde_json::Value) -> Result<(), Stri
         "desktop.wait" => {
             let ms = params.get("ms").and_then(|v| v.as_u64()).unwrap_or(500);
             tokio::time::sleep(Duration::from_millis(ms.min(10_000))).await;
-            Ok(())
-        }
-
-        // ── P3: 多显示器 ──
-        "desktop.list_monitors" | "desktop.switch_monitor" |
-        // ── P3: 应用识别 ──
-        "desktop.app_info" | "desktop.app_list" | "desktop.app_focus" |
-        // ── P3: 文件系统 ──
-        "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive" => {
-            // P3 工具返回数据，由 handle_execute_action 直接处理
-            // 这里标记为 Ok 让上层走自定义返回路径
             Ok(())
         }
 
@@ -491,7 +550,6 @@ fn handle_config(payload: serde_json::Value, state: &AppState) {
 // ═══════════════════════════════════════════
 
 /// 处理 P3 工具（返回结构化数据的工具）
-/// 返回 Some(json) 表示已处理，None 表示非 P3 工具
 async fn handle_p3_tool(
     tool: &str,
     params: &serde_json::Value,
@@ -506,7 +564,6 @@ async fn handle_p3_tool(
         }
         "desktop.switch_monitor" => {
             let idx = params.get("monitorIndex").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            // 验证显示器存在
             match crate::system::list_monitors() {
                 Ok(monitors) if idx > 0 && idx <= monitors.len() => {
                     Some(json!({ "switched": true, "monitorIndex": idx }))
@@ -582,6 +639,66 @@ async fn handle_p3_tool(
             }
         }
 
-        _ => None, // 非 P3 工具
+        // ── P4: 视觉能力增强 ──
+        "desktop.window_bounds" => {
+            let app_name = params.get("appName").and_then(|v| v.as_str());
+            match if app_name.is_some() {
+                // 指定应用 → 通过 list_windows 查找
+                crate::system::list_windows().map(|windows| {
+                    let target = app_name.unwrap().to_lowercase();
+                    windows.into_iter().find(|w| w.app_name.to_lowercase().contains(&target))
+                })
+            } else {
+                // 前台窗口
+                crate::system::get_active_window().map(|w| Some(crate::system::WindowListItem {
+                    app_name: w.app_name.clone(),
+                    title: w.window_title.clone(),
+                    pid: w.pid,
+                    focused: true,
+                }))
+            } {
+                Ok(Some(w)) => {
+                    // 通过 xcap 获取窗口边界
+                    match crate::system::get_active_window() {
+                        Ok(info) => Some(json!({
+                            "success": true,
+                            "bounds": info.bounds,
+                            "appName": w.app_name,
+                            "title": w.title,
+                        })),
+                        Err(e) => Some(json!({ "success": false, "error": e })),
+                    }
+                }
+                Ok(None) => Some(json!({ "success": false, "error": format!("未找到窗口: {}", app_name.unwrap_or("?")) })),
+                Err(e) => Some(json!({ "success": false, "error": e })),
+            }
+        }
+        "desktop.taskbar_info" => {
+            // 通过屏幕尺寸和工作区域推算任务栏位置
+            let platform = if cfg!(target_os = "windows") { "windows" }
+                           else if cfg!(target_os = "macos") { "macos" }
+                           else { "linux" };
+            match crate::screenshot::get_primary_monitor() {
+                Ok((w, h, _scale)) => {
+                    let (position, tb_w, tb_h, auto_hide) = match platform {
+                        "windows" => ("bottom", w, 48, false),
+                        "macos"   => ("bottom", w, 70, false),    // Dock 默认底部
+                        _         => ("top",    w, 28, false),
+                    };
+                    Some(json!({
+                        "success": true,
+                        "taskbar": {
+                            "position": position,
+                            "width": tb_w,
+                            "height": tb_h,
+                            "autoHide": auto_hide,
+                        }
+                    }))
+                }
+                Err(e) => Some(json!({ "success": false, "error": e })),
+            }
+        }
+
+        _ => None,
     }
 }

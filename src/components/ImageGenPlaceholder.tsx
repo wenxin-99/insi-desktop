@@ -185,7 +185,7 @@ export function ImageGenPlaceholder({ prompt, className }: ImageGenPlaceholderPr
       />
 
       {/* 底部信息叠层 */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-gray-900/90 dark:via-gray-900/60 p-4 pt-10">
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/95 via-white/70 to-transparent dark:from-gray-950/95 dark:via-gray-950/70 p-4 pt-10">
         {/* 阶段文字 */}
         <div className="flex items-center gap-2 mb-2.5">
           {/* 旋转的小图标 */}

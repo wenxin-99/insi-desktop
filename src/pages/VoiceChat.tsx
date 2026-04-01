@@ -1,35 +1,32 @@
 /**
- * VoiceChat — 语音对话页面（入口编排文件）
- * 
- * 子模块：
- * - voiceChat/types.ts           → 类型/常量/工具函数
- * - voiceChat/SimpleTTSPlayer.ts → TTS 播放器
- * - voiceChat/AudioVisualizer.tsx → 波形可视化
- * - voiceChat/VoiceSettingsPanel.tsx → 设置面板（卡片化套餐+试听）
- * - voiceChat/VoiceHistoryPanel.tsx → 历史面板
- * - voiceChat/VoiceUpgradePrompt.tsx → 柔性升级引导
- * - voiceChat/useVoiceChatHandlers.ts → 录音/AI/TTS 处理
+ * VoiceChat — 语音对话页面（v2 VoicePlan 版）
  *
- * 变更：
- * - 接入 checkVoiceUsage / recordVoiceUsage tRPC
- * - 录音前检查额度，额度耗尽时展示升级浮层
- * - 将 usageInfo 传给 VoiceSettingsPanel 用于进度条显示
+ * ★ 变更：
+ *   - 双套餐（ModelPackage + VoicePackage）→ 统一 VoicePlan
+ *   - voiceSystemPrompt 简化为单参数（伴侣信息由服务端返回）
+ *   - VoiceSettingsPanel → VoiceSettingsPanelV2
+ *   - Live 模式受 plan.supportsLive 控制
+ *   - 关闭伴侣后音色自动回退验证
  */
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
-import { Mic, ArrowLeft, Volume2, VolumeX, Loader2, Square, Settings, MessageSquare, Zap, Radio } from "lucide-react";
+import { Mic, ArrowLeft, Volume2, VolumeX, Loader2, Square, Settings, MessageSquare, Zap, Radio, Languages } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { SafeMarkdown } from "@/components/SafeMarkdown";
 import { toast } from "sonner";
 
 import { AudioVisualizer } from "./voiceChat/AudioVisualizer";
-import { VoiceSettingsPanel } from "./voiceChat/VoiceSettingsPanel";
+import { VoiceSettingsPanelV2 } from "./voiceChat/VoiceSettingsPanelV2";
 import { VoiceHistoryPanel } from "./voiceChat/VoiceHistoryPanel";
 import { VoiceUpgradePrompt } from "./voiceChat/VoiceUpgradePrompt";
 import { useVoiceChatHandlers } from "./voiceChat/useVoiceChatHandlers";
 import { useGeminiLive, type LiveProvider } from "./voiceChat/useGeminiLive";
+import { EmotionIndicator } from "./voiceChat/EmotionIndicator";
+import { type TranslationConfig } from "./voiceChat/translationMode";
+import { type EmotionState } from "./voiceChat/emotionDetector";
+import { buildVoiceSystemPrompt } from "./voiceChat/voicePromptBuilder";
 import DashboardLayout from '@/components/DashboardLayout';
 import {
   type VoiceMessage,
@@ -49,17 +46,15 @@ export default function VoiceChat() {
   const isMutedRef = useRef(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
-  const [selectedVoicePackageId, setSelectedVoicePackageId] = useState<string>(() => {
-    try { return localStorage.getItem("voiceChat_voicePackageId") || ""; } catch { return ""; }
+  // ★ 统一语音方案 ID（替代 selectedPackageId + selectedVoicePackageId）
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(() => {
+    try { return localStorage.getItem("voiceChat_planId") || ""; } catch { return ""; }
   });
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState<string>(() => {
     try { return localStorage.getItem("voiceChat_selectedVoice") || ""; } catch { return ""; }
   });
-  const [ttsProvider, setTtsProvider] = useState<string>("");
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -75,31 +70,86 @@ export default function VoiceChat() {
     if (liveProvider) try { localStorage.setItem("voiceChat_liveProvider", liveProvider); } catch {}
   }, [liveProvider]);
 
-  // 同步 muted ref
+  // ★ 翻译配置
+  const [translationConfig, setTranslationConfig] = useState<TranslationConfig>(() => {
+    try {
+      const saved = localStorage.getItem("voiceChat_translationConfig");
+      return saved ? JSON.parse(saved) : { scenario: "off", sourceLang: "zh", targetLang: "en" };
+    } catch { return { scenario: "off", sourceLang: "zh", targetLang: "en" }; }
+  });
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionState | null>(null);
+  useEffect(() => {
+    try { localStorage.setItem("voiceChat_translationConfig", JSON.stringify(translationConfig)); } catch {}
+  }, [translationConfig]);
+
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
-  // 获取 TTS 配置
-  useEffect(() => {
-    fetch("/api/tts/config").then(r => r.json()).then(data => setTtsProvider(data.provider || "")).catch(() => {});
-  }, []);
-
-  // 持久化设置
+  // 持久化
   useEffect(() => { try { if (selectedVoice) localStorage.setItem("voiceChat_selectedVoice", selectedVoice); } catch {} }, [selectedVoice]);
   useEffect(() => { try { localStorage.setItem("voiceChat_language", language); } catch {} }, [language]);
-  useEffect(() => { try { localStorage.setItem("voiceChat_voicePackageId", selectedVoicePackageId); } catch {} }, [selectedVoicePackageId]);
+  useEffect(() => { try { localStorage.setItem("voiceChat_planId", selectedPlanId); } catch {} }, [selectedPlanId]);
 
-  const { data: packages } = trpc.modelPackage.getAll.useQuery();
-  const { data: voicePackages } = trpc.system.getVoicePackages.useQuery();
+  // ★ 数据查询：VoicePlan 替代双套餐
+  const { data: voicePlans } = trpc.voicePlan.getAll.useQuery();
   const transcribeAudioMutation = trpc.ai.transcribeVoiceInput.useMutation();
 
+  // ★ 当前方案
+  const activePlan = useMemo(() => {
+    return voicePlans?.find((p: any) => p.id === selectedPlanId) || null;
+  }, [voicePlans, selectedPlanId]);
+
+  // ★ 方案绑定的 chat 模型套餐 ID
+  const chatPackageId = activePlan?.chatPackageId || null;
+
+  // ── 人格配置 + 记忆 + 伴侣（★ 服务端统一返回） ──
+  const { data: voicePersona } = trpc.persona.getVoicePrompt.useQuery(
+    undefined,
+    { staleTime: 60_000, refetchOnWindowFocus: false }
+  );
+  // ★ companion 查询仅用于获取 voiceId（prompt 已由 voicePersona 包含）
+  const { data: companionConfig } = trpc.companion.getConfig.useQuery(
+    undefined,
+    { staleTime: 60_000, refetchOnWindowFocus: false }
+  );
+
+  // ★ 简化：prompt 构建单参数（伴侣信息已在 voicePersona 中）
+  const voiceSystemPrompt = useMemo(
+    () => buildVoiceSystemPrompt(voicePersona ?? undefined),
+    [voicePersona]
+  );
+
+  // ── 伴侣模式音色覆盖 ──
+  const companionVoiceId = companionConfig?.enabled && companionConfig.voiceId
+    ? companionConfig.voiceId : null;
+
+  // ★ 关闭伴侣后验证音色在方案范围内
+  useEffect(() => {
+    if (!companionVoiceId && selectedVoice && activePlan) {
+      const inRange = activePlan.availableVoices?.some(
+        (v: any) => v.voiceId === selectedVoice
+      );
+      if (!inRange) {
+        setSelectedVoice(activePlan.defaultVoice || "");
+      }
+    }
+  }, [companionVoiceId, selectedVoice, activePlan?.id]);
+
+  // ★ 方案不支持 Live 时自动退回 pipeline
+  useEffect(() => {
+    if (activePlan && !activePlan.supportsLive && voiceMode === "live") {
+      setVoiceMode("pipeline");
+      toast.info("当前方案不支持实时模式，已切换为普通模式");
+    }
+  }, [activePlan?.id]);
+
   // ── 使用量检查 ──
-  const { data: usageData, refetch: refetchUsage } = trpc.system.checkVoiceUsage.useQuery(
-    { voicePackageId: selectedVoicePackageId || undefined },
+  const { data: usageData, refetch: refetchUsage } = trpc.voicePlan.checkUsage.useQuery(
+    { planId: selectedPlanId || undefined },
     { refetchOnWindowFocus: false }
   );
   const usageInfo: VoiceUsageInfo | null = usageData ?? null;
 
-  const recordUsageMutation = trpc.system.recordVoiceUsage.useMutation({
+  const recordUsageMutation = trpc.voicePlan.recordUsage.useMutation({
     onSuccess: () => { refetchUsage(); },
     onError: (err) => {
       if (err.message?.includes("insufficient_balance")) {
@@ -108,13 +158,11 @@ export default function VoiceChat() {
     },
   });
 
-  // 切换套餐时刷新使用量
-  useEffect(() => { refetchUsage(); }, [selectedVoicePackageId, refetchUsage]);
+  useEffect(() => { refetchUsage(); }, [selectedPlanId, refetchUsage]);
 
-  // 对话完成后记录用量
   const handleRoundComplete = useCallback(() => {
-    recordUsageMutation.mutate({ voicePackageId: selectedVoicePackageId || undefined });
-  }, [recordUsageMutation, selectedVoicePackageId]);
+    recordUsageMutation.mutate({ planId: selectedPlanId || undefined });
+  }, [recordUsageMutation, selectedPlanId]);
 
   // 从 URL 加载历史
   useEffect(() => {
@@ -157,94 +205,74 @@ export default function VoiceChat() {
       .finally(() => setIsLoadingHistory(false));
   }, []);
 
-  // 获取默认模型
+  // ★ 自动选中第一个方案
   useEffect(() => {
-    if (packages && packages.length > 0 && !selectedPackageId) {
-      const defaultPkg = packages.find((p: any) => p.enabled);
-      if (defaultPkg) {
-        setSelectedPackageId(defaultPkg.id);
-        if (defaultPkg.models && defaultPkg.models.length > 0) {
-          const primaryModel = defaultPkg.models.find((m: any) => m.isPrimary);
-          setSelectedModelId(primaryModel?.modelId || defaultPkg.models[0].modelId);
-        }
-      }
+    if (voicePlans && voicePlans.length > 0 && !selectedPlanId) {
+      const first = voicePlans[0];
+      if (first) setSelectedPlanId(first.id);
     }
-  }, [packages, selectedPackageId]);
+  }, [voicePlans, selectedPlanId]);
 
-  // 自动选中第一个启用的语音套餐（如果用户还没选）
-  useEffect(() => {
-    if (voicePackages && voicePackages.length > 0 && !selectedVoicePackageId) {
-      const first = voicePackages[0];
-      if (first) setSelectedVoicePackageId(first.id);
-    }
-  }, [voicePackages, selectedVoicePackageId]);
-
-  // 自动滚动
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // 核心处理器
+  // ★ 核心处理器（传入 VoicePlan 相关参数）
   const {
     state, currentTranscript, aiResponse, audioStreamRef,
     startListening: rawStartListening, stopListening, cancelListening, stopSpeaking,
   } = useVoiceChatHandlers({
     language, messages, setMessages,
-    selectedModelId, selectedPackageId, selectedVoicePackageId, selectedVoice,
+    selectedModelId: null,
+    selectedPackageId: chatPackageId,
+    selectedVoicePackageId: selectedPlanId,  // ★ handler 内部兼容此字段名
+    selectedVoice,
     conversationId, setConversationId,
-    isMutedRef, voicePackages, transcribeAudioMutation,
+    isMutedRef, voicePackages: voicePlans, transcribeAudioMutation,
     onRoundComplete: handleRoundComplete,
+    systemPrompt: voiceSystemPrompt,
+    companionVoiceId,
   });
 
-  // ★ Gemini Live 实时语音 Hook
+  // ★ Gemini Live
   const geminiLive = useGeminiLive({
-    voicePackageId: selectedVoicePackageId || undefined,
-    voice: undefined,
+    voicePackageId: selectedPlanId || undefined,
+    voice: companionVoiceId || undefined,
+    systemPrompt: voiceSystemPrompt,
     liveProvider,
-    messages,
-    setMessages,
-    conversationId,
-    setConversationId,
+    messages, setMessages,
+    conversationId, setConversationId,
     onError: (msg) => toast.error(msg),
+    translationConfig,
+    onEmotionChange: setCurrentEmotion,
   });
 
-  // ★ 统一状态：根据当前模式选择对应的状态
   const isLiveMode = voiceMode === "live";
   const effectiveState = isLiveMode
     ? (geminiLive.status === "listening" ? (geminiLive.aiSpeaking ? "speaking" : "listening") : geminiLive.status === "connecting" ? "processing" : "idle")
     : state;
   const effectiveStream = isLiveMode ? geminiLive.micStream : audioStreamRef.current;
 
-  // ★ 录音时自动收起历史面板（露出波形可视化），播放完成后自动展开
   useEffect(() => {
-    if (effectiveState === "listening") {
-      setShowHistory(false);
-    } else if (effectiveState === "idle" && messages.length > 0) {
-      setShowHistory(true);
-    }
+    if (effectiveState === "listening") setShowHistory(false);
+    else if (effectiveState === "idle" && messages.length > 0) setShowHistory(true);
   }, [effectiveState, messages.length]);
 
-  // ── 包装 startListening：录音前检查额度 ──
   const startListening = useCallback(() => {
-    if (usageInfo && !usageInfo.canUse) {
-      setShowUpgradePrompt(true);
-      return;
-    }
+    if (usageInfo && !usageInfo.canUse) { setShowUpgradePrompt(true); return; }
     rawStartListening();
   }, [usageInfo, rawStartListening]);
 
-  // 升级操作：切换到付费套餐
-  const handleUpgrade = useCallback((packageId: string) => {
-    setSelectedVoicePackageId(packageId);
+  // ★ 升级操作
+  const handleUpgrade = useCallback((planId: string) => {
+    setSelectedPlanId(planId);
     setShowUpgradePrompt(false);
-    // 如果套餐有专属音色，同步设置
-    const pkg = voicePackages?.find((p: any) => p.id === packageId);
-    if (pkg?.ttsVoice) setSelectedVoice(pkg.ttsVoice);
+    const plan = voicePlans?.find((p: any) => p.id === planId);
+    if (plan?.defaultVoice) setSelectedVoice(plan.defaultVoice);
     else setSelectedVoice("");
-    toast.success(`已切换到「${pkg?.displayName || "标准版"}」`);
-  }, [voicePackages]);
+    toast.success(`已切换到「${plan?.displayName || "标准版"}」`);
+  }, [voicePlans]);
 
-  // 可升级的套餐列表（排除当前选中的，且有 fishCoinCost > 0）
-  const upgradeOptions = (voicePackages || [])
-    .filter((p: any) => p.id !== selectedVoicePackageId && p.fishCoinCost > 0 && p.enabled)
+  const upgradeOptions = (voicePlans || [])
+    .filter((p: any) => p.id !== selectedPlanId && p.fishCoinCost > 0 && p.enabled)
     .sort((a: any, b: any) => (a.fishCoinCost ?? 0) - (b.fishCoinCost ?? 0));
 
   return (
@@ -268,7 +296,7 @@ export default function VoiceChat() {
         </Button>
         <h1 className="text-lg font-semibold">语音对话</h1>
         <div className="flex items-center gap-1">
-          {/* ★ Live / Pipeline 模式切换 */}
+          {/* ★ Live 模式切换（受方案控制） */}
           <Button
             variant="ghost" size="icon"
             onClick={() => {
@@ -276,8 +304,20 @@ export default function VoiceChat() {
                 toast.info("请先结束当前对话再切换模式");
                 return;
               }
+              if (voiceMode === "pipeline" && activePlan && !activePlan.supportsLive) {
+                toast.info(`${activePlan.displayName}不支持实时模式，请升级到标准版以上`);
+                return;
+              }
               setVoiceMode(v => v === "live" ? "pipeline" : "live");
-              toast.success(voiceMode === "live" ? "已切换到普通模式" : "已切换到实时模式");
+              if (voiceMode === "pipeline") {
+                // 切换到实时模式
+                toast.success("已切换到实时模式");
+                if (companionVoiceId && (companionVoiceId.startsWith("BV") || companionVoiceId.startsWith("long") || companionVoiceId.includes("bigtts"))) {
+                  setTimeout(() => toast.info("实时模式暂不支持伴侣自定义音色，将使用引擎默认音色", { duration: 4000 }), 300);
+                }
+              } else {
+                toast.success("已切换到普通模式");
+              }
             }}
             title={voiceMode === "live"
               ? `实时模式（${liveProvider === "gemini" ? "Gemini" : "通义千问"}）`
@@ -300,15 +340,19 @@ export default function VoiceChat() {
         </div>
       </div>
 
-      {/* 设置面板 */}
+      {/* ★ 设置面板（VoiceSettingsPanelV2） */}
       {showSettings && (
-        <VoiceSettingsPanel
+        <VoiceSettingsPanelV2
           language={language} setLanguage={setLanguage}
-          selectedVoicePackageId={selectedVoicePackageId} setSelectedVoicePackageId={setSelectedVoicePackageId}
+          selectedPlanId={selectedPlanId} setSelectedPlanId={setSelectedPlanId}
           selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice}
-          ttsProvider={ttsProvider} voicePackages={voicePackages}
-          usageInfo={usageInfo}
+          voicePlans={voicePlans}
+          usageInfo={usageData ?? null}
           voiceMode={voiceMode}
+          companionVoiceId={companionVoiceId}
+          companionName={companionConfig?.name || null}
+          translationConfig={translationConfig}
+          onTranslationConfigChange={setTranslationConfig}
         />
       )}
 
@@ -323,7 +367,6 @@ export default function VoiceChat() {
           />
         )}
 
-        {/* 波形可视化 */}
         <div className="w-64 h-64 md:w-80 md:h-80">
           <AudioVisualizer
             isActive={isLiveMode ? geminiLive.status === "listening" : state === "listening"}
@@ -335,7 +378,6 @@ export default function VoiceChat() {
           />
         </div>
 
-        {/* 状态文本 */}
         <div className="mt-4 text-center px-4 w-full">
           {isLiveMode ? (
             <>
@@ -345,6 +387,17 @@ export default function VoiceChat() {
                 {geminiLive.interrupted && "已打断，正在聆听..."}
                 {geminiLive.status === "listening" && !geminiLive.interrupted && (geminiLive.aiSpeaking ? "AI 正在回答..." : "正在聆听...")}
               </p>
+              <EmotionIndicator
+                emotion={geminiLive.emotionState || currentEmotion}
+                active={effectiveState === "listening" || effectiveState === "speaking"}
+              />
+              {translationConfig.scenario !== "off" && geminiLive.status === "listening" && (
+                <p className="mt-1 text-xs text-blue-500/80 flex items-center justify-center gap-1">
+                  <Languages className="w-3 h-3" />
+                  {translationConfig.scenario === "translate" ? "实时翻译模式" :
+                   translationConfig.scenario === "coach" ? "口语教练模式" : "多语言模式"}
+                </p>
+              )}
               {geminiLive.status === "listening" && (
                 <p className="mt-1 text-xs text-amber-500/80 flex items-center justify-center gap-1">
                   <Zap className="w-3 h-3" />
@@ -380,7 +433,6 @@ export default function VoiceChat() {
           )}
         </div>
 
-        {/* 最近一条消息预览 */}
         {messages.length > 0 && effectiveState === "idle" && !showHistory && (
           <div className="mt-4 max-w-md mx-auto px-4">
             <div className="bg-muted/50 rounded-xl px-4 py-3">
@@ -392,12 +444,11 @@ export default function VoiceChat() {
           </div>
         )}
 
-        {/* 升级引导浮层 */}
         {showUpgradePrompt && usageInfo && (
           <VoiceUpgradePrompt
             usedToday={usageInfo.usedToday}
             dailyLimit={usageInfo.dailyLimit}
-            currentPackageName={usageInfo.packageName}
+            currentPackageName={(usageInfo as any).planName || usageInfo.packageName}
             upgradeOptions={upgradeOptions}
             onUpgrade={handleUpgrade}
             onDismiss={() => setShowUpgradePrompt(false)}
@@ -409,7 +460,6 @@ export default function VoiceChat() {
       {/* 底部控制区 */}
       <div className="pb-safe px-4 py-6 flex flex-col items-center gap-4">
 
-        {/* ════════ Live 模式控制 ════════ */}
         {isLiveMode && (
           <div className="flex flex-col items-center gap-3 w-full max-w-xs">
             {geminiLive.status === "connecting" && (
@@ -446,21 +496,24 @@ export default function VoiceChat() {
                   : "正在连接..."}
             </p>
 
-            {/* ★ Provider 切换（仅 idle 时显示） */}
             {geminiLive.status === "idle" && (
-              <div className="flex items-center justify-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground/60">引擎:</span>
-                <button
-                  onClick={() => setLiveProvider(liveProvider === "gemini" ? "qwen-omni" : "gemini")}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors hover:bg-muted"
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${liveProvider === "gemini" ? "bg-blue-500" : "bg-green-500"}`} />
-                  {liveProvider === "gemini" ? "Gemini" : "通义千问"}
-                </button>
+              <div className="flex flex-col items-center gap-1.5 mt-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground/60">引擎:</span>
+                  <button
+                    onClick={() => setLiveProvider(liveProvider === "gemini" ? "qwen-omni" : "gemini")}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors hover:bg-muted"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${liveProvider === "gemini" ? "bg-blue-500" : "bg-green-500"}`} />
+                    {liveProvider === "gemini" ? "Gemini" : "通义千问"}
+                  </button>
+                </div>
+                {companionVoiceId && (companionVoiceId.startsWith("BV") || companionVoiceId.startsWith("long") || companionVoiceId.includes("bigtts")) && (
+                  <p className="text-[10px] text-amber-500/70 dark:text-amber-400/60">伴侣音色仅在普通模式下生效，实时模式使用引擎默认音色</p>
+                )}
               </div>
             )}
 
-            {/* ★ 运行中显示当前 provider */}
             {geminiLive.status === "listening" && geminiLive.activeProvider && (
               <p className="text-[10px] text-muted-foreground/50 text-center mt-0.5">
                 {geminiLive.activeProvider === "qwen-omni" ? "通义千问 Qwen-Omni" : "Google Gemini Live"}
@@ -469,7 +522,6 @@ export default function VoiceChat() {
           </div>
         )}
 
-        {/* ════════ Pipeline 模式控制（原有） ════════ */}
         {!isLiveMode && (
           <>
             {(state === "processing" || state === "thinking") && (
@@ -542,7 +594,6 @@ export default function VoiceChat() {
                   )}
                 </button>
 
-                {/* 底部提示（含套餐和剩余额度） */}
                 <div className="text-center">
                   <p className="text-xs text-muted-foreground">
                     {state === "listening" ? "松开发送 · 上滑取消" : "按住说话，松开发送 · 空格键快捷"}
@@ -550,10 +601,10 @@ export default function VoiceChat() {
                   {usageInfo && state === "idle" && (
                     <p className="text-[11px] text-muted-foreground/70 mt-0.5">
                       {usageInfo.fishCoinCost > 0
-                        ? `${usageInfo.packageName} · ${usageInfo.fishCoinCost} 🐟/轮`
+                        ? `${(usageInfo as any).planName || usageInfo.packageName} · ${usageInfo.fishCoinCost} 🐟/轮`
                         : usageInfo.dailyLimit > 0
-                          ? `${usageInfo.packageName} · 剩余 ${Math.max(0, usageInfo.dailyLimit - usageInfo.usedToday)} 轮`
-                          : usageInfo.packageName
+                          ? `${(usageInfo as any).planName || usageInfo.packageName} · 剩余 ${Math.max(0, usageInfo.dailyLimit - usageInfo.usedToday)} 轮`
+                          : (usageInfo as any).planName || usageInfo.packageName
                       }
                     </p>
                   )}

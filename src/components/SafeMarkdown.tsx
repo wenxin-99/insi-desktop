@@ -1,4 +1,4 @@
-import { useMemo, memo, lazy, Suspense, useState, useEffect, useRef } from "react";
+import { useMemo, memo, lazy, Suspense, useRef } from "react";
 import { CodeBlock } from "@/components/CodeBlock";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,11 +19,78 @@ const MermaidBlock = lazy(() => import("@/components/MermaidBlock").then(m => ({
 // SVG 内联渲染组件懒加载（仅当检测到 ```svg 代码块时加载）
 const InlineSVGBlock = lazy(() => import("@/components/InlineSVGBlock").then(m => ({ default: m.InlineSVGBlock })));
 
+// InsightCard 富文本卡片懒加载（仅当检测到 ```insight-card 代码块时加载）
+const InsightCard = lazy(() => import("@/components/InsightCard").then(m => ({ default: m.InsightCard })));
+
+// ChartBlock 数据可视化懒加载（仅当检测到 ```chart 代码块时加载）
+const ChartBlock = lazy(() => import("@/components/ChartBlock").then(m => ({ default: m.ChartBlock })));
+
+// MindMapBlock 思维导图懒加载（仅当检测到 ```mindmap 代码块时加载）
+const MindMapBlock = lazy(() => import("@/components/MindMapBlock").then(m => ({ default: m.MindMapBlock })));
+
+// TimelineBlock 时间轴懒加载（仅当检测到 ```timeline 代码块时加载）
+const TimelineBlock = lazy(() => import("@/components/TimelineBlock").then(m => ({ default: m.TimelineBlock })));
+
+// KanbanBlock 看板懒加载（仅当检测到 ```kanban 代码块时加载）
+const KanbanBlock = lazy(() => import("@/components/KanbanBlock").then(m => ({ default: m.KanbanBlock })));
+
+// TabsBlock 标签页懒加载（仅当检测到 ```tabs 代码块时加载）
+const TabsBlock = lazy(() => import("@/components/TabsBlock").then(m => ({ default: m.TabsBlock })));
+
+// DiffBlock 对比视图懒加载（仅当检测到 ```diff 代码块时加载）
+const DiffBlock = lazy(() => import("@/components/DiffBlock").then(m => ({ default: m.DiffBlock })));
+
+// QuizBlock 互动测验懒加载（仅当检测到 ```quiz 代码块时加载）
+const QuizBlock = lazy(() => import("@/components/QuizBlock").then(m => ({ default: m.QuizBlock })));
+
+// SlideBlock 幻灯片懒加载（仅当检测到 ```slide 代码块时加载）
+const SlideBlock = lazy(() => import("@/components/SlideBlock").then(m => ({ default: m.SlideBlock })));
+
+// ComparisonBlock 对比表格懒加载（仅当检测到 ```comparison 代码块时加载）
+const ComparisonBlock = lazy(() => import("@/components/ComparisonBlock").then(m => ({ default: m.ComparisonBlock })));
+
+// LiveDataCard 实时数据卡片懒加载（仅当检测到 ```live-data 代码块时加载）
+const LiveDataCard = lazy(() => import("@/components/LiveDataCard").then(m => ({ default: m.LiveDataCard })));
+
+// CodePlayground 代码沙箱懒加载（仅当检测到 ```playground 代码块时加载）
+const CodePlayground = lazy(() => import("@/components/CodePlayground").then(m => ({ default: m.CodePlayground })));
+
+// CitationCard 引用来源卡片懒加载（仅当检测到 ```citations 代码块时加载）
+const CitationCard = lazy(() => import("@/components/CitationCard").then(m => ({ default: m.CitationCard })));
+
+// MathBlock 数学推导懒加载（仅当检测到 ```math-steps 代码块时加载）
+const MathBlock = lazy(() => import("@/components/MathBlock").then(m => ({ default: m.MathBlock })));
+
+// ProgressTracker 进度追踪懒加载（仅当检测到 ```progress 代码块时加载）
+const ProgressTracker = lazy(() => import("@/components/ProgressTracker").then(m => ({ default: m.ProgressTracker })));
+
+// DecisionCard 决策助手懒加载（仅当检测到 ```decision 代码块时加载）
+const DecisionCard = lazy(() => import("@/components/DecisionCard").then(m => ({ default: m.DecisionCard })));
+
+// CalendarEvent 日历事件懒加载（仅当检测到 ```calendar 代码块时加载）
+const CalendarEvent = lazy(() => import("@/components/CalendarEvent").then(m => ({ default: m.CalendarEvent })));
+
+// MapBlock 地图标注懒加载（仅当检测到 ```map 代码块时加载）
+const MapBlock = lazy(() => import("@/components/MapBlock").then(m => ({ default: m.MapBlock })));
+
+// FilePreviewCard 文件预览卡片懒加载（仅当检测到 ```file-preview 代码块时加载）
+const FilePreviewCard = lazy(() => import("@/components/FilePreviewCard").then(m => ({ default: m.FilePreviewCard })));
+
+// TranslationCard 双语对照翻译卡片懒加载（仅当检测到 ```translation 代码块时加载）
+const TranslationCard = lazy(() => import("@/components/TranslationCard").then(m => ({ default: m.TranslationCard })));
+
+// SmartTable 自动检测表格类型并升级渲染（对比表→卡片，指标表→网格）
+import { SmartTable } from "@/components/SmartTable";
+import { CitationSup, parseCitationText } from "@/components/CitationTooltip";
+import type { CitationSource } from "@/components/CitationTooltip";
+
 interface SafeMarkdownProps {
   children: string;
   className?: string;
   /** 流式输出中：启用渲染节流，跳过代码高亮 */
   streaming?: boolean;
+  /** P0-3: 搜索来源列表，用于内联引用 [1][2] 渲染 */
+  webSearchSources?: CitationSource[];
 }
 
 /** 从标题文本生成稳定的 ID（用于目录跳转） */
@@ -49,9 +116,6 @@ const CALLOUT_TYPES: Record<string, { icon: string; label: string; colors: strin
   WARNING:   { icon: '\u26a0\ufe0f',  label: '警告',   colors: 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 text-yellow-900 dark:text-yellow-200' },
   CAUTION:   { icon: '\u{1f534}', label: '危险',   colors: 'border-red-400 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-200' },
 };
-
-// ═══════ 流式渲染节流间隔(ms) ═══════
-const STREAM_THROTTLE_MS = 80;
 
 // ═══════ 非标准 XML 标签保护 ═══════
 //
@@ -110,79 +174,77 @@ function protectNonHtmlTags(markdown: string): string {
 /**
  * 流式场景的渲染节流 hook
  *
- * streaming=true 时，以固定间隔批量更新，从 ~60fps 降至 ~12fps ReactMarkdown 解析。
- * streaming=false 时直接透传（零开销）。
+ * ★ 优化①: 流式模式下不再二次节流，直接透传 useChatStream 的 33ms 提交。
+ * 原来 useChatStream(50ms) + SafeMarkdown(80-200ms) 双重节流导致感知延迟 130-250ms。
+ * 现在单层 33ms，感知延迟 <50ms，接近 ChatGPT/Claude 水平。
+ * 
+ * 非流式模式仍然直接透传（零开销）。
  */
 function useThrottledContent(content: string, streaming?: boolean): string {
-  const [throttled, setThrottled] = useState(content);
-  const latestRef = useRef(content);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastUpdateRef = useRef(0);
-
-  latestRef.current = content;
-
-  useEffect(() => {
-    if (!streaming) {
-      setThrottled(content);
-      return;
-    }
-
-    const now = Date.now();
-    const elapsed = now - lastUpdateRef.current;
-
-    if (elapsed >= STREAM_THROTTLE_MS) {
-      lastUpdateRef.current = now;
-      setThrottled(content);
-    } else if (!timerRef.current) {
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        lastUpdateRef.current = Date.now();
-        setThrottled(latestRef.current);
-      }, STREAM_THROTTLE_MS - elapsed);
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [content, streaming]);
-
-  // 流式结束时，确保最终内容完整同步
-  useEffect(() => {
-    if (!streaming) {
-      setThrottled(latestRef.current);
-    }
-  }, [streaming]);
-
-  return streaming ? throttled : content;
+  // ★ 优化①: 流式和非流式都直接透传，节流完全交给 useChatStream 一层处理
+  return content;
 }
 
 /**
  * SafeMarkdown 组件（v3 - 流式性能优化版）
  *
- * v3 改进：
- * 1. streaming 模式下节流渲染，~80ms 更新一次 ReactMarkdown（而非每 rAF 帧）
- * 2. 代码块在流式输出时跳过 Prism 高亮 + 语言检测，结束后再高亮
+ * v3→v4 改进：
+ * 1. 流式节流改为单层：useChatStream 33ms 提交，SafeMarkdown 直接透传（消除双重延迟）
+ * 2. 代码块在流式输出时跳过语法高亮 + 语言检测，结束后再高亮
  * 3. markdownComponents 引用完全稳定（streaming flag 通过 ref 传入）
  * 4. 保留 v2 全部功能：Mermaid / Callout / 锚点 / 表格增强
  */
+/**
+ * P0-3: 递归处理 React children，将文本中的 [N] 标记替换为 CitationSup 组件
+ */
+function processCitationChildren(children: any, sources: CitationSource[]): any {
+  if (!children) return children;
+  if (typeof children === 'string') {
+    const parts = parseCitationText(children, sources);
+    if (parts.length === 1 && typeof parts[0] === 'string') return children;
+    return parts.map((part, i) => {
+      if (typeof part === 'string') return part;
+      return <CitationSup key={`cite-${i}-${part.index}`} index={part.index} source={part.source} />;
+    });
+  }
+  if (Array.isArray(children)) {
+    return children.flatMap((child: any, i: number) => {
+      if (typeof child === 'string') {
+        const parts = parseCitationText(child, sources);
+        if (parts.length === 1 && typeof parts[0] === 'string') return [child];
+        return parts.map((part, j) => {
+          if (typeof part === 'string') return part;
+          return <CitationSup key={`cite-${i}-${j}-${part.index}`} index={part.index} source={part.source} />;
+        });
+      }
+      return [child];
+    });
+  }
+  return children;
+}
+
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
   className = "",
   streaming = false,
+  webSearchSources,
 }: SafeMarkdownProps) {
   // 节流后的内容
   const displayContent = useThrottledContent(children, streaming);
 
   const processedContent = useMemo(() => {
-    let content = smartFixLatex(displayContent || "");
-    // ★ 转义代码块外的非标准 XML 标签（<replace>, <search> 等 AI 格式标签）
-    // 无 rehypeRaw 时这些标签会被 remark 静默忽略，需要转义使其可见
-    content = protectNonHtmlTags(content);
+    let content = displayContent || "";
+
+    // ★ 流式中跳过重量级 regex 处理（smartFixLatex 多遍扫描 + protectNonHtmlTags 逐行处理）
+    // remark-math 已经能处理标准 $...$ 和 $$...$$ 语法
+    // smartFixLatex 只处理 \(...\) 和裸命令等边缘场景，延迟到流式结束后一次性处理
+    if (!streaming) {
+      content = smartFixLatex(content);
+      content = protectNonHtmlTags(content);
+    }
+
     return content;
-  }, [displayContent]);
+  }, [displayContent, streaming]);
 
   const hasMermaid = useMemo(() => /```mermaid/i.test(processedContent), [processedContent]);
 
@@ -190,27 +252,40 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   const streamingRef = useRef(streaming);
   streamingRef.current = streaming;
 
+  // P0-3: 用 ref 传递 webSearchSources，避免 markdownComponents 重建
+  const sourcesRef = useRef(webSearchSources);
+  sourcesRef.current = webSearchSources;
+
   const markdownComponents = useMemo(() => ({
     p({ node, children, ...props }: any) {
+      // P0-3: 在段落文本中查找 [N] 引用标记，替换为 CitationSup 组件
+      const sources = sourcesRef.current;
+      const processedChildren = sources?.length
+        ? processCitationChildren(children, sources)
+        : children;
       return (
         <div
           className="markdown-paragraph whitespace-pre-wrap break-words max-w-full overflow-wrap-anywhere"
           style={{ wordBreak: "break-word" }}
           {...props}
         >
-          {children}
+          {processedChildren}
         </div>
       );
     },
     strong({ node, children, ...props }: any) {
-      return <strong className="font-bold" {...props}>{children}</strong>;
+      const sources = sourcesRef.current;
+      const processed = sources?.length ? processCitationChildren(children, sources) : children;
+      return <strong className="font-bold" {...props}>{processed}</strong>;
     },
     em({ node, children, ...props }: any) {
-      return <em className="italic" {...props}>{children}</em>;
+      const sources = sourcesRef.current;
+      const processed = sources?.length ? processCitationChildren(children, sources) : children;
+      return <em className="italic" {...props}>{processed}</em>;
     },
     code({ node, className, children, ...props }: any) {
       const inline = !className;
-      const match = /language-(\w+)/.exec(className || "");
+      const match = /language-([\w-]+)/.exec(className || "");
       let language = match ? match[1] : "";
       // 防御性：children 可能为 undefined/null/数组/React 元素，确保转为字符串
       const rawChildren = Array.isArray(children) ? children.join('') : (children ?? '');
@@ -244,8 +319,32 @@ export const SafeMarkdown = memo(function SafeMarkdown({
         console.warn('[SafeMarkdown] Empty code block!', { language, childrenType: typeof children, childrenLen: rawChildren.length, nodeChildCount: node?.children?.length });
       }
 
-      // Mermaid：流式中跳过渲染，等结束后再画
-      if (language === 'mermaid' && !streamingRef.current) {
+      // Mermaid：★ 流式中显示骨架+源码预览，完成后自动渲染图表
+      if (language === 'mermaid') {
+        if (streamingRef.current) {
+          // 流式中：显示带源码预览的骨架卡片
+          return (
+            <div className="my-3 rounded-lg border border-border bg-muted/30 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  <span>Mermaid 图表</span>
+                  <span className="text-[11px] text-blue-500 font-medium">生成中...</span>
+                </div>
+              </div>
+              <div className="relative">
+                <pre className="p-3 text-xs leading-relaxed font-mono text-muted-foreground whitespace-pre overflow-x-auto max-h-[200px]">
+                  <code>{codeContent}</code>
+                </pre>
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-muted overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-indigo-300 via-indigo-500 to-indigo-300 animate-pulse" />
+                </div>
+              </div>
+            </div>
+          );
+        }
         return (
           <Suspense fallback={
             <div className="flex items-center gap-2 py-4 text-muted-foreground text-sm">
@@ -258,8 +357,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
         );
       }
 
-      // SVG：内联渲染为可视化图形（流式中跳过，等结束后再渲染）
-      if (language === 'svg' && !streamingRef.current && codeContent.includes('<svg')) {
+      // SVG：内联渲染为可视化图形（★ 流式中也渲染，InlineSVGBlock 内部防抖）
+      if (language === 'svg' && codeContent.includes('<svg')) {
         return (
           <Suspense fallback={
             <div className="flex items-center gap-2 py-4 text-muted-foreground text-sm">
@@ -267,7 +366,252 @@ export const SafeMarkdown = memo(function SafeMarkdown({
               渲染 SVG 图形...
             </div>
           }>
-            <InlineSVGBlock code={codeContent} />
+            <InlineSVGBlock code={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // InsightCard：结构化分析卡片（```insight-card + JSON）
+      // ★ comparison 类型自动转发到新 ComparisonBlock（兼容旧格式 AI 输出）
+      if (language === 'insight-card' && codeContent.includes('{')) {
+        // 检测是否是 comparison 类型 → 转换格式后走 ComparisonBlock
+        if (/"type"\s*:\s*"comparison"/.test(codeContent)) {
+          try {
+            const oldData = JSON.parse(codeContent);
+            if (oldData.type === 'comparison' && (oldData.rows || oldData.labelA)) {
+              // 旧格式 → 新格式转换
+              const newJson = JSON.stringify({
+                title: oldData.title || `${oldData.labelA} vs ${oldData.labelB}`,
+                items: [oldData.labelA || 'A', oldData.labelB || 'B'],
+                dimensions: (oldData.rows || []).map((r: any) => ({
+                  name: r.dim,
+                  values: [r.a, r.b],
+                  winner: r.winner === 'a' ? 0 : r.winner === 'b' ? 1 : undefined,
+                })),
+              });
+              return (
+                <Suspense fallback={<div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />}>
+                  <ComparisonBlock jsonStr={newJson} streaming={streamingRef.current} />
+                </Suspense>
+              );
+            }
+          } catch { /* JSON 未完成，走骨架 */ }
+        }
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-24" />
+          }>
+            <InsightCard jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // ChartBlock：数据可视化图表（```chart + JSON）
+      if (language === 'chart' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[300px]" />
+          }>
+            <ChartBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // MindMapBlock：思维导图（```mindmap + 缩进文本）
+      if (language === 'mindmap' && codeContent.trim()) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <MindMapBlock content={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // TimelineBlock：时间轴（```timeline + JSON）
+      if (language === 'timeline' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <TimelineBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // KanbanBlock：看板视图（```kanban + JSON）
+      if (language === 'kanban' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[240px]" />
+          }>
+            <KanbanBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // TabsBlock：标签页切换（```tabs + JSON）
+      if (language === 'tabs' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <TabsBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // DiffBlock：代码/文本对比（```diff + unified diff 内容）
+      // ★ 仅当内容包含 +/- 开头行时渲染为 DiffBlock，否则走普通代码高亮
+      if (language === 'diff' && /^[+-]/m.test(codeContent)) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[160px]" />
+          }>
+            <DiffBlock content={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // QuizBlock：互动测验（```quiz + JSON）
+      if (language === 'quiz' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[300px]" />
+          }>
+            <QuizBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // SlideBlock：幻灯片演示（```slide + JSON）
+      if (language === 'slide' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse aspect-[16/9]" />
+          }>
+            <SlideBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // ComparisonBlock：对比表格（```comparison + JSON）
+      if (language === 'comparison' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <ComparisonBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // LiveDataCard：天气/股票/汇率实时数据（```live-data + JSON）
+      if (language === 'live-data' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[160px]" />
+          }>
+            <LiveDataCard jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // CodePlayground：代码沙箱（```playground + JSON）
+      if (language === 'playground' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[240px]" />
+          }>
+            <CodePlayground jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // CitationCard：引用来源（```citations + JSON）
+      if (language === 'citations' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <CitationCard jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // MathBlock：数学推导步骤（```math-steps + JSON）
+      if (language === 'math-steps' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[240px]" />
+          }>
+            <MathBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // ProgressTracker：进度追踪（```progress + JSON）
+      if (language === 'progress' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <ProgressTracker jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // DecisionCard：决策助手（```decision + JSON）
+      if (language === 'decision' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <DecisionCard jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // CalendarEvent：日历事件（```calendar + JSON）
+      if (language === 'calendar' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <CalendarEvent jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // MapBlock：地图标注（```map + JSON）
+      if (language === 'map' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[300px]" />
+          }>
+            <MapBlock jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // FilePreviewCard：文件预览（```file-preview + JSON）
+      if (language === 'file-preview' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-3 animate-pulse h-[60px]" />
+          }>
+            <FilePreviewCard jsonStr={codeContent} streaming={streamingRef.current} />
+          </Suspense>
+        );
+      }
+
+      // TranslationCard：双语对照翻译（```translation + JSON）
+      if (language === 'translation' && codeContent.includes('{')) {
+        return (
+          <Suspense fallback={
+            <div className="my-3 rounded-xl border border-border/30 bg-muted/20 p-4 animate-pulse h-[200px]" />
+          }>
+            <TranslationCard jsonStr={codeContent} streaming={streamingRef.current} />
           </Suspense>
         );
       }
@@ -290,7 +634,22 @@ export const SafeMarkdown = memo(function SafeMarkdown({
           {codeContent}
         </CodeBlock>
       ) : (
-        <code className={`${className || ''} bg-amber-100/70 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded text-[0.875em] font-mono border border-amber-200/50 dark:border-amber-800/30`} {...props}>
+        <code
+          className={`${className || ''} bg-amber-100/70 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded text-[0.875em] font-mono border border-amber-200/50 dark:border-amber-800/30 cursor-pointer hover:bg-amber-200/70 dark:hover:bg-amber-800/40 transition-colors`}
+          onClick={() => {
+            const text = String(children);
+            navigator.clipboard.writeText(text).then(() => {
+              // 轻量 toast 提示（避免引入 sonner 依赖）
+              const tip = document.createElement('div');
+              tip.textContent = '已复制';
+              tip.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[9999] px-3 py-1.5 rounded-lg bg-foreground/90 text-background text-xs font-medium shadow-lg animate-in fade-in slide-in-from-top-2 duration-200';
+              document.body.appendChild(tip);
+              setTimeout(() => { tip.style.opacity = '0'; tip.style.transition = 'opacity 0.3s'; setTimeout(() => tip.remove(), 300); }, 1200);
+            }).catch(() => {});
+          }}
+          title="点击复制"
+          {...props}
+        >
           {children}
         </code>
       );
@@ -324,18 +683,16 @@ export const SafeMarkdown = memo(function SafeMarkdown({
       return <ol className="list-decimal pl-6 my-2 space-y-1" {...props}>{children}</ol>;
     },
     li({ node, children, ...props }: any) {
-      return <li className="leading-relaxed" {...props}>{children}</li>;
+      // P0-3: 列表项中也可能包含 [N] 引用标记
+      const sources = sourcesRef.current;
+      const processedChildren = sources?.length
+        ? processCitationChildren(children, sources)
+        : children;
+      return <li className="leading-relaxed" {...props}>{processedChildren}</li>;
     },
 
     table({ node, children, ...props }: any) {
-      return (
-        <div className="table-scroll-wrapper relative overflow-x-auto my-4 rounded-lg border border-border">
-          <div className="md:hidden absolute right-0 top-0 bottom-0 w-8 pointer-events-none bg-gradient-to-l from-background to-transparent z-10 table-scroll-hint" />
-          <table className="min-w-full border-collapse text-sm" {...props}>
-            {children}
-          </table>
-        </div>
-      );
+      return <SmartTable node={node} streaming={streamingRef.current} {...props}>{children}</SmartTable>;
     },
     thead({ node, children, ...props }: any) {
       return <thead className="bg-muted" {...props}>{children}</thead>;
@@ -380,15 +737,21 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     },
 
     a({ node, children, href, ...props }: any) {
+      const isExternal = href && (href.startsWith('http://') || href.startsWith('https://'));
       return (
         <a
           href={href}
-          className="text-primary underline underline-offset-2 hover:text-primary/80"
-          target="_blank"
-          rel="noopener noreferrer"
+          className="text-primary underline underline-offset-2 hover:text-primary/80 inline-flex items-baseline gap-0.5"
+          target={isExternal ? "_blank" : undefined}
+          rel={isExternal ? "noopener noreferrer" : undefined}
           {...props}
         >
           {children}
+          {isExternal && (
+            <svg className="inline-block w-3 h-3 shrink-0 opacity-40 -translate-y-[1px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          )}
         </a>
       );
     },
@@ -403,7 +766,23 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={[[rehypeKatex, {
+          // ★ KaTeX 错误容错：解析失败不 crash，显示原始公式 + 红色提示
+          throwOnError: false,
+          errorColor: '#ef4444',
+          // 严格模式关闭（允许不标准的 LaTeX 语法）
+          strict: false,
+          // 信任所有 KaTeX 命令（允许 \text, \color 等）
+          trust: true,
+          // 全局宏定义
+          macros: {
+            '\\R': '\\mathbb{R}',
+            '\\N': '\\mathbb{N}',
+            '\\Z': '\\mathbb{Z}',
+            '\\Q': '\\mathbb{Q}',
+            '\\C': '\\mathbb{C}',
+          },
+        }]]}
         components={markdownComponents}
       >
         {processedContent}

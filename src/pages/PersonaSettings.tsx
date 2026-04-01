@@ -18,10 +18,11 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useLocation } from "wouter";
 import {
-  ArrowLeft, Save, Sparkles, Brain, Shield, ChevronRight,
+  ArrowLeft, Save, Sparkles, Brain, Shield, ChevronRight, Heart,
   Plus, Trash2, GripVertical, RotateCcw, Loader2, Check,
   Info, X, Wand2, Zap, BookOpen, Palette,
 } from "lucide-react";
+import { ResponsePreferences } from "@/components/ResponsePreferences";
 
 // ── 预设模板元信息（仅前端展示用，真正的模板数据在后端）──
 const TEMPLATES = [
@@ -61,6 +62,9 @@ export default function PersonaSettings() {
   // ── 数据加载 ──
   const { data: personaConfig, isLoading, refetch } = trpc.persona.get.useQuery();
   const { data: memoryList } = trpc.memory.list.useQuery();
+   const { data: companionConfig } = trpc.companion.getConfig.useQuery(undefined, {
+    staleTime: 60_000, refetchOnWindowFocus: false,
+  });
 
   const updateAllMutation = trpc.persona.updateAll.useMutation({
     onSuccess: () => {
@@ -380,6 +384,36 @@ export default function PersonaSettings() {
               </div>
             </section>
 
+           {/* ── 伴侣模式（跳转入口 + 状态显示） ── */}
+            <section
+              onClick={() => setLocation("/settings/companion")}
+              className={`bg-white dark:bg-gray-900 rounded-2xl border overflow-hidden cursor-pointer hover:shadow-sm transition-shadow ${
+                companionConfig?.enabled ? "border-pink-300 dark:border-pink-700" : "border-gray-200 dark:border-gray-700"
+              }`}
+            >
+              <div className="px-4 py-3 flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                  companionConfig?.enabled ? "bg-pink-200 dark:bg-pink-800/60" : "bg-pink-100 dark:bg-pink-900/40"
+                }`}>
+                  <Heart className={`w-4 h-4 ${companionConfig?.enabled ? "text-pink-600 dark:text-pink-300" : "text-pink-600 dark:text-pink-400"}`} />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                    伴侣模式
+                    {companionConfig?.enabled && companionConfig?.name && (
+                      <span className="text-xs font-normal text-pink-500 bg-pink-50 dark:bg-pink-900/30 px-1.5 py-0.5 rounded-full">
+                        {companionConfig.name} · 已启用
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-xs text-gray-400">
+                    {companionConfig?.enabled ? "伴侣性格已覆盖人格设定，行为规范和记忆仍生效" : "设置一个有性格、有记忆的 AI 伴侣"}
+                  </p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-gray-300" />
+              </div>
+            </section>
+
             {/* ── 第 3 层：RULES 行为规范 ── */}
             <section className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
@@ -521,6 +555,11 @@ export default function PersonaSettings() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ★ P2-1: 回答偏好设置 */}
+      <div className="mt-8 p-5 rounded-2xl border border-border bg-card">
+        <ResponsePreferences />
       </div>
     </DashboardLayout>
   );

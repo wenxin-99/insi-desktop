@@ -13,6 +13,8 @@ export type StreamEventType =
   | 'image' | 'image_placeholder' | 'image_count' | 'image_failed'
   | 'video_task' | 'fallback' | 'thinking'
   | 'intent_confirmation' | 'operation' | 'automation_task'
+  | 'agent_step' | 'agent_confirm' | 'agent_status'
+  | 'desktop_screenshot' | 'desktop_status'
   | 'reasoning_content' | 'thinking_stage'
   | 'artifact_start' | 'artifact_chunk' | 'artifact_end'
   | 'file_preview';
@@ -83,6 +85,7 @@ class BackgroundStreamManager {
       packageId?: number;
       hasVisionContent?: boolean;
       thinkingMode?: boolean;
+      autoMode?: boolean;
       userCity?: string;
       aspectRatio?: string;
     },

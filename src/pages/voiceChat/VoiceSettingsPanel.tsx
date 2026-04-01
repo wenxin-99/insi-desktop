@@ -17,6 +17,8 @@ import {
 import { Volume2, Loader2, Check, Sparkles, Zap, Crown, Star, Ban } from "lucide-react";
 import { toast } from "sonner";
 import { LANGUAGES, VOICE_LABELS, TIER_COLORS, type VoiceUsageInfo } from './types';
+import { TranslationPanel } from "./TranslationPanel";
+import type { TranslationConfig } from "./translationMode";
 
 interface VoiceSettingsPanelProps {
   language: string;
@@ -29,6 +31,8 @@ interface VoiceSettingsPanelProps {
   voicePackages: any[] | undefined;
   usageInfo?: VoiceUsageInfo | null;
   voiceMode?: "pipeline" | "live";
+  translationConfig?: TranslationConfig;
+  onTranslationConfigChange?: (config: TranslationConfig) => void;
 }
 
 /** 套餐档位图标 */
@@ -49,6 +53,7 @@ export function VoiceSettingsPanel({
   ttsProvider, voicePackages,
   usageInfo,
   voiceMode,
+  translationConfig, onTranslationConfigChange,
 }: VoiceSettingsPanelProps) {
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -236,6 +241,14 @@ export function VoiceSettingsPanel({
           </SelectContent>
         </Select>
       </div>
+
+      {/* ★ 翻译模式 */}
+      {translationConfig && onTranslationConfigChange && (
+        <TranslationPanel
+          config={translationConfig}
+          onChange={onTranslationConfigChange}
+        />
+      )}
 
       {/* ── 套餐卡片 ── */}
       {voicePackages && voicePackages.length > 0 && (

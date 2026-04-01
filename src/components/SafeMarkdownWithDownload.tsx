@@ -91,7 +91,16 @@ export function SafeMarkdownWithDownload({
   const codeDiffs = useMemo(() => hasReplaceBlocks(fc) ? parseCodeDiffs(fc) : [], [fc]);
   const hasDiffs = codeDiffs.length > 0;
   // ★ 内联模式：将每个 <replace> 替换为 ___DIFF_N___ 占位符，而非全部删除
-  if (hasDiffs) fc = inlineReplaceBlocks(fc);
+  if (hasDiffs) {
+    fc = inlineReplaceBlocks(fc);
+  } else if (hasReplaceBlocks(fc)) {
+    // ★ 安全兜底：parseCodeDiffs 未能解析时，将 <replace> 块包裹成代码围栏
+    // 防止 SafeMarkdown 将原始 XML 标签渲染成乱码纯文本
+    fc = fc.replace(
+      /<replace\s+file=["']([^"']+)["']\s*>([\s\S]*?)<\/replace>/gi,
+      (_, fileName, body) => `\n\n**修改文件：\`${fileName}\`**\n\n\`\`\`diff\n${body.trim()}\n\`\`\`\n\n`
+    );
+  }
 
   // ── ```file:xxx``` 块 ──
   const fbRegex = /```file:([^\n`]+)\n([\s\S]*?)```/g;

@@ -54,34 +54,20 @@ export function BalanceQuotaSection({
         </CardContent>
       </Card>
 
-      {/* 配额 */}
+      {/* 充值入口 */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Gauge className="h-5 w-5" />{t("pages.dashboard.quotaUsage")}</CardTitle>
-          <CardDescription>{t("pages.dashboard.quotaResetTime")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {quotaStatus ? (
-            <div className="space-y-4">
-              {[
-                { icon: MessageSquare, color: "blue", label: t("pages.dashboard.quickActions.aiChat.title"), data: quotaStatus.chat },
-                { icon: Image, color: "purple", label: t("pages.dashboard.quickActions.imageGeneration.title"), data: quotaStatus.image },
-                { icon: FileText, color: "green", label: t("pages.dashboard.quickActions.documentProcessing.title"), data: quotaStatus.document },
-              ].map(({ icon: Icon, color, label, data }) => (
-                <div key={label}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2"><Icon className={`h-4 w-4 text-${color}-500`} /><span className="text-sm font-medium">{label}</span></div>
-                    <span className="text-sm text-muted-foreground">{data.used}/{data.limit}</span>
-                  </div>
-                  <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                    <div className={`h-full bg-${color}-500 transition-all`} style={{ width: `${(data.used / data.limit) * 100}%` }} />
-                  </div>
-                </div>
-              ))}
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">🐟币计费</p>
+              <p className="text-sm text-muted-foreground">所有 AI 功能按🐟币消费，用多少扣多少</p>
             </div>
-          ) : (
-            <div className="text-center py-4 text-muted-foreground">{t("pages.dashboard.loading")}</div>
-          )}
+            <Link href="/recharge">
+              <Button>
+                <Coins className="mr-2 h-4 w-4" /> 充值🐟币
+              </Button>
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>

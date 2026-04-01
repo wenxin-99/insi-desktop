@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -19,23 +23,33 @@ jobs:
       - run: npx tauri build
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          name: windows-installers
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
 
   build-mac:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm install
-      - run: npx tauri build
+      - run: npx tauri build --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          name: macos-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
 
   release:
     needs: [build-windows, build-mac]
@@ -45,8 +59,41 @@ jobs:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-      - uses: softprops/action-gh-release@v1
+
+      - name: Generate updater manifest
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
+          WIN_SIG=$(cat windows-installers/*.exe.sig 2>/dev/null || echo "")
+          MAC_ARM_SIG=$(cat macos-aarch64-apple-darwin/*.app.tar.gz.sig 2>/dev/null || echo "")
+          MAC_X64_SIG=$(cat macos-x86_64-apple-darwin/*.app.tar.gz.sig 2>/dev/null || echo "")
+          cat > update.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Insi Desktop v${VERSION}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${WIN_SIG}",
+                "url": "${RELEASE_URL}/Insi-Desktop_${VERSION}_x64-setup.exe"
+              },
+              "darwin-aarch64": {
+                "signature": "${MAC_ARM_SIG}",
+                "url": "${RELEASE_URL}/Insi-Desktop.app.tar.gz"
+              },
+              "darwin-x86_64": {
+                "signature": "${MAC_X64_SIG}",
+                "url": "${RELEASE_URL}/Insi-Desktop.app.tar.gz"
+              }
+            }
+          }
+          EOF
+
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
-            windows-exe/*.exe
-            macos-dmg/*.dmg
+            windows-installers/*.exe
+            macos-aarch64-apple-darwin/*.dmg
+            macos-x86_64-apple-darwin/*.dmg
+            update.json
+          generate_release_notes: true

@@ -13,11 +13,16 @@ import {
 } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import type { BrowserState } from "@/hooks/useSandboxSocket";
+import { ConfirmationOverlay } from "./ConfirmationOverlay";
+import { AICursor } from "./AICursor";
 
-export function BrowserPreview({ browser, taskId, socket, clickIndicator, screenshotTimeout }: {
+export function BrowserPreview({ browser, taskId, socket, clickIndicator, screenshotTimeout, pendingConfirmation, onConfirmationResolved, cursorPosition }: {
   browser: BrowserState; taskId?: number | null; socket?: Socket | null;
   clickIndicator?: { x: number; y: number; description: string; key: number } | null;
   screenshotTimeout?: boolean;
+  pendingConfirmation?: { action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number } | null;
+  onConfirmationResolved?: () => void;
+  cursorPosition?: { x: number; y: number } | null;
 }) {
   const [zoom, setZoom] = useState(1);
   const [isImageExpanded, setIsImageExpanded] = useState(false);
@@ -211,6 +216,9 @@ export function BrowserPreview({ browser, taskId, socket, clickIndicator, screen
               onMouseDown={(e) => { if (takeoverActive) { e.preventDefault(); imgRef.current?.focus(); } }}
               draggable={false} />
             
+            {/* ★ P1④：AI 光标 */}
+            {!takeoverActive && cursorPosition && <AICursor position={cursorPosition} />}
+
             {/* ═══ 点击指示器动画 ═══ */}
             {clickIndicator && (
               <div
@@ -294,6 +302,16 @@ export function BrowserPreview({ browser, taskId, socket, clickIndicator, screen
               </>
             )}
           </div>
+        )}
+
+        {/* ★ 关键操作确认弹层 */}
+        {pendingConfirmation && (
+          <ConfirmationOverlay
+            taskId={taskId ?? null}
+            socket={socket ?? null}
+            confirmation={pendingConfirmation}
+            onResolved={() => onConfirmationResolved?.()}
+          />
         )}
 
         {/* 接管控制 */}

@@ -6,7 +6,7 @@ interface Message {
 }
 
 interface StreamResponse {
-  type: "start" | "content" | "done" | "error" | "image" | "image_placeholder" | "image_failed" | "image_stage" | "image_progress" | "video_task" | "fallback" | "thinking" | "intent_confirmation" | "operation" | "automation_task";
+  type: "start" | "content" | "content_replace" | "done" | "error" | "image" | "image_placeholder" | "image_failed" | "image_stage" | "image_progress" | "video_task" | "fallback" | "thinking" | "intent_confirmation" | "operation" | "automation_task" | "tool_start" | "tool_chunk" | "tool_end" | "tool_error";
   content?: string;
   cost?: string;
   originalCost?: string;
@@ -45,6 +45,16 @@ interface StreamResponse {
   // 文档整理相关
   isDocumentGeneration?: boolean;
   requestedFormat?: string;
+  // ★ 流式工具组件相关
+  toolId?: string;
+  toolType?: string;
+  meta?: Record<string, any>;
+  chunk?: string;
+  field?: string;
+  searchResult?: any;
+  searchRound?: number;
+  currentQuery?: string;
+  result?: any;
 }
 
 interface UseChatStreamOptions {
@@ -67,6 +77,11 @@ interface UseChatStreamOptions {
   onArtifactEnd?: (data: { artifactId: string; metadata?: any }) => void;
   onSolutionPicker?: (data: { id: string; question: string; options: Array<{ title: string; description?: string }>; allowCustom: boolean; allowSkip: boolean }) => void;
   onHomeworkResult?: (data: any) => void; // ★ T14-2
+  // ═══ 统一流式工具组件 ═══
+  onToolStart?: (data: { toolId: string; toolType: string; meta: Record<string, any> }) => void;
+  onToolChunk?: (data: { toolId: string; chunk: string; field?: string; searchResult?: any; searchRound?: number; currentQuery?: string }) => void;
+  onToolEnd?: (data: { toolId: string; result?: any }) => void;
+  onToolError?: (data: { toolId: string; error: string }) => void;
   onAutomationTask?: (data: { taskId: number; taskName: string; siteName: string; status: string }) => void;
   onFilePreview?: (data: { fileName: string; action: 'create' | 'modify' | 'delete'; newContent?: string; oldContent?: string; timestamp: number }) => void;
   onDone?: (data: { newBalance: string; message: string; isDocumentGeneration?: boolean; requestedFormat?: string }) => void;
@@ -75,6 +90,7 @@ interface UseChatStreamOptions {
 
 export function useChatStream() {
   const [isStreaming, setIsStreaming] = useState(false);
+  const [showCursor, setShowCursor] = useState(false); // ★ P3-⑭ 打字机光标
   const abortControllerRef = useRef<AbortController | null>(null);
   const [streamedContent, setStreamedContent] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -88,8 +104,70 @@ export function useChatStream() {
 
   // ★ React 状态提交节流间隔（ms）
   // rAF 仍以 60fps 运行来积累字符，但 setStreamedContent 只在此间隔触发
-  // 这样避免每帧都触发整棵 React 树 diff，同时保持视觉流畅
-  const STATE_COMMIT_INTERVAL = 50; // ~20fps React 更新
+  // ★ 优化①: 从 50ms 降到 33ms（~30fps），因为 SafeMarkdown 侧不再二次节流
+  const STATE_COMMIT_INTERVAL = 33;
+
+  // ═══ Markdown 安全截断：避免在语法标记中间切断 ═══
+  // 字符级截断会破坏 **bold** `code` $math$ 等结构，
+  // 导致 ReactMarkdown 先当纯文本渲染、下一帧突然变格式 → "闪烁跳变"
+  const findSafeCutPoint = useCallback((text: string, targetPos: number, floorPos: number): number => {
+    if (targetPos >= text.length) return text.length;
+    if (targetPos <= 0) return 0;
+
+    let pos = targetPos;
+
+    // Rule 1: 不在 \ 后面切（LaTeX 转义）
+    if (pos > 0 && text[pos - 1] === '\\') pos--;
+
+    // Rule 2: 不在 HTML 实体中间切（&amp; &lt; 等）
+    // 向前找最近的 &，如果 & 到 pos 之间没有 ;，说明在实体中间
+    const ampIdx = text.lastIndexOf('&', pos);
+    if (ampIdx >= 0 && ampIdx >= pos - 8) {
+      const semicolonIdx = text.indexOf(';', ampIdx);
+      if (semicolonIdx >= pos) {
+        pos = ampIdx; // 回退到 & 之前
+      }
+    }
+
+    // Rule 3: 不在未闭合的行内标记中间切
+    // 检查从 pos 向前到最近的换行，统计 ** ` $ 的开闭
+    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    const lineSlice = text.substring(lineStart, pos);
+
+    // 未闭合的 ** → 回退到 ** 之前
+    const boldCount = (lineSlice.match(/\*\*/g) || []).length;
+    if (boldCount % 2 !== 0) {
+      const lastBold = lineSlice.lastIndexOf('**');
+      if (lastBold >= 0) pos = lineStart + lastBold;
+    }
+
+    // 未闭合的 ` → 回退到 ` 之前（排除 ``` 代码围栏）
+    const btCount = (lineSlice.match(/(?<!`)`(?!`)/g) || []).length;
+    if (btCount % 2 !== 0) {
+      const lastBt = lineSlice.lastIndexOf('`');
+      if (lastBt >= 0) pos = lineStart + lastBt;
+    }
+
+    // 未闭合的 $ → 回退到 $ 之前（排除 $$）
+    const dollarCount = (lineSlice.match(/(?<!\$)\$(?!\$)/g) || []).length;
+    if (dollarCount % 2 !== 0) {
+      const lastDollar = lineSlice.lastIndexOf('$');
+      if (lastDollar >= 0) pos = lineStart + lastDollar;
+    }
+
+    // Rule 4: 不在 [ 和 ]( 之间切（Markdown 链接文本）
+    const lastBracket = lineSlice.lastIndexOf('[');
+    if (lastBracket >= 0) {
+      const closeBracket = text.indexOf('](', lineStart + lastBracket);
+      if (closeBracket >= pos && closeBracket < pos + 100) {
+        pos = lineStart + lastBracket;
+      }
+    }
+
+    // ★ 下限保护：不能回退到比上一帧已显示的位置更前（floorPos）
+    // 否则会产生内容"回缩"闪烁
+    return Math.max(pos, floorPos);
+  }, []);
 
   // 平滑输出动画帧 - 每帧积累字符，节流提交 React 状态
   const animateStream = useCallback(() => {
@@ -111,7 +189,35 @@ export function useChatStream() {
         charsThisFrame = Math.min(remaining, 4);
       }
       
+      // ★ 优化②：词边界感知 — 将切点延伸到最近的自然断点
+      // 避免在中文词语中间、英文单词中间切断，让每帧输出一个完整"语义片段"
+      if (!isFlushingRef.current && charsThisFrame < remaining) {
+        let targetPos = displayedLen + charsThisFrame;
+        const buf = rawBufferRef.current;
+        // 向前探测最多 12 个字符，找到自然断点
+        const scanLimit = Math.min(targetPos + 12, rawLen);
+        for (let i = targetPos; i < scanLimit; i++) {
+          const ch = buf[i];
+          // 自然断点：标点、空格、换行、CJK 字符边界后
+          if (ch === ' ' || ch === '\n' || ch === '，' || ch === '。' || ch === '、' ||
+              ch === '；' || ch === '：' || ch === '！' || ch === '？' || ch === '"' ||
+              ch === ')' || ch === '）' || ch === '】' || ch === '》' ||
+              ch === '.' || ch === ',' || ch === ';' || ch === ':' || ch === '!' || ch === '?') {
+            charsThisFrame = i - displayedLen + 1;
+            break;
+          }
+        }
+      }
+
+      // ★ 先保存旧位置作为 snap 下限，再计算新位置
+      const oldDisplayedLen = displayedLen;
       displayedLenRef.current = displayedLen + charsThisFrame;
+
+      // ★ Markdown 安全截断：将切点 snap 到安全边界
+      // floorPos = 旧位置（不能回退到已显示内容之前，否则内容"回缩"闪烁）
+      if (!isFlushingRef.current) {
+        displayedLenRef.current = findSafeCutPoint(rawBufferRef.current, displayedLenRef.current, oldDisplayedLen);
+      }
     }
 
     // ★ 节流提交：仅在间隔到达或 flush 时才更新 React 状态
@@ -167,7 +273,11 @@ export function useChatStream() {
       conversationId: number | undefined,
       options: UseChatStreamOptions = {},
       packageId?: number,
-      hasVisionContent?: boolean
+      hasVisionContent?: boolean,
+      thinkingMode?: boolean,
+      userCity?: string | null,
+      aspectRatio?: string | null,
+      autoMode?: boolean,
     ) => {
       setIsStreaming(true);
       setStreamedContent("");
@@ -179,6 +289,7 @@ export function useChatStream() {
       isFlushingRef.current = false;
       lastCommitTimeRef.current = 0;
       stopAnimation();
+      setShowCursor(true); // ★ P3-⑭ 开启打字机光标
 
       // Abort any in-flight request before starting a new stream.
       if (abortControllerRef.current) {
@@ -186,6 +297,29 @@ export function useChatStream() {
       }
       const controller = new AbortController();
       abortControllerRef.current = controller;
+
+      // ★ P0-① 断线自动重试配置
+      const MAX_STREAM_RETRIES = 2;
+      const RETRY_BASE_DELAY = 1500;
+      let _streamSucceeded = false;
+
+      try {
+      for (let _retryAttempt = 0; _retryAttempt <= MAX_STREAM_RETRIES; _retryAttempt++) {
+        if (controller.signal.aborted) break;
+        if (_retryAttempt > 0) {
+          // ★ Bug 2 fix: 重试前重置缓冲区，避免旧+新拼接乱码
+          rawBufferRef.current = "";
+          displayedLenRef.current = 0;
+          isFlushingRef.current = false;
+          setStreamedContent("");
+          const delay = RETRY_BASE_DELAY * Math.pow(2, _retryAttempt - 1);
+          console.log(`[ChatStream] Retry attempt ${_retryAttempt}/${MAX_STREAM_RETRIES} after ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          if (controller.signal.aborted) break;
+        }
+
+        // ★ 跟踪是否已收到内容（收到内容后不再重试，避免重复）
+        let _hasReceivedContent = false;
 
       try {
         // 获取token（支持cookie和token两种模式）
@@ -209,6 +343,11 @@ export function useChatStream() {
             conversationId,
             packageId,
             hasVisionContent,
+            // ★ fix: 这 4 个参数之前因函数签名只有 6 个参数被静默丢弃，后端始终收到 undefined
+            thinkingMode: thinkingMode || false,
+            autoMode: autoMode || false,
+            userCity: userCity || null,
+            aspectRatio: aspectRatio || null,
           }),
         });
 
@@ -274,8 +413,14 @@ export function useChatStream() {
                 // 写入缓冲区，动画循环会平滑输出
                 const content = data.content!;
                 rawBufferRef.current += content;
+                _hasReceivedContent = true; // ★ Bug 2 fix: 标记已收到内容
                 startAnimation();
                 options.onContent?.(content);
+              } else if (data.type === "content_replace") {
+                // ★ 图片/视频生成成功后，清除之前 LLM 流出的多余文字
+                rawBufferRef.current = data.content || '';
+                displayedLenRef.current = rawBufferRef.current.length;
+                setStreamedContent(data.content || '');
               } else if (data.type === "image_placeholder") {
                 // 处理占位图事件
                 options.onImagePlaceholder?.({
@@ -397,6 +542,35 @@ export function useChatStream() {
                   oldContent: data.oldContent,
                   timestamp: data.timestamp || Date.now(),
                 });
+              } else if (data.type === "tool_start") {
+                // ═══ 统一流式工具组件：创建容器 ═══
+                options.onToolStart?.({
+                  toolId: data.toolId!,
+                  toolType: data.toolType!,
+                  meta: data.meta || {},
+                });
+              } else if (data.type === "tool_chunk") {
+                // ═══ 统一流式工具组件：内容增量 ═══
+                options.onToolChunk?.({
+                  toolId: data.toolId!,
+                  chunk: data.chunk || '',
+                  field: data.field,
+                  searchResult: data.searchResult,
+                  searchRound: data.searchRound,
+                  currentQuery: data.currentQuery,
+                });
+              } else if (data.type === "tool_end") {
+                // ═══ 统一流式工具组件：完成 ═══
+                options.onToolEnd?.({
+                  toolId: data.toolId!,
+                  result: data.result,
+                });
+              } else if (data.type === "tool_error") {
+                // ═══ 统一流式工具组件：错误 ═══
+                options.onToolError?.({
+                  toolId: data.toolId!,
+                  error: data.error || '工具执行失败',
+                });
               } else if (data.type === "intent_confirmation") {
                 // 处理意图确认事件
                 options.onIntentConfirm?.({
@@ -406,23 +580,29 @@ export function useChatStream() {
                   imageUrl: data.imageUrl!,
                 });
               } else if (data.type === "done") {
-                // 立即显示所有剩余缓冲内容，确保 onDone 时内容完整
+                // ★ 优化④: done 后立即全量渲染，不做逐帧 flush
+                // API 已完成，用户不需要再看"打字"效果，直接显示完整内容
                 stopAnimation();
-                if (rawBufferRef.current.length > displayedLenRef.current) {
-                  displayedLenRef.current = rawBufferRef.current.length;
-                  setStreamedContent(rawBufferRef.current);
-                }
+                
+                // 一次性提交全部内容
+                displayedLenRef.current = rawBufferRef.current.length;
+                setStreamedContent(rawBufferRef.current);
+                setShowCursor(false);
+                
                 options.onDone?.({
                   newBalance: data.newBalance!,
                   message: data.message!,
                   isDocumentGeneration: data.isDocumentGeneration,
                   requestedFormat: data.requestedFormat,
                 });
-                shouldExit = true; // 收到done事件后退出循环
+                
+                _streamSucceeded = true;
+                shouldExit = true;
               } else if (data.type === "error") {
                 // 处理错误事件,调用onError回调
                 const errorMsg = data.error || "AI调用失败";
                 setError(errorMsg);
+                setShowCursor(false); // ★ P3-⑭
                 options.onError?.(errorMsg);
                 shouldExit = true; // 收到error事件后退出循环
               }
@@ -433,19 +613,38 @@ export function useChatStream() {
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
-          // User aborted the stream, not an error
           console.log('[ChatStream] Stream aborted by user');
+          break; // exit retry loop
         } else {
+          // ★ Bug 2 fix: 已收到内容后不重试（避免重复内容）
+          const isRetryable = !_hasReceivedContent && err instanceof Error && (
+            err.message.includes('fetch') || err.message.includes('network') ||
+            err.message.includes('timeout') || err.message.includes('ECONNRESET') ||
+            err.message.includes('Failed to fetch')
+          );
+          if (isRetryable && _retryAttempt < MAX_STREAM_RETRIES) {
+            console.warn(`[ChatStream] Retryable error (no content yet): ${err instanceof Error ? err.message : err}`);
+            continue; // retry
+          }
           const errorMessage = err instanceof Error ? err.message : "未知错误";
           setError(errorMessage);
+          setShowCursor(false);
           options.onError?.(errorMessage);
+          break; // exit retry loop
         }
+      }
+      break; // success - exit retry loop
+      } // end retry for loop
       } finally {
-        // Clear controller reference if it is the one we created for this request.
+        // ★ Bug 4 fix: 恢复真正的 finally 块，确保无论如何都执行清理
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
         }
-        stopAnimation();
+        // ★ 只在非成功时停止动画（成功时已在 done handler 中处理）
+        if (!_streamSucceeded) {
+          stopAnimation();
+          setShowCursor(false);
+        }
         setIsStreaming(false);
       }
     },
@@ -459,11 +658,13 @@ export function useChatStream() {
     }
     stopAnimation();
     setIsStreaming(false);
+    setShowCursor(false); // ★ P3-⑭
   }, [stopAnimation]);
   const reset = useCallback(() => {
     setStreamedContent("");
     setError(null);
     setIsStreaming(false);
+    setShowCursor(false); // ★ P3-⑭
     rawBufferRef.current = "";
     displayedLenRef.current = 0;
     isFlushingRef.current = false;
@@ -478,5 +679,6 @@ export function useChatStream() {
     error,
     reset,
     abort,
+    showCursor, // ★ P3-⑭ 打字机光标状态
   };
 }

@@ -1,12 +1,16 @@
 /**
- * GitHub Workspace — 仓库克隆、编辑、同步一体化页面
+ * GitHub Workspace — P0+P1 全面升级版
+ *
+ * 升级:
+ *   P0: CodeMirror 编辑器 + Side-by-side Diff + OAuth scope 修复
+ *   P1: Pull/Fetch + 分支切换 + Stash + AI Commit Message
  *
  * 三步流程:
  *   1. 选择仓库 + 分支 → 克隆到沙箱
- *   2. 查看文件 / Diff / 在终端中操作
- *   3. 选择策略同步回 GitHub
+ *   2. 查看/编辑文件，终端执行命令
+ *   3. AI 生成 commit message → 选择策略同步回 GitHub
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,13 +22,18 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Github, Search, GitBranch, Download, FolderOpen, ArrowLeft,
-  RefreshCw, Loader2, CheckCircle2, XCircle, Upload, FileCode,
+  RefreshCw, Loader2, CheckCircle2, Upload, FileCode,
   Clock, Trash2, Eye, ChevronRight, File, Folder,
-  Terminal, Save, Pencil, Link2, Play,
+  Save, Link2, Play, ArrowDown, Sparkles,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
 import { Link } from "wouter";
+import { CodeEditor } from "@/components/github/CodeEditor";
+import { DiffViewer } from "@/components/github/DiffViewer";
+import { BranchManager } from "@/components/github/BranchManager";
+import DashboardLayout from "@/components/DashboardLayout";
 
 // ═══════ 类型 ═══════
 
@@ -71,6 +80,14 @@ interface FileChange {
   path: string;
 }
 
+interface OpenFile {
+  path: string;
+  content: string;
+  language: string;
+  modified: boolean;
+  originalContent: string;
+}
+
 // ═══════ 主组件 ═══════
 
 export default function GitHubWorkspace() {
@@ -99,22 +116,30 @@ export default function GitHubWorkspace() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [changes, setChanges] = useState<FileChange[]>([]);
-  const [fileContent, setFileContent] = useState<{ content: string; language: string; path: string } | null>(null);
-  const [editingContent, setEditingContent] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [diffContent, setDiffContent] = useState("");
   const [wsTab, setWsTab] = useState<"files" | "changes" | "diff" | "terminal">("files");
+
+  // 多文件 tab
+  const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
+  const [activeFileIdx, setActiveFileIdx] = useState(-1);
 
   // 终端
   const [termCmd, setTermCmd] = useState("");
   const [termOutput, setTermOutput] = useState<string[]>([]);
   const [termRunning, setTermRunning] = useState(false);
+  const termRef = useRef<HTMLDivElement>(null);
 
   // 同步
   const [syncStrategy, setSyncStrategy] = useState("create_pr");
   const [commitMsg, setCommitMsg] = useState("");
   const [newBranch, setNewBranch] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [generatingMsg, setGeneratingMsg] = useState(false);
+
+  // P1: Pull
+  const [pulling, setPulling] = useState(false);
+  // P1: 当前分支（动态更新）
+  const [currentBranch, setCurrentBranch] = useState("");
 
   const [cloning, setCloning] = useState(false);
   const [pollingId, setPollingId] = useState<number | null>(null);
@@ -131,7 +156,6 @@ export default function GitHubWorkspace() {
         setGhConnected(false);
       }
     })();
-    // 检查 URL 参数
     const params = new URLSearchParams(window.location.search);
     if (params.get("github_linked") === "1") {
       toast.success("GitHub 账号已关联！");
@@ -143,9 +167,7 @@ export default function GitHubWorkspace() {
   const handleConnectGitHub = async () => {
     try {
       const { data } = await axios.post("/api/github/connect");
-      if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
-      }
+      if (data.redirectUrl) window.location.href = data.redirectUrl;
     } catch (err: any) {
       toast.error(err.response?.data?.error || "连接失败");
     }
@@ -158,7 +180,7 @@ export default function GitHubWorkspace() {
     try {
       const { data } = await axios.get("/api/github/tasks");
       setTasks(data.tasks || []);
-    } catch { }
+    } catch {}
     setLoadingTasks(false);
   }, []);
 
@@ -169,9 +191,7 @@ export default function GitHubWorkspace() {
       const { data } = await axios.get(`/api/github/repos${params}`);
       setRepos(data.repos || []);
     } catch (err: any) {
-      if (err.response?.status === 401) {
-        toast.error("GitHub 未连接或 token 已过期，请重新登录");
-      }
+      if (err.response?.status === 401) toast.error("GitHub 未连接或 token 已过期");
     }
     setLoadingRepos(false);
   }, []);
@@ -181,7 +201,7 @@ export default function GitHubWorkspace() {
     try {
       const { data } = await axios.get(`/api/github/repos/${fullName}/branches`);
       setBranches(data.branches || []);
-    } catch { }
+    } catch {}
     setLoadingBranches(false);
   }, []);
 
@@ -199,6 +219,7 @@ export default function GitHubWorkspace() {
         const t = data.task as RepoTask;
         if (t.status === "ready" || t.status === "synced") {
           setActiveTask(t);
+          setCurrentBranch(t.branch);
           setPhase("workspace");
           setCloning(false);
           setPollingId(null);
@@ -210,12 +231,12 @@ export default function GitHubWorkspace() {
           toast.error(`克隆失败: ${t.statusMessage}`);
           loadTasks();
         }
-      } catch { }
+      } catch {}
     }, 3000);
     return () => clearInterval(interval);
   }, [pollingId, loadTasks]);
 
-  // ═══════ 操作 ═══════
+  // ═══════ 仓库选择操作 ═══════
 
   const handleSelectRepo = (repo: Repo) => {
     setSelectedRepo(repo);
@@ -242,27 +263,34 @@ export default function GitHubWorkspace() {
     }
   };
 
+  // ═══════ 工作区操作 ═══════
+
   const handleOpenTask = async (task: RepoTask) => {
     setActiveTask(task);
+    setCurrentBranch(task.branch);
     setPhase("workspace");
     setCurrentPath("");
+    setOpenFiles([]);
+    setActiveFileIdx(-1);
     loadWorkspaceFiles(task.id, "");
     loadWorkspaceChanges(task.id);
   };
 
   const loadWorkspaceFiles = async (taskId: number, path: string) => {
     try {
-      const { data } = await axios.get(`/api/github/workspace/${taskId}/files?path=${encodeURIComponent(path)}`);
+      const { data } = await axios.get(
+        `/api/github/workspace/${taskId}/files?path=${encodeURIComponent(path)}`
+      );
       setFiles(data.files || []);
       setCurrentPath(path);
-    } catch { }
+    } catch {}
   };
 
   const loadWorkspaceChanges = async (taskId: number) => {
     try {
       const { data } = await axios.get(`/api/github/workspace/${taskId}/status`);
       setChanges(data.changes || []);
-    } catch { }
+    } catch {}
   };
 
   const handleOpenFile = async (item: FileItem) => {
@@ -271,61 +299,174 @@ export default function GitHubWorkspace() {
       loadWorkspaceFiles(activeTask.id, item.path);
       return;
     }
+
+    // 检查是否已打开
+    const existIdx = openFiles.findIndex((f) => f.path === item.path);
+    if (existIdx >= 0) {
+      setActiveFileIdx(existIdx);
+      return;
+    }
+
     try {
-      const { data } = await axios.get(`/api/github/workspace/${activeTask.id}/file?path=${encodeURIComponent(item.path)}`);
-      setFileContent({ ...data, path: item.path });
-      setWsTab("files");
-    } catch (err: any) {
+      const { data } = await axios.get(
+        `/api/github/workspace/${activeTask.id}/file?path=${encodeURIComponent(item.path)}`
+      );
+      const newFile: OpenFile = {
+        path: item.path,
+        content: data.content,
+        language: data.language,
+        modified: false,
+        originalContent: data.content,
+      };
+      setOpenFiles((prev) => {
+        setActiveFileIdx(prev.length); // prev.length = 新文件将被追加到的位置
+        return [...prev, newFile];
+      });
+    } catch {
       toast.error("读取文件失败");
     }
   };
+
+  const handleCloseFile = (idx: number) => {
+    const file = openFiles[idx];
+    if (file?.modified && !confirm(`${file.path} 有未保存的修改，确定关闭？`)) return;
+
+    setOpenFiles((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      // 在同一个更新周期内计算正确的 activeFileIdx
+      if (next.length === 0) {
+        setActiveFileIdx(-1);
+      } else if (activeFileIdx > idx) {
+        setActiveFileIdx(activeFileIdx - 1);
+      } else if (activeFileIdx === idx) {
+        // 关闭的是当前活跃文件：切换到前一个，或保持 0
+        setActiveFileIdx(Math.min(idx, next.length - 1));
+      }
+      // activeFileIdx < idx 时无需变动
+      return next;
+    });
+  };
+
+  const handleFileContentChange = (value: string) => {
+    if (activeFileIdx < 0) return;
+    setOpenFiles((prev) =>
+      prev.map((f, i) =>
+        i === activeFileIdx
+          ? { ...f, content: value, modified: value !== f.originalContent }
+          : f
+      )
+    );
+  };
+
+  const handleSaveFile = async () => {
+    if (!activeTask || activeFileIdx < 0) return;
+    const file = openFiles[activeFileIdx];
+    if (!file.modified) return;
+
+    try {
+      await axios.post(`/api/github/workspace/${activeTask.id}/file`, {
+        path: file.path,
+        content: file.content,
+      });
+      setOpenFiles((prev) =>
+        prev.map((f, i) =>
+          i === activeFileIdx
+            ? { ...f, modified: false, originalContent: f.content }
+            : f
+        )
+      );
+      toast.success("已保存");
+      loadWorkspaceChanges(activeTask.id);
+    } catch (err: any) {
+      toast.error("保存失败: " + (err.response?.data?.error || err.message));
+    }
+  };
+
+  // ═══════ P1: Pull ═══════
+
+  const handlePull = async () => {
+    if (!activeTask) return;
+    setPulling(true);
+    try {
+      const { data } = await axios.post(`/api/github/workspace/${activeTask.id}/pull`);
+      if (data.success) {
+        toast.success(data.message);
+        loadWorkspaceFiles(activeTask.id, currentPath);
+        loadWorkspaceChanges(activeTask.id);
+      } else {
+        toast.error(data.message);
+        if (data.conflicts?.length) {
+          toast.error(`冲突文件: ${data.conflicts.join(", ")}`);
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || "拉取失败");
+    }
+    setPulling(false);
+  };
+
+  // ═══════ Diff ═══════
 
   const handleViewDiff = async (filePath?: string) => {
     if (!activeTask) return;
     try {
       const params = filePath ? `?path=${encodeURIComponent(filePath)}` : "";
-      const { data } = await axios.get(`/api/github/workspace/${activeTask.id}/diff${params}`);
+      const { data } = await axios.get(
+        `/api/github/workspace/${activeTask.id}/diff${params}`
+      );
       setDiffContent(data.diff || "(无变更)");
       setWsTab("diff");
-    } catch { }
+    } catch {}
   };
 
-  const handleSaveFile = async () => {
-    if (!activeTask || !fileContent || editingContent === null) return;
-    setSaving(true);
-    try {
-      await axios.post(`/api/github/workspace/${activeTask.id}/file`, {
-        path: fileContent.path,
-        content: editingContent,
-      });
-      setFileContent({ ...fileContent, content: editingContent });
-      setEditingContent(null);
-      toast.success("文件已保存");
-      loadWorkspaceChanges(activeTask.id);
-    } catch (err: any) {
-      toast.error("保存失败: " + (err.response?.data?.error || err.message));
-    }
-    setSaving(false);
-  };
+  // ═══════ 终端 ═══════
+
+  const MAX_TERM_LINES = 500;
 
   const handleExecCommand = async () => {
     if (!activeTask || !termCmd.trim()) return;
     setTermRunning(true);
-    setTermOutput((prev) => [...prev, `$ ${termCmd}`]);
+    setTermOutput((prev) => [...prev.slice(-MAX_TERM_LINES + 1), `$ ${termCmd}`]);
     try {
       const { data } = await axios.post(`/api/github/workspace/${activeTask.id}/exec`, {
         command: termCmd,
       });
-      const output = (data.stdout || "") + (data.stderr ? `\n[stderr] ${data.stderr}` : "");
+      const output =
+        (data.stdout || "") + (data.stderr ? `\n[stderr] ${data.stderr}` : "");
       setTermOutput((prev) => [...prev, output, `[exit code: ${data.exitCode}]`]);
       setTermCmd("");
-      // 执行命令后刷新变更列表
       loadWorkspaceChanges(activeTask.id);
     } catch (err: any) {
-      setTermOutput((prev) => [...prev, `[错误] ${err.response?.data?.error || err.message}`]);
+      setTermOutput((prev) => [
+        ...prev,
+        `[错误] ${err.response?.data?.error || err.message}`,
+      ]);
     }
     setTermRunning(false);
+    // 自动滚动到底部
+    setTimeout(() => termRef.current?.scrollTo(0, termRef.current.scrollHeight), 50);
   };
+
+  // ═══════ P1: AI Commit Message ═══════
+
+  const handleGenerateCommitMsg = async () => {
+    if (!activeTask) return;
+    setGeneratingMsg(true);
+    try {
+      const { data } = await axios.post(
+        `/api/github/workspace/${activeTask.id}/suggest-commit`
+      );
+      if (data.message) {
+        setCommitMsg(data.message);
+        toast.success("已生成提交信息");
+      }
+    } catch {
+      toast.error("生成失败，请手动输入");
+    }
+    setGeneratingMsg(false);
+  };
+
+  // ═══════ 同步 ═══════
 
   const handleSync = async () => {
     if (!activeTask || !commitMsg.trim()) {
@@ -340,9 +481,10 @@ export default function GitHubWorkspace() {
         newBranchName: newBranch || undefined,
       });
       toast.success("同步已开始");
-      // 轮询同步状态
       const poll = setInterval(async () => {
-        const { data } = await axios.get(`/api/github/workspace/${activeTask.id}/status`);
+        const { data } = await axios.get(
+          `/api/github/workspace/${activeTask.id}/status`
+        );
         const t = data.task as RepoTask;
         if (t.status === "synced") {
           clearInterval(poll);
@@ -372,14 +514,35 @@ export default function GitHubWorkspace() {
         setActiveTask(null);
       }
       loadTasks();
-    } catch { toast.error("清理失败"); }
+    } catch {
+      toast.error("清理失败");
+    }
+  };
+
+  const handleBranchChanged = (newBr: string) => {
+    // 检查是否有未保存的文件
+    const unsaved = openFiles.filter((f) => f.modified);
+    if (unsaved.length > 0) {
+      const names = unsaved.map((f) => f.path.split("/").pop()).join(", ");
+      if (!confirm(`切换分支将关闭所有编辑器。以下文件有未保存修改:\n${names}\n\n确定继续？`)) {
+        return;
+      }
+    }
+    setCurrentBranch(newBr);
+    if (activeTask) {
+      loadWorkspaceFiles(activeTask.id, "");
+      loadWorkspaceChanges(activeTask.id);
+      setOpenFiles([]);
+      setActiveFileIdx(-1);
+    }
   };
 
   // ═══════ 渲染: 仓库选择 ═══════
 
   if (phase === "select") {
     return (
-      <div className="min-h-screen bg-background">
+      <DashboardLayout>
+      <div className="bg-background">
         <div className="container max-w-6xl py-8 space-y-8">
           {/* 标题 */}
           <div className="flex items-center gap-4">
@@ -390,7 +553,9 @@ export default function GitHubWorkspace() {
               <h1 className="text-2xl font-bold flex items-center gap-2">
                 <Github className="h-6 w-6" /> GitHub 工作区
               </h1>
-              <p className="text-muted-foreground text-sm">克隆仓库到沙箱编辑测试，完成后同步回 GitHub</p>
+              <p className="text-muted-foreground text-sm">
+                克隆仓库到沙箱编辑测试，完成后同步回 GitHub
+              </p>
             </div>
           </div>
 
@@ -402,7 +567,9 @@ export default function GitHubWorkspace() {
                   <Link2 className="h-5 w-5 text-amber-600" />
                   <div>
                     <p className="font-medium text-sm">GitHub 未连接</p>
-                    <p className="text-xs text-muted-foreground">连接 GitHub 后可以浏览和克隆您的仓库</p>
+                    <p className="text-xs text-muted-foreground">
+                      连接 GitHub 后可以浏览和克隆您的仓库
+                    </p>
                   </div>
                 </div>
                 <Button onClick={handleConnectGitHub} className="gap-2">
@@ -414,7 +581,9 @@ export default function GitHubWorkspace() {
           {ghConnected === true && ghLogin && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Github className="h-4 w-4" />
-              <span>已连接: <strong>{ghLogin}</strong></span>
+              <span>
+                已连接: <strong>{ghLogin}</strong>
+              </span>
             </div>
           )}
 
@@ -428,27 +597,47 @@ export default function GitHubWorkspace() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {tasks.map((t) => (
-                  <div key={t.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div
+                    key={t.id}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                  >
                     <div className="flex items-center gap-3 min-w-0">
-                      <Badge variant={
-                        t.status === "ready" || t.status === "synced" ? "default" :
-                        t.status === "cloning" || t.status === "syncing" ? "secondary" : "destructive"
-                      } className="shrink-0">
-                        {t.status === "ready" ? "就绪" : t.status === "synced" ? "已同步" :
-                         t.status === "cloning" ? "克隆中" : t.status === "syncing" ? "同步中" :
-                         t.status === "error" ? "错误" : t.status}
+                      <Badge
+                        variant={
+                          t.status === "ready" || t.status === "synced"
+                            ? "default"
+                            : t.status === "cloning" || t.status === "syncing"
+                            ? "secondary"
+                            : "destructive"
+                        }
+                        className="shrink-0"
+                      >
+                        {t.status === "ready"
+                          ? "就绪"
+                          : t.status === "synced"
+                          ? "已同步"
+                          : t.status === "cloning"
+                          ? "克隆中"
+                          : t.status === "syncing"
+                          ? "同步中"
+                          : t.status === "error"
+                          ? "错误"
+                          : t.status}
                       </Badge>
                       <div className="min-w-0">
                         <p className="font-medium truncate">{t.repoFullName}</p>
                         <p className="text-xs text-muted-foreground">
-                          <GitBranch className="inline h-3 w-3 mr-1" />{t.branch}
+                          <GitBranch className="inline h-3 w-3 mr-1" />
+                          {t.branch}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {t.pullRequestUrl && (
                         <a href={t.pullRequestUrl} target="_blank" rel="noreferrer">
-                          <Button variant="outline" size="sm">查看 PR</Button>
+                          <Button variant="outline" size="sm">
+                            查看 PR
+                          </Button>
                         </a>
                       )}
                       {(t.status === "ready" || t.status === "synced") && (
@@ -456,7 +645,11 @@ export default function GitHubWorkspace() {
                           <FolderOpen className="h-3 w-3 mr-1" /> 打开
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(t.id)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteTask(t.id)}
+                      >
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
@@ -473,7 +666,6 @@ export default function GitHubWorkspace() {
               <CardDescription>选择要克隆到沙箱的 GitHub 仓库</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* 搜索栏 */}
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -485,23 +677,34 @@ export default function GitHubWorkspace() {
                     onKeyDown={(e) => e.key === "Enter" && loadRepos(searchQ)}
                   />
                 </div>
-                <Button variant="outline" onClick={() => loadRepos(searchQ)} disabled={loadingRepos}>
-                  {loadingRepos ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <Button
+                  variant="outline"
+                  onClick={() => loadRepos(searchQ)}
+                  disabled={loadingRepos}
+                >
+                  {loadingRepos ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
 
-              {/* 仓库列表 */}
               <div className="space-y-1 max-h-80 overflow-y-auto">
                 {repos.map((repo) => (
                   <div
                     key={repo.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 ${selectedRepo?.id === repo.id ? "border-primary bg-primary/5" : ""}`}
+                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 ${
+                      selectedRepo?.id === repo.id ? "border-primary bg-primary/5" : ""
+                    }`}
                     onClick={() => handleSelectRepo(repo)}
                   >
                     <div className="min-w-0">
                       <p className="font-medium truncate">{repo.full_name}</p>
                       {repo.description && (
-                        <p className="text-xs text-muted-foreground truncate">{repo.description}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {repo.description}
+                        </p>
                       )}
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                         {repo.language && <span>{repo.language}</span>}
@@ -509,7 +712,11 @@ export default function GitHubWorkspace() {
                         <span>{(repo.size / 1024).toFixed(1)} MB</span>
                       </div>
                     </div>
-                    {repo.private && <Badge variant="outline" className="shrink-0 text-xs">Private</Badge>}
+                    {repo.private && (
+                      <Badge variant="outline" className="shrink-0 text-xs">
+                        Private
+                      </Badge>
+                    )}
                   </div>
                 ))}
                 {repos.length === 0 && !loadingRepos && (
@@ -519,7 +726,6 @@ export default function GitHubWorkspace() {
                 )}
               </div>
 
-              {/* 选中仓库后的分支选择 & 克隆按钮 */}
               {selectedRepo && (
                 <>
                   <Separator />
@@ -533,7 +739,8 @@ export default function GitHubWorkspace() {
                         <SelectContent>
                           {branches.map((b) => (
                             <SelectItem key={b.name} value={b.name}>
-                              <GitBranch className="inline h-3 w-3 mr-1" />{b.name}
+                              <GitBranch className="inline h-3 w-3 mr-1" />
+                              {b.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -544,7 +751,11 @@ export default function GitHubWorkspace() {
                       disabled={cloning || !selectedBranch}
                       className="gap-2"
                     >
-                      {cloning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      {cloning ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
                       {cloning ? "克隆中..." : "克隆到沙箱"}
                     </Button>
                   </div>
@@ -554,18 +765,30 @@ export default function GitHubWorkspace() {
           </Card>
         </div>
       </div>
+      </DashboardLayout>
     );
   }
 
   // ═══════ 渲染: 工作区 ═══════
 
+  const activeFile = activeFileIdx >= 0 ? openFiles[activeFileIdx] : null;
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container max-w-7xl py-4 space-y-4">
-        {/* 顶栏 */}
+    <DashboardLayout>
+    <div className="bg-background">
+      <div className="container max-w-7xl py-4 space-y-3">
+        {/* ── 顶栏 ── */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => { setPhase("select"); setFileContent(null); }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setPhase("select");
+                setOpenFiles([]);
+                setActiveFileIdx(-1);
+              }}
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -574,38 +797,87 @@ export default function GitHubWorkspace() {
                 {activeTask?.repoFullName}
               </h2>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <GitBranch className="h-3 w-3" /> {activeTask?.branch}
-                <Badge variant="outline" className="text-xs">{activeTask?.status}</Badge>
+                <Badge variant="outline" className="text-xs">
+                  {activeTask?.status === "ready"
+                    ? "就绪"
+                    : activeTask?.status === "synced"
+                    ? "已同步"
+                    : activeTask?.status}
+                </Badge>
               </div>
             </div>
           </div>
+
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => {
-              if (activeTask) {
-                loadWorkspaceFiles(activeTask.id, currentPath);
-                loadWorkspaceChanges(activeTask.id);
-              }
-            }}>
+            {/* P1: 分支管理 */}
+            {activeTask && (
+              <BranchManager
+                taskId={activeTask.id}
+                currentBranch={currentBranch || activeTask.branch}
+                onBranchChanged={handleBranchChanged}
+              />
+            )}
+
+            {/* P1: Pull 按钮 */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePull}
+              disabled={pulling}
+              className="gap-1.5"
+            >
+              {pulling ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5" />
+              )}
+              Pull
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (activeTask) {
+                  loadWorkspaceFiles(activeTask.id, currentPath);
+                  loadWorkspaceChanges(activeTask.id);
+                }
+              }}
+            >
               <RefreshCw className="h-3 w-3 mr-1" /> 刷新
             </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ minHeight: "calc(100vh - 150px)" }}>
-          {/* 左侧: 文件树 + 变更 */}
+        <div
+          className="grid grid-cols-1 lg:grid-cols-3 gap-3"
+          style={{ minHeight: "calc(100vh - 130px)" }}
+        >
+          {/* ── 左侧: 文件树 + 变更 ── */}
           <Card className="lg:col-span-1 flex flex-col">
             <div className="flex border-b">
               {(["files", "changes", "diff", "terminal"] as const).map((tab) => (
                 <button
                   key={tab}
-                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${wsTab === tab ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                    wsTab === tab
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                   onClick={() => {
                     setWsTab(tab);
-                    if (tab === "changes" && activeTask) loadWorkspaceChanges(activeTask.id);
+                    if (tab === "changes" && activeTask)
+                      loadWorkspaceChanges(activeTask.id);
                     if (tab === "diff" && activeTask) handleViewDiff();
                   }}
                 >
-                  {tab === "files" ? "文件" : tab === "changes" ? `变更(${changes.length})` : tab === "diff" ? "Diff" : "终端"}
+                  {tab === "files"
+                    ? "文件"
+                    : tab === "changes"
+                    ? `变更(${changes.length})`
+                    : tab === "diff"
+                    ? "Diff"
+                    : "终端"}
                 </button>
               ))}
             </div>
@@ -617,7 +889,10 @@ export default function GitHubWorkspace() {
                     <button
                       className="w-full flex items-center gap-2 p-2 rounded text-sm hover:bg-muted transition-colors"
                       onClick={() => {
-                        const parent = currentPath.split("/").slice(0, -1).join("/");
+                        const parent = currentPath
+                          .split("/")
+                          .slice(0, -1)
+                          .join("/");
                         activeTask && loadWorkspaceFiles(activeTask.id, parent);
                       }}
                     >
@@ -630,10 +905,20 @@ export default function GitHubWorkspace() {
                       className="w-full flex items-center gap-2 p-2 rounded text-sm hover:bg-muted transition-colors text-left"
                       onClick={() => handleOpenFile(f)}
                     >
-                      {f.type === "dir" ? <Folder className="h-4 w-4 text-blue-500 shrink-0" /> : <File className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      {f.type === "dir" ? (
+                        <Folder className="h-4 w-4 text-blue-500 shrink-0" />
+                      ) : (
+                        <File className="h-4 w-4 text-muted-foreground shrink-0" />
+                      )}
                       <span className="truncate">{f.name}</span>
-                      {f.status && <Badge variant="outline" className="ml-auto text-xs shrink-0">{f.status}</Badge>}
-                      {f.type === "dir" && <ChevronRight className="h-3 w-3 ml-auto shrink-0 text-muted-foreground" />}
+                      {f.status && (
+                        <Badge variant="outline" className="ml-auto text-xs shrink-0">
+                          {f.status}
+                        </Badge>
+                      )}
+                      {f.type === "dir" && (
+                        <ChevronRight className="h-3 w-3 ml-auto shrink-0 text-muted-foreground" />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -642,7 +927,9 @@ export default function GitHubWorkspace() {
               {wsTab === "changes" && (
                 <div className="space-y-0.5">
                   {changes.length === 0 && (
-                    <p className="text-center text-muted-foreground py-8 text-sm">没有未提交的变更</p>
+                    <p className="text-center text-muted-foreground py-8 text-sm">
+                      没有未提交的变更
+                    </p>
                   )}
                   {changes.map((c) => (
                     <button
@@ -650,7 +937,16 @@ export default function GitHubWorkspace() {
                       className="w-full flex items-center gap-2 p-2 rounded text-sm hover:bg-muted transition-colors text-left"
                       onClick={() => handleViewDiff(c.path)}
                     >
-                      <Badge variant={c.status === "M" ? "default" : c.status === "A" || c.status === "?" ? "secondary" : "destructive"} className="text-xs w-6 justify-center shrink-0">
+                      <Badge
+                        variant={
+                          c.status === "M"
+                            ? "default"
+                            : c.status === "A" || c.status === "?"
+                            ? "secondary"
+                            : "destructive"
+                        }
+                        className="text-xs w-6 justify-center shrink-0"
+                      >
                         {c.status}
                       </Badge>
                       <span className="truncate">{c.path}</span>
@@ -659,20 +955,30 @@ export default function GitHubWorkspace() {
                 </div>
               )}
 
-              {wsTab === "diff" && (
-                <pre className="text-xs font-mono whitespace-pre-wrap break-all p-2 bg-muted rounded max-h-[60vh] overflow-auto">
-                  {diffContent || "(无变更)"}
-                </pre>
-              )}
+              {wsTab === "diff" && <DiffViewer diff={diffContent} />}
 
               {wsTab === "terminal" && (
                 <div className="flex flex-col h-full">
-                  <div className="flex-1 overflow-y-auto bg-gray-900 rounded-t p-2 font-mono text-xs text-green-400 min-h-[200px] max-h-[50vh]">
+                  <div
+                    ref={termRef}
+                    className="flex-1 overflow-y-auto bg-gray-900 rounded-t p-2 font-mono text-xs text-green-400 min-h-[200px] max-h-[50vh]"
+                  >
                     {termOutput.length === 0 && (
-                      <p className="text-gray-500">输入命令执行，如 npm test, ls, git log 等</p>
+                      <p className="text-gray-500">
+                        输入命令执行，如 npm test, ls, git log 等
+                      </p>
                     )}
                     {termOutput.map((line, i) => (
-                      <div key={i} className={`whitespace-pre-wrap break-all ${line.startsWith("$") ? "text-cyan-400" : line.startsWith("[错误]") || line.startsWith("[stderr]") ? "text-red-400" : ""}`}>
+                      <div
+                        key={i}
+                        className={`whitespace-pre-wrap break-all ${
+                          line.startsWith("$")
+                            ? "text-cyan-400"
+                            : line.startsWith("[错误]") || line.startsWith("[stderr]")
+                            ? "text-red-400"
+                            : ""
+                        }`}
+                      >
                         {line}
                       </div>
                     ))}
@@ -683,11 +989,22 @@ export default function GitHubWorkspace() {
                       placeholder="输入命令..."
                       value={termCmd}
                       onChange={(e) => setTermCmd(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && !termRunning && handleExecCommand()}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && !termRunning && handleExecCommand()
+                      }
                       disabled={termRunning}
                     />
-                    <Button size="sm" className="rounded-t-none h-9" onClick={handleExecCommand} disabled={termRunning || !termCmd.trim()}>
-                      {termRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                    <Button
+                      size="sm"
+                      className="rounded-t-none h-9"
+                      onClick={handleExecCommand}
+                      disabled={termRunning || !termCmd.trim()}
+                    >
+                      {termRunning ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Play className="h-3 w-3" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -695,59 +1012,85 @@ export default function GitHubWorkspace() {
             </div>
           </Card>
 
-          {/* 右侧: 文件查看 + 同步面板 */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            {/* 文件查看器/编辑器 */}
-            <Card className="flex-1 flex flex-col min-h-0">
-              <CardHeader className="py-3 px-4 border-b">
-                <div className="flex items-center gap-2">
-                  <FileCode className="h-4 w-4" />
-                  <span className="text-sm font-mono truncate">{fileContent?.path || "选择文件查看"}</span>
-                  {fileContent && (
-                    <>
-                      <Badge variant="outline" className="text-xs shrink-0">{fileContent.language}</Badge>
-                      <div className="ml-auto flex items-center gap-1 shrink-0">
-                        {editingContent !== null ? (
-                          <>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingContent(null)}>取消</Button>
-                            <Button size="sm" onClick={handleSaveFile} disabled={saving} className="gap-1">
-                              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                              保存
-                            </Button>
-                          </>
-                        ) : (
-                          <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditingContent(fileContent.content)}>
-                            <Pencil className="h-3 w-3" /> 编辑
-                          </Button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 flex-1 overflow-auto">
-                {fileContent ? (
-                  editingContent !== null ? (
-                    <textarea
-                      className="w-full h-full min-h-[300px] p-4 text-sm font-mono bg-background border-0 resize-none focus:outline-none leading-relaxed"
-                      value={editingContent}
-                      onChange={(e) => setEditingContent(e.target.value)}
-                      spellCheck={false}
-                    />
-                  ) : (
-                    <pre className="text-sm font-mono p-4 whitespace-pre-wrap break-words leading-relaxed">
-                      {fileContent.content}
-                    </pre>
-                  )
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">
-                    <div className="text-center">
-                      <Eye className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                      <p className="text-sm">点击左侧文件查看内容</p>
+          {/* ── 右侧: 编辑器 + 同步面板 ── */}
+          <div className="lg:col-span-2 flex flex-col gap-3">
+            {/* 多文件 Tab 栏 */}
+            {openFiles.length > 0 && (
+              <div className="flex items-center gap-0.5 overflow-x-auto bg-secondary/30 rounded-t-lg px-1 pt-1">
+                {openFiles.map((file, idx) => {
+                  const fileName = file.path.split("/").pop() || file.path;
+                  return (
+                    <div
+                      key={file.path}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-t text-xs cursor-pointer transition-colors shrink-0 ${
+                        idx === activeFileIdx
+                          ? "bg-background text-foreground font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      }`}
+                      onClick={() => setActiveFileIdx(idx)}
+                    >
+                      <FileCode className="h-3 w-3 shrink-0" />
+                      <span className="truncate max-w-[120px]">{fileName}</span>
+                      {file.modified && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      )}
+                      <button
+                        className="ml-1 opacity-40 hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCloseFile(idx);
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 代码编辑器 */}
+            <Card className="flex-1 flex flex-col min-h-0">
+              {activeFile ? (
+                <>
+                  <CardHeader className="py-2 px-4 border-b flex-row items-center gap-2">
+                    <FileCode className="h-4 w-4 shrink-0" />
+                    <span className="text-xs font-mono truncate flex-1">
+                      {activeFile.path}
+                    </span>
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {activeFile.language}
+                    </Badge>
+                    {activeFile.modified && (
+                      <Button
+                        size="sm"
+                        onClick={handleSaveFile}
+                        className="gap-1 h-7 shrink-0"
+                      >
+                        <Save className="h-3 w-3" />
+                        保存
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 overflow-hidden">
+                    <CodeEditor
+                      value={activeFile.content}
+                      language={activeFile.language}
+                      onChange={handleFileContentChange}
+                      onSave={(_) => handleSaveFile()}
+                      height="calc(100vh - 380px)"
+                    />
+                  </CardContent>
+                </>
+              ) : (
+                <CardContent className="flex items-center justify-center h-full min-h-[300px]">
+                  <div className="text-center text-muted-foreground">
+                    <Eye className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p className="text-sm">点击左侧文件查看和编辑内容</p>
+                    <p className="text-xs mt-1 opacity-60">支持语法高亮、代码折叠、Ctrl+S 保存</p>
                   </div>
-                )}
-              </CardContent>
+                </CardContent>
+              )}
             </Card>
 
             {/* 同步面板 */}
@@ -766,7 +1109,9 @@ export default function GitHubWorkspace() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="create_pr">创建 Pull Request (推荐)</SelectItem>
+                        <SelectItem value="create_pr">
+                          创建 Pull Request (推荐)
+                        </SelectItem>
                         <SelectItem value="push_new_branch">推送到新分支</SelectItem>
                         <SelectItem value="push_direct">直接推送到源分支</SelectItem>
                       </SelectContent>
@@ -777,7 +1122,7 @@ export default function GitHubWorkspace() {
                       <Label className="text-xs mb-1 block">新分支名</Label>
                       <Input
                         className="h-9"
-                        placeholder={`sandbox/${activeTask?.branch || "main"}-patch`}
+                        placeholder={`sandbox/${currentBranch || activeTask?.branch || "main"}-patch`}
                         value={newBranch}
                         onChange={(e) => setNewBranch(e.target.value)}
                       />
@@ -785,7 +1130,24 @@ export default function GitHubWorkspace() {
                   )}
                 </div>
                 <div>
-                  <Label className="text-xs mb-1 block">提交信息</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-xs">提交信息</Label>
+                    {/* P1: AI 生成按钮 */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                      onClick={handleGenerateCommitMsg}
+                      disabled={generatingMsg || changes.length === 0}
+                    >
+                      {generatingMsg ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      AI 生成
+                    </Button>
+                  </div>
                   <Textarea
                     rows={2}
                     placeholder="描述你的变更..."
@@ -794,13 +1156,19 @@ export default function GitHubWorkspace() {
                   />
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">{changes.length} 个文件变更</span>
+                  <span className="text-xs text-muted-foreground">
+                    {changes.length} 个文件变更
+                  </span>
                   <Button
                     onClick={handleSync}
                     disabled={syncing || changes.length === 0}
                     className="gap-2"
                   >
-                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {syncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
                     {syncing ? "同步中..." : "同步到 GitHub"}
                   </Button>
                 </div>
@@ -808,7 +1176,12 @@ export default function GitHubWorkspace() {
                 {activeTask?.pullRequestUrl && (
                   <div className="flex items-center gap-2 p-2 rounded bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
                     <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                    <a href={activeTask.pullRequestUrl} target="_blank" rel="noreferrer" className="text-sm text-green-700 dark:text-green-400 hover:underline truncate">
+                    <a
+                      href={activeTask.pullRequestUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-green-700 dark:text-green-400 hover:underline truncate"
+                    >
                       {activeTask.pullRequestUrl}
                     </a>
                   </div>
@@ -819,5 +1192,6 @@ export default function GitHubWorkspace() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   );
 }

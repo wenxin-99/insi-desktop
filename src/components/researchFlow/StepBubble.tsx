@@ -109,13 +109,25 @@ export function SearchBubble({
   baseTime: number;
 }) {
   const elapsed = fmtElapsed(step.timestamp, baseTime);
+  // 从标题提取搜索关键词
+  const query = step.title.replace(/^搜索:\s*/, '').trim();
   return (
     <StepShell category="search" elapsed={elapsed}>
-      <p className="text-[12.5px] text-foreground/80 font-mono leading-relaxed truncate">
-        {step.title}
-      </p>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-[12.5px] text-foreground/80 leading-relaxed truncate">
+            <span className="font-mono bg-blue-100/60 dark:bg-blue-900/20 px-1.5 py-0.5 rounded text-blue-700 dark:text-blue-300 text-[11px]">
+              {query || step.title}
+            </span>
+          </p>
+        </div>
+        {/* 搜索图标动画 */}
+        <div className="shrink-0 w-5 h-5 flex items-center justify-center">
+          <Search className="w-3.5 h-3.5 text-blue-400/60" />
+        </div>
+      </div>
       {step.detail && step.detail !== step.title && (
-        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{step.detail}</p>
+        <p className="text-[11px] text-muted-foreground/60 mt-1 line-clamp-1 pl-0.5">{step.detail}</p>
       )}
     </StepShell>
   );
@@ -197,11 +209,26 @@ export function ObserveBubble({
   baseTime: number;
 }) {
   const elapsed = fmtElapsed(step.timestamp, baseTime);
+  const detail = step.detail || step.title;
+  // 提取关键信息点（如果以 - 或 · 开头的行）
+  const bulletPoints = detail.split('\n')
+    .filter(line => /^[\-·•]\s/.test(line.trim()))
+    .slice(0, 3);
+
   return (
     <StepShell category="observe" elapsed={elapsed}>
-      <p className="text-[12px] text-foreground/70 leading-relaxed line-clamp-2">
-        {step.detail || step.title}
-      </p>
+      {bulletPoints.length > 0 ? (
+        <div className="space-y-0.5">
+          {bulletPoints.map((point, i) => (
+            <p key={i} className="text-[11.5px] text-foreground/70 leading-relaxed flex items-start gap-1.5">
+              <span className="text-emerald-500 mt-0.5 shrink-0">•</span>
+              <span className="line-clamp-1">{point.replace(/^[\-·•]\s*/, '')}</span>
+            </p>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[12px] text-foreground/70 leading-relaxed line-clamp-2">{detail}</p>
+      )}
     </StepShell>
   );
 }

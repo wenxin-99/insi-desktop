@@ -44,7 +44,7 @@ export interface FailedMessage {
 
 /** 引用上下文（用于图片/视频结果的后续生成） */
 export interface QuotedReference {
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'message';
   /** 缩略图 URL（图片直接用原图，视频用封面或占位图） */
   thumbnailUrl?: string;
   /** 原始图片 URL 列表（图片引用时） */
@@ -55,6 +55,10 @@ export interface QuotedReference {
   prompt?: string;
   /** 显示标签 */
   label: string;
+  /** ★ P0-3: 引用的消息内容（消息引用时） */
+  messageContent?: string;
+  /** ★ P0-3: 引用消息的角色 */
+  messageRole?: 'user' | 'assistant';
 }
 
 export interface ChatMessage {
@@ -92,8 +96,13 @@ export interface ChatMessage {
   filePackageUrl?: string;
   // Artifact 预览（对话内实时 UI 原型）
   artifact?: ArtifactData;
+  // 流式工具组件（完成后持久化到消息）
+  toolComponents?: import('@/types/toolComponent').ToolComponentData[];
   // 方案选择卡片
   solutionPicker?: SolutionPickerData;
+  // 分支（编辑/重新生成时保留历史版本）
+  _branches?: Array<{ messages: ChatMessage[]; createdAt: number }>;
+  _activeBranch?: number; // 当前激活的分支索引（0 = 当前版本，1+ = 历史分支）
 }
 
 // ═══════════ Artifact 预览 ═══════════
@@ -191,6 +200,10 @@ export interface ChatStateReturn {
   selectedPackageId: number | null;
   setSelectedPackageId: (id: number | null) => void;
   
+  // 项目上下文
+  currentProjectId: number | null;
+  setCurrentProjectId: (id: number | null) => void;
+  
   // 消息
   message: string;
   setMessage: (msg: string) => void;
@@ -265,6 +278,11 @@ export interface ChatStateReturn {
   sendStreamMessage: any;
   resetStream: () => void;
   abortStream: (() => void) | null;
+  
+  // ★ P1-1: 排队追问
+  pendingMessages: string[];
+  setPendingMessages: React.Dispatch<React.SetStateAction<string[]>>;
+  pendingMessagesRef: React.MutableRefObject<string[]>;
   setStreamOptions: any;
   
   // 研究模式
@@ -301,6 +319,8 @@ export interface ChatStateReturn {
   setRealtimeThinkingSteps: React.Dispatch<React.SetStateAction<ThinkingStep[]>>;
   thinkingMode: boolean;
   setThinkingMode: (v: boolean) => void;
+  autoMode: boolean;
+  setAutoMode: (v: boolean) => void;
   reasoningContent: string;
   setReasoningContent: React.Dispatch<React.SetStateAction<string>>;
   thinkingStage: ThinkingStageType;
@@ -321,6 +341,9 @@ export interface ChatStateReturn {
   // 轻量联网搜索
   webSearchQuery: string | null;
   setWebSearchQuery: React.Dispatch<React.SetStateAction<string | null>>;
+  // 流式工具组件
+  activeToolComponents: import('@/types/toolComponent').ToolComponentData[];
+  setActiveToolComponents: React.Dispatch<React.SetStateAction<import('@/types/toolComponent').ToolComponentData[]>>;
   // 用户位置（IP 定位 + 记忆兜底）
   userCity: string | null;
   
@@ -359,6 +382,12 @@ export interface ChatStateReturn {
   selectedAspectRatio: string | null;
   setSelectedAspectRatio: (r: string | null) => void;
   
+  // ★ Bot P0
+  activeBotId: number | null;
+  setActiveBotId: (id: number | null) => void;
+  activeBotInfo: any | null;
+  isLoadingBotInfo: boolean;
+
   // 消息编辑
   editingMessageIndex: number | null;
   setEditingMessageIndex: (i: number | null) => void;
@@ -371,6 +400,8 @@ export interface ChatStateReturn {
   imageInputRef: React.RefObject<HTMLInputElement>;
   chatInputRef: React.RefObject<ChatInputRef>;
   sendingGuardRef: React.MutableRefObject<boolean>;
+  // ★ P1-1: 排队消费回调
+  pendingSendRef: React.MutableRefObject<((text: string) => void) | null>;
   messagesContainerRef: React.RefObject<HTMLDivElement>;
   userScrolledUpRef: React.MutableRefObject<boolean>;
   hasDetectedToolCallRef: React.MutableRefObject<boolean>;

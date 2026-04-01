@@ -67,8 +67,15 @@ export function TerminalView({ terminal }: { terminal: TerminalState }) {
       <div className="flex-1 relative overflow-hidden" style={{ background: '#0d1117' }}>
         {/* CRT 纹理 */}
         <div className="term-crt-v2" />
+        <style dangerouslySetInnerHTML={{ __html: `
+          .term-scroll::-webkit-scrollbar{width:8px;height:8px}
+          .term-scroll::-webkit-scrollbar-track{background:transparent}
+          .term-scroll::-webkit-scrollbar-thumb{background:rgba(52,211,153,.2);border-radius:4px}
+          .term-scroll::-webkit-scrollbar-thumb:hover{background:rgba(52,211,153,.35)}
+          .term-scroll::-webkit-scrollbar-corner{background:transparent}
+        `}} />
 
-        <div ref={terminalRef} className="relative z-10 h-full overflow-auto p-3 font-mono text-xs leading-5 text-gray-300">
+        <div ref={terminalRef} className="term-scroll relative z-10 h-full overflow-auto p-3 font-mono text-xs leading-5 text-gray-300">
           {!hasRealContent ? (
             <div className="flex flex-col items-center justify-center h-full">
               {/* 骨架 */}

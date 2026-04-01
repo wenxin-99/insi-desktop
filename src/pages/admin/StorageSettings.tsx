@@ -14,6 +14,7 @@ interface StorageSettings {
     bucket?: string;
     region?: string;
     endpoint?: string;
+    cdnDomain?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -41,6 +42,7 @@ export default function StorageSettings() {
     bucket: "",
     region: "",
     endpoint: "",
+    cdnDomain: "",
   });
 
   const storageTypeLabels = {
@@ -62,6 +64,7 @@ export default function StorageSettings() {
         bucket: setting.config?.bucket || "",
         region: setting.config?.region || "",
         endpoint: setting.config?.endpoint || "",
+        cdnDomain: setting.config?.cdnDomain || "",
       });
     } else {
       setEditingSettings(null);
@@ -74,6 +77,7 @@ export default function StorageSettings() {
         bucket: "",
         region: "",
         endpoint: "",
+        cdnDomain: "",
       });
     }
     setTestResult(null);
@@ -95,6 +99,7 @@ export default function StorageSettings() {
           bucket: formData.bucket,
           region: formData.region,
           endpoint: formData.endpoint || undefined,
+          cdnDomain: formData.cdnDomain || undefined,
         };
       }
 
@@ -116,7 +121,7 @@ export default function StorageSettings() {
     setTestResult(null);
     try {
       const result = await testMutation.mutateAsync({ id });
-      setTestResult({ success: true, message: result.message || "连接测试成功！" });
+      setTestResult({ success: result.success, message: result.message || (result.success ? "连接测试成功！" : "连接测试失败") });
     } catch (error: any) {
       setTestResult({ success: false, message: error.message || "连接测试失败" });
     } finally {
@@ -139,11 +144,12 @@ export default function StorageSettings() {
           bucket: formData.bucket,
           region: formData.region,
           endpoint: formData.endpoint || undefined,
+          cdnDomain: formData.cdnDomain || undefined,
         };
       }
 
       const result = await testMutation.mutateAsync(data);
-      setTestResult({ success: true, message: result.message || "连接测试成功！" });
+      setTestResult({ success: result.success, message: result.message || (result.success ? "连接测试成功！" : "连接测试失败") });
     } catch (error: any) {
       setTestResult({ success: false, message: error.message || "连接测试失败" });
     } finally {
@@ -297,6 +303,30 @@ export default function StorageSettings() {
           </div>
         </div>
 
+        {/* ★ R6: 列表页测试结果反馈 */}
+        {!isDialogOpen && testResult && (
+          <div
+            className={`mt-3 p-3 rounded-lg flex items-center gap-2 text-sm ${
+              testResult.success
+                ? "bg-green-50 text-green-800"
+                : "bg-red-50 text-red-800"
+            }`}
+          >
+            {testResult.success ? (
+              <Check className="w-4 h-4 flex-shrink-0" />
+            ) : (
+              <X className="w-4 h-4 flex-shrink-0" />
+            )}
+            <span>{testResult.message}</span>
+            <button
+              onClick={() => setTestResult(null)}
+              className="ml-auto p-1 hover:bg-black/5 rounded"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
         {settings.length === 0 && (
           <div className="text-center py-12 bg-white rounded-lg shadow mt-4">
             <Cloud className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -413,6 +443,21 @@ export default function StorageSettings() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="自定义 Endpoint，留空使用默认值"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CDN 域名 (可选)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.cdnDomain}
+                      onChange={(e) =>
+                        setFormData({ ...formData, cdnDomain: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="例如: https://cdn.example.com，留空使用 Bucket 直链"
                     />
                   </div>
                 </>

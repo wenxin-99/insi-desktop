@@ -1,53 +1,15 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from "react";
-import { Button } from "@/components/ui/button";
 import { Copy, Check, Download, ChevronDown, ChevronUp, WrapText, Hash, Terminal } from "lucide-react";
 import { toast } from "sonner";
-import Prism from "prismjs";
-import "prismjs/themes/prism-tomorrow.css";
-import "prismjs/components/prism-javascript";
-import "prismjs/components/prism-typescript";
-import "prismjs/components/prism-python";
-import "prismjs/components/prism-java";
-import "prismjs/components/prism-c";
-import "prismjs/components/prism-cpp";
-import "prismjs/components/prism-csharp";
-import "prismjs/components/prism-markup";
-import "prismjs/components/prism-markup-templating";
-import "prismjs/components/prism-php";
-import "prismjs/components/prism-ruby";
-import "prismjs/components/prism-go";
-import "prismjs/components/prism-rust";
-import "prismjs/components/prism-sql";
-import "prismjs/components/prism-bash";
-import "prismjs/components/prism-json";
-import "prismjs/components/prism-yaml";
-import "prismjs/components/prism-css";
-import "prismjs/components/prism-markdown";
-import "prismjs/components/prism-docker";
-import "prismjs/components/prism-diff";
-
 
 import { VirtualCodeBlock } from "./VirtualCodeBlock";
-import { sanitizeCode } from '@/lib/sanitizeHtml';
 import { streamingHighlightToHtml } from '@/lib/streamingHighlight'; // ★ 流式轻量高亮
+import { highlightCode, normalizeLang, preloadShiki } from '@/lib/shikiHighlighter'; // ★ Shiki WASM 高亮
+import { CodeCanvas, isRunnableInBrowser, inferLanguage } from '@/components/codeCanvas';
+import { ExportDropdown } from '@/components/canvas/ExportDropdown';
 
-// 导入Prism.js核心样式和高亮行插件
-
-// 导入常用编程语言支持
-
-// 移动开发语言
-
-// 数据科学语言
-
-// 其他常用语言
-
-// 修复Prism.js的Python语言定义bug
-if (Prism.languages.python && (Prism.languages.python as any)['string-interpolation']) {
-  const stringInterp = (Prism.languages.python as any)['string-interpolation'];
-  if (stringInterp.inside && !stringInterp.inside.rest) {
-    delete (Prism.languages.python as any)['string-interpolation'];
-  }
-}
+// ★ 空闲时预热 Shiki
+if (typeof window !== 'undefined') preloadShiki();
 
 // ═══════ 语言图标和配色映射 ═══════
 const LANG_META: Record<string, { icon: string; color: string; label?: string }> = {
@@ -116,7 +78,7 @@ interface CodeBlockProps {
   language?: string;
   children: string;
   highlightLines?: string;
-  /** 流式输出中：跳过 Prism 高亮，使用纯文本渲染 */
+  /** 流式输出中：跳过语法高亮，使用轻量 tokenizer */
   streaming?: boolean;
 }
 
@@ -136,6 +98,8 @@ export const CodeBlock = memo(function CodeBlock({
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
   const [wordWrap, setWordWrap] = useState(false);
   const [showLineNumbers] = useState(typeof window !== 'undefined' && window.innerWidth >= 768);
+  const [showCanvas, setShowCanvas] = useState(false);
+  const canRun = isRunnableInBrowser(language);
   const preRef = useRef<HTMLPreElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,17 +137,15 @@ export const CodeBlock = memo(function CodeBlock({
     return () => { containerRef.current && observer.unobserve(containerRef.current); };
   }, [isVisible]);
 
-  // ═══════ Prism 高亮（流式时完全跳过） ═══════
+  // ═══════ Shiki 高亮（流式时完全跳过） ═══════
   useEffect(() => {
     if (!isVisible) return;
     if (!prismLanguage || prismLanguage === "text") { setHighlightedHtml(null); return; }
 
-    // ★ 流式输出时：不做 Prism 高亮，直接返回
+    // ★ 流式输出时：不做 Shiki 高亮，直接返回
     if (streaming) return;
 
-    // ★ XML/Markup 含 <replace>/<search> 等 AI 修改标签时跳过 Prism
-    // Prism markup 语法会将这些标签高亮为 HTML token，但 dangerouslySetInnerHTML
-    // 注入后浏览器把 <replace>/<search> 当作真实 DOM 元素解析，内容被吞掉
+    // ★ XML/Markup 含 <replace>/<search> 等 AI 修改标签时跳过
     if ((prismLanguage === 'xml' || prismLanguage === 'markup' || prismLanguage === 'html') &&
         /<(?:replace|search|replacement)\b/i.test(children)) {
       setHighlightedHtml(null);
@@ -195,18 +157,16 @@ export const CodeBlock = memo(function CodeBlock({
 
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
 
-    // 非流式：使用较短的防抖（流式结束后很快就会触发）
+    // 非流式：使用较短的防抖
     highlightTimerRef.current = setTimeout(() => {
-      try {
-        const grammar = Prism.languages[prismLanguage];
-        if (grammar) {
-          const html = Prism.highlight(children, grammar, prismLanguage);
+      highlightCode(children, prismLanguage).then(({ html, fromShiki }) => {
+        if (fromShiki && html) {
           setHighlightedHtml(html);
           lastHighlightedCodeRef.current = children;
         } else {
           setHighlightedHtml(null);
         }
-      } catch { setHighlightedHtml(null); }
+      }).catch(() => setHighlightedHtml(null));
     }, 50);
 
     return () => { highlightTimerRef.current && clearTimeout(highlightTimerRef.current); };
@@ -215,20 +175,18 @@ export const CodeBlock = memo(function CodeBlock({
   // 流式结束时立即触发高亮（从 streaming→false 的过渡）
   useEffect(() => {
     if (!streaming && isVisible && prismLanguage && prismLanguage !== "text") {
-      // ★ 同样跳过含 AI 修改标签的 XML（与主 useEffect 一致）
+      // ★ 同样跳过含 AI 修改标签的 XML
       if ((prismLanguage === 'xml' || prismLanguage === 'markup' || prismLanguage === 'html') &&
           /<(?:replace|search|replacement)\b/i.test(children)) {
         return;
       }
       if (lastHighlightedCodeRef.current !== children) {
-        try {
-          const grammar = Prism.languages[prismLanguage];
-          if (grammar) {
-            const html = Prism.highlight(children, grammar, prismLanguage);
+        highlightCode(children, prismLanguage).then(({ html, fromShiki }) => {
+          if (fromShiki && html) {
             setHighlightedHtml(html);
             lastHighlightedCodeRef.current = children;
           }
-        } catch { /* ignore */ }
+        }).catch(() => {});
       }
     }
   }, [streaming, isVisible, prismLanguage, children]);
@@ -263,28 +221,36 @@ export const CodeBlock = memo(function CodeBlock({
     } catch { toast.error("下载失败"); }
   }, [children, filePath, prismLanguage]);
 
+  // ★ 保留最后一次流式高亮结果，作为 Shiki 加载前的桥接
+  // 避免 streaming→false 时从"轻量高亮有颜色"→"escapeHtml 纯白"→"Shiki 有颜色"的色彩闪烁
+  const lastStreamingHtmlRef = useRef<string>('');
+
   // ═══════ 渲染 HTML ═══════
-  // 流式时：轻量 tokenizer 高亮（~80% Prism 精度，10-50x 更快）
-  // 非流式：Prism 完整高亮
+  // 流式时：轻量 tokenizer 高亮（~80% 精度，极快）
+  // 非流式：Shiki WASM 完整高亮（VS Code 同款）
+  // 过渡期：保留流式高亮结果作为桥接
   const renderedHtml = useMemo(() => {
     if (streaming) {
       // ★ 流式中：使用手写 tokenizer 做实时语法高亮
-      // 关键词、字符串、注释、数字全部着色，覆盖 12 种语言
-      // 不支持的语言自动回退到 escapeHtml
-      return streamingHighlightToHtml(children, prismLanguage);
+      const html = streamingHighlightToHtml(children, prismLanguage);
+      lastStreamingHtmlRef.current = html; // 保存供过渡期使用
+      return html;
     }
     if (highlightedHtml) {
-      const sanitized = sanitizeCode(highlightedHtml);
-      // ★ 安全检查：Prism xml 高亮可能产出被浏览器误解析的 HTML
-      // 如果高亮后的纯文本长度远小于源码，说明内容被吞了，回退到 escapeHtml
-      const textOnly = sanitized.replace(/<[^>]*>/g, '');
+      // ★ Shiki 输出已经是安全的 HTML
+      // 安全检查：高亮后纯文本长度远小于源码 → 内容被吞了
+      const textOnly = highlightedHtml.replace(/<[^>]*>/g, '');
       if (children.length > 10 && textOnly.length < children.length * 0.3) {
-        console.warn('[CodeBlock] Prism output too short, falling back to escapeHtml', {
+        console.warn('[CodeBlock] Shiki output too short, falling back', {
           lang: prismLanguage, srcLen: children.length, highlightTextLen: textOnly.length
         });
-        return escapeHtml(children);
+        return lastStreamingHtmlRef.current || escapeHtml(children);
       }
-      return sanitized;
+      return highlightedHtml;
+    }
+    // ★ Shiki 未就绪：用流式高亮桥接（而非跳到纯 escapeHtml）
+    if (lastStreamingHtmlRef.current) {
+      return lastStreamingHtmlRef.current;
     }
     return escapeHtml(children);
   }, [streaming, highlightedHtml, children, prismLanguage]);
@@ -436,14 +402,49 @@ export const CodeBlock = memo(function CodeBlock({
             <span className="hidden md:inline">{copied ? "已复制" : "复制"}</span>
           </button>
 
-          {/* 下载（流式时隐藏） */}
-          {!streaming && (
+          {/* ★ P2-2: 复制文件路径 */}
+          {filePath && !streaming && (
             <button
-              onClick={handleDownload}
-              className="hidden md:inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-colors duration-150"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(filePath);
+                  toast.success(`已复制路径: ${filePath}`);
+                } catch { toast.error("复制路径失败"); }
+              }}
+              className="hidden md:inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-colors"
+              title={`复制路径: ${filePath}`}
             >
-              <Download className="w-3.5 h-3.5" />
-              下载
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              <span>路径</span>
+            </button>
+          )}
+
+          {/* 导出（多格式，流式时隐藏） */}
+          {!streaming && (
+            <ExportDropdown
+              code={children}
+              language={language}
+              title={`code`}
+              rawExt={language === "python" ? "py" : language === "typescript" ? "ts" : language === "javascript" ? "js" : language}
+              buttonClassName="hidden md:inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-colors duration-150"
+            />
+          )}
+
+          {/* ★ Run 按钮（Python/JS/TS） */}
+          {canRun && !streaming && (
+            <button
+              onClick={() => setShowCanvas(!showCanvas)}
+              className={`inline-flex items-center gap-1 h-7 px-2 md:px-2.5 rounded-md text-xs font-medium transition-colors duration-150 ${
+                showCanvas
+                  ? 'bg-green-500/15 text-green-400 border border-green-500/25'
+                  : 'text-gray-400 hover:text-green-400 hover:bg-green-500/10'
+              }`}
+              style={{ border: showCanvas ? undefined : '1px solid transparent' }}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">{showCanvas ? "收起" : "Run"}</span>
             </button>
           )}
         </div>
@@ -535,7 +536,7 @@ export const CodeBlock = memo(function CodeBlock({
                     style={{
                       color: '#d4d4d8',
                       opacity: 1,
-                      // ★ 流式高亮 → Prism 高亮切换时平滑过渡
+                      // ★ 流式高亮 → Shiki 高亮切换时平滑过渡
                       transition: streaming ? 'none' : 'opacity 0.15s ease-in-out',
                     }}
                     dangerouslySetInnerHTML={{ __html: renderedHtml }}
@@ -564,6 +565,21 @@ export const CodeBlock = memo(function CodeBlock({
           </>
         )}
       </div>
+
+      {/* ★ Code Canvas 执行面板 */}
+      {showCanvas && canRun && (
+        <div className="border-t border-white/[0.06]">
+          <CodeCanvas
+            code={children}
+            language={inferLanguage(language)}
+            fileName={`code.${language === "python" ? "py" : language === "typescript" ? "ts" : "js"}`}
+            onFixError={(ctx) => {
+              window.dispatchEvent(new CustomEvent("code-canvas:fix-error", { detail: ctx }));
+            }}
+            autoExpandConsole
+          />
+        </div>
+      )}
     </div>
   );
 });

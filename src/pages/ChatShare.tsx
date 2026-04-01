@@ -84,7 +84,24 @@ export default function ChatShare() {
       {/* ── 对话内容 ── */}
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
         <div className="space-y-5">
-          {data.messages.map((msg: any, index: number) => (
+          {(typeof data.messages === 'string' ? JSON.parse(data.messages) : (data.messages || [])).map((msg: any, index: number) => {
+            // ★ 修复 React Error #31: msg.content 可能是多模态数组 [{type:"text",text:""},{type:"image_url",...}]
+            const textContent = typeof msg.content === 'string'
+              ? msg.content
+              : Array.isArray(msg.content)
+                ? msg.content.filter((p: any) => p.type === 'text' && p.text).map((p: any) => p.text).join('\n')
+                : String(msg.content || '');
+            // 提取图片 URL（用于内联显示）
+            const imageUrls: string[] = Array.isArray(msg.content)
+              ? msg.content.filter((p: any) => p.type === 'image_url' && p.image_url?.url).map((p: any) => p.image_url.url)
+              : [];
+            // 合并已有的 msg.images
+            const allImages = [
+              ...(imageUrls.map(url => ({ url, name: '图片' }))),
+              ...(msg.images || []),
+            ];
+
+            return (
             <div key={index} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}>
 
               {/* AI 头像 */}
@@ -99,7 +116,7 @@ export default function ChatShare() {
                 {msg.role === "user" ? (
                   /* 用户消息 */
                   <div className="bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap inline-block">
-                    {msg.content}
+                    {textContent || '[图片]'}
                   </div>
                 ) : (
                   /* AI 回复 */
@@ -120,15 +137,15 @@ export default function ChatShare() {
                       prose-img:rounded-lg prose-img:shadow-sm
                       [&>*:first-child]:mt-0 [&>*:last-child]:mb-0
                       text-[14px]">
-                      <SafeMarkdown>{typeof msg.content === "string" ? msg.content : ""}</SafeMarkdown>
+                      <SafeMarkdown>{textContent}</SafeMarkdown>
                     </div>
                   </div>
                 )}
 
                 {/* 图片 */}
-                {msg.images && msg.images.length > 0 && (
+                {allImages.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {msg.images.map((img: any, i: number) => (
+                    {allImages.map((img: any, i: number) => (
                       <img
                         key={i}
                         src={typeof img === "string" ? img : img?.url}
@@ -155,7 +172,7 @@ export default function ChatShare() {
                 </div>
               )}
             </div>
-          ))}
+          ); })}
         </div>
       </main>
 

@@ -60,11 +60,15 @@ export function ProgressiveImage({
   return (
     <div className="relative overflow-hidden rounded-lg bg-muted">
       {hasError ? (
-        <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-muted rounded text-muted-foreground text-xs">
-          <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        <div
+          className="flex flex-col items-center justify-center gap-2.5 py-8 px-4 bg-muted/30 rounded-xl border border-dashed border-border/60 cursor-pointer hover:bg-muted/50 transition-colors min-h-[120px]"
+          onClick={() => { setHasError(false); setCurrentSrc(src); }}
+        >
+          <svg className="w-8 h-8 text-muted-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
-          <span>图片无法加载</span>
+          <span className="text-xs text-muted-foreground/60">图片加载失败</span>
+          <span className="text-[10px] text-primary/60 hover:text-primary transition-colors">点击重试</span>
         </div>
       ) : (
         <>

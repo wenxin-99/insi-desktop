@@ -25,6 +25,13 @@ export function MessageActions({
   const { t } = useTranslation();
   const confirm = useConfirm();
   const [copied, setCopied] = useState(false);
+
+  // ★ 安全提取文本（msg.content 可能是多模态数组）
+  const safeTextContent = typeof msg.content === 'string'
+    ? msg.content
+    : Array.isArray(msg.content)
+      ? msg.content.filter((i: any) => i.type === 'text' && i.text).map((i: any) => i.text).join('\n')
+      : String(msg.content || '');
   const {
     messages, setMessages,
     selectedConversationId,
@@ -44,7 +51,7 @@ export function MessageActions({
   // ── 复制（带反馈） ──
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(displayContent || msg.content);
+      await navigator.clipboard.writeText(displayContent || safeTextContent);
       setCopied(true);
       toast.success('已复制到剪贴板', { duration: 1500 });
       setTimeout(() => setCopied(false), 2000);
@@ -71,7 +78,20 @@ export function MessageActions({
     setMessages((prev: any[]) => {
       const idx = prev.findIndex((m: any) => m === msg);
       if (idx === -1) return prev;
-      const kept = prev.slice(0, idx);
+
+      // ★ 保存当前版本（含后续消息）为分支
+      const discarded = prev.slice(idx);
+      const userMsg = { ...prev[idx] };
+      const existingBranches = userMsg._branches || [];
+
+      if (discarded.length > 1) {
+        // 有后续对话才保存为分支
+        userMsg._branches = [...existingBranches, { messages: discarded, createdAt: Date.now() }];
+      }
+
+      const kept = [...prev.slice(0, idx), userMsg];
+
+      // 检查是否有活跃的自动化/研究任务
       for (let i = kept.length - 1; i >= 0; i--) {
         const m = kept[i] as any;
         if (m.isAutomationTask && m.automationTaskId) {
@@ -83,7 +103,8 @@ export function MessageActions({
           break;
         }
       }
-      return kept;
+      // 只保留到当前用户消息（不含）
+      return prev.slice(0, idx);
     });
     setUploadedImages([]);
     setUploadedFiles([]);
@@ -119,9 +140,31 @@ export function MessageActions({
       : undefined;
     const resendFiles = (userMsg as any).files?.length ? (userMsg as any).files : undefined;
 
+    // ★ 保存当前回复为分支历史（重新生成不丢失旧回复）
     setMessages((prev: any[]) => {
       const idx = prev.findIndex((m: any) => m === msg);
       if (idx === -1) return prev;
+
+      const currentAssistant = { ...prev[idx] };
+      const discardedMessages = prev.slice(idx); // 当前回复 + 后续消息
+
+      // 找到对应的用户消息索引
+      let userIdx = -1;
+      for (let i = idx - 1; i >= 0; i--) {
+        if (prev[i].role === 'user') { userIdx = i; break; }
+      }
+
+      if (userIdx >= 0) {
+        const userMessage = { ...prev[userIdx] };
+        const existingBranches = (userMessage as any)._branches || [];
+        // 保存截断的消息（包含助手回复和后续内容）为一个分支
+        const newBranch = { messages: discardedMessages, createdAt: Date.now() };
+        userMessage._branches = [...existingBranches, newBranch];
+
+        const updated = [...prev.slice(0, userIdx), userMessage, ...prev.slice(userIdx + 1, idx)];
+        return updated;
+      }
+
       return prev.slice(0, idx);
     });
     setUploadedImages([]);
@@ -175,7 +218,7 @@ export function MessageActions({
 
   // ── 下载为 Markdown ──
   const handleDownloadMarkdown = () => {
-    const blob = new Blob([displayContent || msg.content], { type: 'text/plain' });
+    const blob = new Blob([displayContent || safeTextContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -186,6 +229,10 @@ export function MessageActions({
 
   // ── 下载为 Word ──
   const handleDownloadWord = () => {
+    // ★ 优先使用完整文档内容（文档生成类消息持久化了 documentContent）
+    const wordContent = (msg as any).documentContent || displayContent || safeTextContent;
+    const wordTitle = (msg as any).documentTitle || `对话内容-${new Date().toLocaleDateString('zh-CN')}`;
+
     let progress = 0;
     const toastId = 'generate-doc';
     toast.loading(`正在生成Word文档... 0%`, { id: toastId });
@@ -195,8 +242,8 @@ export function MessageActions({
     }, 200);
     generateDocumentMutation.mutate(
       {
-        title: `对话内容-${new Date().toLocaleDateString('zh-CN')}`,
-        content: displayContent || msg.content,
+        title: wordTitle,
+        content: wordContent,
       },
       {
         onSuccess: (result: any) => {
@@ -218,11 +265,29 @@ export function MessageActions({
 
   // ── 下载为 PDF ──
   const handleDownloadPdf = () => {
+    // ★ 优先使用完整文档内容（文档生成类消息持久化了 documentContent）
+    const pdfContent = (msg as any).documentContent || displayContent || safeTextContent;
+    const pdfTitle = (msg as any).documentTitle || `AI整理文档-${new Date().toLocaleDateString('zh-CN')}`;
+
+    // ★ 如果有现成的文档下载链接，直接下载（无需重新生成 PDF）
+    const existingUrl = (msg as any).documentUrl;
+    if (existingUrl) {
+      const a = document.createElement('a');
+      a.href = existingUrl;
+      a.download = `${pdfTitle}.docx`;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success('文档下载已开始');
+      return;
+    }
+
     const toastId = toast.loading('正在生成PDF...', { duration: Infinity });
     exportContentPdfMutation.mutate(
       {
-        content: displayContent || msg.content,
-        title: `AI整理文档-${new Date().toLocaleDateString('zh-CN')}`,
+        content: pdfContent,
+        title: pdfTitle,
       },
       {
         onSuccess: (result: any) => {
@@ -279,7 +344,7 @@ export function MessageActions({
   };
 
   return (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} opacity-100 md:opacity-0 md:group-hover:opacity-100 md:transition-opacity gap-1 mt-1`}>
+    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} opacity-100 md:opacity-0 md:group-hover:opacity-100 md:transition-opacity gap-1`}>
       {/* 复制（带 ✓ 反馈） */}
       <Button
         variant="ghost"
@@ -343,7 +408,7 @@ export function MessageActions({
             variant="ghost"
             size="sm"
             className={`h-7 w-7 p-0 ${playingTtsIndex === index ? 'text-primary animate-pulse' : ''}`}
-            onClick={() => handleTtsPlay(msg.content, index)}
+            onClick={() => handleTtsPlay(safeTextContent, index)}
             title={playingTtsIndex === index ? '停止播放' : '语音播放'}
           >
             {playingTtsIndex === index ? <Square className="h-3 w-3 fill-current" /> : <Volume2 className="h-3.5 w-3.5" />}

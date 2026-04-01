@@ -144,11 +144,22 @@ export function useTTS(packageId: number | null) {
             body: JSON.stringify({ text, packageId: packageId ?? undefined }),
             signal: abortController.signal,
           });
-          if (!resp.ok) throw new Error(`TTS ${resp.status}`);
+          if (!resp.ok) {
+            if (resp.status === 402) {
+              const data = await resp.json().catch(() => ({}));
+              throw new Error(data.error || '余额不足，无法播放语音');
+            }
+            throw new Error(`TTS ${resp.status}`);
+          }
           const arrayBuf = await resp.arrayBuffer();
           audioBuffers[index] = await audioCtx.decodeAudioData(arrayBuf);
         } catch (e: any) {
           if (e?.name === 'AbortError') throw e;
+          // ★ 余额不足：中止所有后续合成
+          if (e?.message?.includes('余额不足')) {
+            abortController.abort();
+            throw e;
+          }
           console.warn(`[TTS] sentence ${index} failed:`, e?.message);
           // 失败的句子用空占位，跳过不阻塞后续
           audioBuffers[index] = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);

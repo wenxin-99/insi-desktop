@@ -192,8 +192,15 @@ export function useSandboxSocket(taskId: number | null) {
 
   // 点击指示器（浏览器预览上的点击动画）
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number; description: string; key: number } | null>(null);
+  // ★ P1④：AI 光标位置 + 操作预告
+  const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
+  const [agentActionPreview, setAgentActionPreview] = useState<{ action: string; description: string } | null>(null);
   // 截图超时提示
   const [screenshotTimeout, setScreenshotTimeout] = useState(false);
+  // ★ 关键操作确认
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number;
+  } | null>(null);
 
   // 处理沙箱事件
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -379,6 +386,28 @@ export function useSandboxSocket(taskId: number | null) {
           setScreenshotTimeout(false);
         }
         break;
+
+      case "cursor_move" as any:
+        setCursorPosition({ x: event.payload.x, y: event.payload.y });
+        setTimeout(() => setCursorPosition(prev =>
+          prev?.x === event.payload.x && prev?.y === event.payload.y ? null : prev
+        ), 3000);
+        break;
+
+      case "agent_action_preview" as any:
+        setAgentActionPreview({ action: event.payload.action, description: event.payload.description });
+        setTimeout(() => setAgentActionPreview(null), 3000);
+        break;
+
+      case "confirmation_required" as any:
+        setPendingConfirmation({
+          action: event.payload.action || "",
+          description: event.payload.description || "",
+          screenshot: event.payload.screenshot || "",
+          timeoutMs: event.payload.timeoutMs || 60000,
+          timestamp: Date.now(),
+        });
+        break;
     }
   }, []);
 
@@ -471,5 +500,11 @@ export function useSandboxSocket(taskId: number | null) {
     // 新增：点击指示器 + 截图超时状态
     clickIndicator,
     screenshotTimeout,
+    // ★ 关键操作确认
+    pendingConfirmation,
+    setPendingConfirmation,
+    // ★ P1④：AI 光标 + 操作预告
+    cursorPosition,
+    agentActionPreview,
   };
 }

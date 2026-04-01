@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Download, Loader2, CheckCircle2, XCircle, Clock, Share2, Film, Play, RefreshCw } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useDownload } from "../hooks/useDownload";
+import { VideoPlayer } from "./VideoPlayer";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { formatRelativeTime } from "@/lib/timeUtils";
@@ -102,6 +103,7 @@ export function VideoTaskCard({ taskId, prompt, initialStatus = "pending" }: Vid
   // ── 进度环 SVG 参数 ──
   const ringR = 28, ringC = 2 * Math.PI * ringR;
   const ringOffset = ringC - (progress / 100) * ringC;
+  const gradId = `prog-grad-${taskId}`; // ★ 唯一 ID 避免多卡片冲突
 
   return (
     <div className="relative max-w-md w-full animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -144,14 +146,14 @@ export function VideoTaskCard({ taskId, prompt, initialStatus = "pending" }: Vid
                 <svg width="68" height="68" viewBox="0 0 68 68" className="-rotate-90">
                   <circle cx="34" cy="34" r={ringR} fill="none" stroke="currentColor" strokeWidth="3" className="text-border/30" />
                   <circle cx="34" cy="34" r={ringR} fill="none" strokeWidth="3"
-                    stroke="url(#prog-grad)"
+                    stroke={`url(#${gradId})`}
                     strokeLinecap="round"
                     strokeDasharray={ringC}
                     strokeDashoffset={ringOffset}
                     className="transition-all duration-700 ease-out"
                   />
                   <defs>
-                    <linearGradient id="prog-grad" x1="0" y1="0" x2="1" y2="1">
+                    <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0%" stopColor="#3b82f6" />
                       <stop offset="100%" stopColor="#8b5cf6" />
                     </linearGradient>
@@ -182,6 +184,22 @@ export function VideoTaskCard({ taskId, prompt, initialStatus = "pending" }: Vid
                   {error}
                 </div>
               )}
+              {/* ★ 重试按钮：复制 prompt 到输入框 */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => {
+                  navigator.clipboard.writeText(`生成一段视频：${prompt}`).then(() => {
+                    toast.success('视频提示词已复制到剪贴板，请粘贴发送重试');
+                  }).catch(() => {
+                    toast.info('请重新描述视频需求进行重试');
+                  });
+                }}
+              >
+                <RefreshCw className="h-3 w-3" />
+                复制提示词重试
+              </Button>
             </div>
           )}
 
@@ -192,15 +210,13 @@ export function VideoTaskCard({ taskId, prompt, initialStatus = "pending" }: Vid
               <p className="text-sm text-muted-foreground line-clamp-1">{prompt}</p>
 
               {/* 视频播放器 */}
-              <div className="relative rounded-xl overflow-hidden bg-black group">
-                <video
+              <div className="rounded-xl overflow-hidden">
+                <VideoPlayer
                   src={videoUrl}
-                  controls
-                  className="w-full aspect-video"
-                  playsInline
-                >
-                  您的浏览器不支持视频播放
-                </video>
+                  autoPlay
+                  loop
+                  onDownload={handleDownload}
+                />
               </div>
 
               {/* 操作按钮 */}

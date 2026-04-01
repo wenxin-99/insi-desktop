@@ -26,6 +26,10 @@ interface UseVoiceChatHandlersParams {
   transcribeAudioMutation: any;
   /** 每轮对话完成后的回调（用于记录用量、扣费） */
   onRoundComplete?: () => void;
+  /** 外部传入的 system prompt — 仅供 Gemini Live 使用，STT 管线由服务端 pipeline 注入人格 */
+  systemPrompt?: string;
+  /** 伴侣模式绑定的音色 ID，优先于 selectedVoice */
+  companionVoiceId?: string | null;
 }
 
 export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
@@ -34,7 +38,7 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
     selectedModelId, selectedPackageId, selectedVoicePackageId, selectedVoice,
     conversationId, setConversationId,
     isMutedRef, voicePackages, transcribeAudioMutation,
-    onRoundComplete,
+    onRoundComplete, systemPrompt, companionVoiceId,
   } = params;
 
   const [state, setState] = useState<VoiceChatStatus>("idle");
@@ -178,20 +182,13 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
           const chatMessages = [
             {
               role: "system" as const,
-              content: `你是一个友好的语音助手。请用简洁、口语化的方式回答问题。回答尽量简短精炼，适合语音播放。不要使用 Markdown 格式、代码块或特殊符号（禁止使用星号、井号、下划线、反引号等 Markdown 符号，这些会被语音直接读出来）。
-
-今天是 ${new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}，现在是 ${new Date().getFullYear()} 年。
-
-情绪关怀：
-- 关注用户语气中的情绪变化。如果用户听起来低落、疲惫或焦虑，语气自然变柔和，先表达理解再回答问题
-- 温和而非激昂，"听起来你不太容易"比"加油你可以的"更好
-- 如果用户表达出很痛苦或想伤害自己，温和地说"如果你现在很难受，可以拨打心理援助热线400-161-9995，随时都有人听你说"
-
-关于时效性的处理原则：
-- 对于 2024 年底之前发生的事，你有完整知识，可以直接准确回答
-- 对于 2025 年至今的事情，你的信息不完整，回答时要明确说"根据我到 2025 年初的信息"或"这个问题你可以搜索最新资料"，不要凭空猜测
-- 如果用户问的是技术选型、历史知识、通用建议等不依赖最新信息的问题，直接正常回答即可，不需要反复强调信息截止时间
-- 不要在每个回答里都加"我的训练数据截止"这样的废话，只在真正涉及时效性信息时才提醒`,
+              // ★ STT 管线走 /api/chat/stream → 服务端 promptBuild.ts 已负责注入人格/伴侣/记忆
+              // 这里只发语音格式指令，避免双重注入
+              content: `这是一次语音对话。请遵守以下语音输出规范：
+- 用简洁、口语化的方式回答，回答尽量简短精炼，适合语音播放
+- 禁止使用 Markdown 格式、代码块或特殊符号（星号、井号、下划线、反引号等会被语音直接读出来）
+- 每次回答1-3句话为主
+今天是 ${new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}。`,
             },
             ...messages.filter(m => m.role !== 'system').slice(-10).map(m => ({
               role: m.role as "user" | "assistant",
@@ -205,10 +202,11 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
             headers,
             credentials: "include",
             body: JSON.stringify({
-              modelId: selectedModelId || 1,
+              modelId: selectedModelId || 0,
               messages: chatMessages,
               conversationId,
               packageId: selectedPackageId,
+              skipBilling: true, // ★ 语音对话由 voicePlan.recordUsage 统一计费，跳过 Pipeline 扣费
             }),
           });
 
@@ -235,11 +233,33 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
             }
           }
 
-          const activePkg = selectedVoicePackageId
-            ? voicePackages?.find((p: any) => p.id === selectedVoicePackageId)
-            : null;
-          const activeVoice = activePkg?.ttsVoice || selectedVoice || undefined;
-          const activeTtsProvider = activePkg?.ttsProvider || undefined;
+          const activePlan = selectedVoicePackageId
+      ? voicePackages?.find((p: any) => p.id === selectedVoicePackageId)
+      : null;
+
+    let activeVoice: string | undefined;
+    let activeTtsProvider: string | undefined;
+
+    if (companionVoiceId) {
+      // 优先级1: 伴侣绑定音色
+      activeVoice = companionVoiceId;
+      const found = activePlan?.availableVoices?.find((v: any) => v.voiceId === companionVoiceId);
+      activeTtsProvider = found?.provider || (
+        companionVoiceId.startsWith("BV") ? "volcengine" :
+        companionVoiceId.startsWith("long") ? "dashscope" : "volcengine"
+      );
+    } else if (selectedVoice && activePlan) {
+      // 优先级2: 用户手选音色（验证在方案范围内）
+      const found = activePlan.availableVoices?.find((v: any) => v.voiceId === selectedVoice);
+      activeVoice = found ? selectedVoice : (activePlan.defaultVoice || undefined);
+      activeTtsProvider = found?.provider || activePlan.ttsProvider || undefined;
+    } else if (activePlan) {
+      // 优先级3: 方案默认音色
+      activeVoice = activePlan.defaultVoice || undefined;
+      activeTtsProvider = activePlan.ttsProvider || undefined;
+    } else {
+      activeVoice = selectedVoice || undefined;
+    }
 
           const player = new SimpleTTSPlayer(
             () => { setState("idle"); clearSafetyTimeout(); },
@@ -347,7 +367,7 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
       console.error("[VoiceChat] Mic error:", error);
       toast.error("无法访问麦克风，请检查权限设置");
     }
-  }, [language, messages, selectedModelId, selectedPackageId, conversationId, selectedVoicePackageId, selectedVoice, voicePackages, transcribeAudioMutation, getAuthHeaders, unlockAudio, setSafetyTimeout, clearSafetyTimeout, isMutedRef, setMessages, setConversationId, onRoundComplete]);
+  }, [language, messages, selectedModelId, selectedPackageId, conversationId, selectedVoicePackageId, selectedVoice, voicePackages, transcribeAudioMutation, getAuthHeaders, unlockAudio, setSafetyTimeout, clearSafetyTimeout, isMutedRef, setMessages, setConversationId, onRoundComplete, companionVoiceId]);
 
   // 取消录音
   const cancelListening = useCallback(() => {
@@ -384,6 +404,7 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
   }, [clearSafetyTimeout]);
 
   // ★ T8-1: VAD 打断 — 在 speaking 状态时启动麦克风 VAD 监听
+  // ★ 优化：提高阈值 + 语音频段滤波 + 确认延迟（防止风吹草动误触发）
   useEffect(() => {
     if (state !== 'speaking') {
       // 非 speaking 状态，停止 VAD
@@ -394,6 +415,7 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
 
     let cancelled = false;
     let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+    let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
       try {
@@ -404,24 +426,40 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
 
         const vadHandle = startVAD(
           vadStream,
-          // onSpeechStart: 用户开始说话 → 暂停 TTS
+          // onSpeechStart: 用户开始说话 → 延迟 250ms 确认后再暂停 TTS
+          // （VAD 的 speechStartFrames=6 已经提供了 300ms 的初步过滤，
+          //   这里再加 250ms 确认窗口，总共需要 ~550ms 持续语音才会打断）
           () => {
             if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
-            if (ttsPlayerRef.current && !ttsPlayerRef.current.paused) {
-              console.log('[VoiceChat] T8-1: User interrupt detected, pausing TTS');
-              ttsPlayerRef.current.pause();
-            }
+            // 不立即暂停，先等 250ms 确认用户确实在说话
+            if (confirmTimer) clearTimeout(confirmTimer);
+            confirmTimer = setTimeout(() => {
+              // 再次检查 VAD 是否仍然检测到语音（排除瞬间噪音）
+              if (vadHandleRef.current?.isSpeaking() &&
+                  ttsPlayerRef.current && !ttsPlayerRef.current.paused) {
+                console.log('[VoiceChat] T8-1: User interrupt confirmed, pausing TTS');
+                ttsPlayerRef.current.pause();
+              }
+            }, 250);
           },
-          // onSpeechEnd: 用户停止说话 → 等 1.5s，如果没有再说话则恢复 TTS
+          // onSpeechEnd: 用户停止说话 → 等 2s，如果没有再说话则恢复 TTS
           () => {
+            // 取消未执行的确认（说话不到 250ms 就停了，视为噪音）
+            if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
             resumeTimer = setTimeout(() => {
               if (ttsPlayerRef.current && ttsPlayerRef.current.paused && !ttsPlayerRef.current.stopped) {
                 console.log('[VoiceChat] T8-1: Brief noise ended, resuming TTS');
                 ttsPlayerRef.current.resume();
               }
-            }, 1500);
+            }, 2000);
           },
-          { threshold: 30, speechStartFrames: 3, speechEndFrames: 10, intervalMs: 50 },
+          {
+            threshold: 45,           // ★ 提高固定阈值（原 30）
+            speechStartFrames: 6,    // ★ 需要 6 帧（300ms）持续语音（原 3 = 150ms）
+            speechEndFrames: 12,     // ★ 12 帧（600ms）静音才算说完（原 10）
+            intervalMs: 50,
+            noiseMultiplier: 2.5,    // ★ 新增：自适应噪声基底 × 2.5 倍率
+          },
         );
 
         if (cancelled) { vadHandle.stop(); vadStream.getTracks().forEach(t => t.stop()); return; }
@@ -434,6 +472,7 @@ export function useVoiceChatHandlers(params: UseVoiceChatHandlersParams) {
     return () => {
       cancelled = true;
       if (resumeTimer) clearTimeout(resumeTimer);
+      if (confirmTimer) clearTimeout(confirmTimer);
     };
   }, [state]);
 

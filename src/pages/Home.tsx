@@ -436,6 +436,19 @@ export default function Home() {
             <Sparkles className="h-5 w-5 text-blue-600" />
             <span className="font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">paper insights</span>
           </div>
+          <div className="flex items-center justify-center gap-4 mb-2 text-sm">
+            <Link href="/privacy" className="text-muted-foreground hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+              隐私政策
+            </Link>
+            <span className="text-muted-foreground/40">|</span>
+            <Link href="/terms" className="text-muted-foreground hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+              服务条款
+            </Link>
+            <span className="text-muted-foreground/40">|</span>
+            <Link href="/help" className="text-muted-foreground hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+              帮助中心
+            </Link>
+          </div>
           <p className="text-muted-foreground">© 2026 paper insights. 由🐟币驱动</p>
           <a
             href="https://beian.miit.gov.cn/"

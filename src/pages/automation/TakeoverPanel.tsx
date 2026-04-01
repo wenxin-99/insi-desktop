@@ -65,14 +65,15 @@ export default function TakeoverPanel({
   // 监听服务端接管状态变更
   useEffect(() => {
     if (!socket) return;
-    const handleTakeoverStatus = (data: any) => {
-      if (data.taskId === taskId) {
-        setActive(data.active);
-        onTakeoverChange?.(data.active);
+    // ★ P2 修复：服务端通过 sandbox_event 广播，需匹配 type
+    const handleSandboxEvent = (event: any) => {
+      if (event.type === "takeover_status" && event.taskId === taskId) {
+        setActive(event.payload.active);
+        onTakeoverChange?.(event.payload.active);
       }
     };
-    socket.on("takeover_status", handleTakeoverStatus);
-    return () => { socket.off("takeover_status", handleTakeoverStatus); };
+    socket.on("sandbox_event", handleSandboxEvent);
+    return () => { socket.off("sandbox_event", handleSandboxEvent); };
   }, [socket, taskId, onTakeoverChange]);
 
   // ═══ 切换接管 ═══
@@ -103,15 +104,12 @@ export default function TakeoverPanel({
     }
   }, [active, taskId, apiFetch, onTakeoverChange]);
 
-  // ═══ 发送反馈 ═══
+  // ═══ 发送反馈（通过 Socket，与 BrowserPreview 统一） ═══
   const sendFeedback = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+    if (!text.trim() || !socket) return;
     setSubmittingFeedback(true);
     try {
-      await apiFetch(`/tasks/${taskId}/takeover/feedback`, {
-        method: "POST",
-        body: JSON.stringify({ feedback: text.trim() }),
-      });
+      socket.emit("takeover_feedback", { taskId, feedback: text.trim() });
       setFeedbackSent(true);
       setFeedbackText("");
       // 3秒后隐藏反馈区域
@@ -124,7 +122,7 @@ export default function TakeoverPanel({
     } finally {
       setSubmittingFeedback(false);
     }
-  }, [taskId, apiFetch]);
+  }, [taskId, socket]);
 
   // ═══ 快捷反馈 ═══
   const handleQuickFeedback = useCallback((value: string) => {

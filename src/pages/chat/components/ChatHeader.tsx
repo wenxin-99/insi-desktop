@@ -3,20 +3,25 @@
  * 
  * P0: 使用共享 FilePreviewSheet，消除重复的 Sheet 代码
  * 移除对 showThinkingPanel 的复用
+ * ★ P2: 分享对话按钮 + ShareDialog
  */
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Link } from 'wouter';
-import { Menu, Plus, Brain, Headphones } from 'lucide-react';
+import { Menu, Plus, Brain, Headphones, Zap, Share2 } from 'lucide-react';
 import { FishCoinBalance } from '@/components/FishCoinBalance';
 import { FilePreviewSheet } from '@/components/FilePreviewSheet';
+import { ShareDialog } from '@/components/ShareDialog';
 import { toast } from 'sonner';
 import type { PreviewFile } from '@/components/FilePreviewPanel';
 
 interface ChatHeaderProps {
   selectedConversationId: number | null;
   selectedPackageId: number | null;
+  conversationTitle?: string;
   thinkingMode: boolean;
+  autoMode: boolean;
   previewFile: PreviewFile | null;
   modelPackages: any[] | undefined;
   balance: any;
@@ -26,6 +31,7 @@ interface ChatHeaderProps {
   setSelectedModelId: (id: null) => void;
   setShowMobileSidebar: (v: boolean) => void;
   setThinkingMode: (v: boolean) => void;
+  setAutoMode: (v: boolean) => void;
   setPreviewFile: (v: null) => void;
   handleCreateConversation: () => void;
   refetchBalance: () => void;
@@ -36,7 +42,9 @@ interface ChatHeaderProps {
 export function ChatHeader({
   selectedConversationId,
   selectedPackageId,
+  conversationTitle,
   thinkingMode,
+  autoMode,
   previewFile,
   modelPackages,
   balance,
@@ -46,12 +54,15 @@ export function ChatHeader({
   setSelectedModelId,
   setShowMobileSidebar,
   setThinkingMode,
+  setAutoMode,
   setPreviewFile,
   handleCreateConversation,
   refetchBalance,
   updatePackageMutation,
   t,
 }: ChatHeaderProps) {
+
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   const handlePackageChange = async (value: string) => {
     if (!value) return;
@@ -94,13 +105,32 @@ export function ChatHeader({
   const thinkingToggle = selectedPackageId && (
     <div
       className={`flex items-center justify-between px-3 py-2.5 mx-1 mt-1 mb-1 rounded-md cursor-pointer transition-colors border ${thinkingMode ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-700' : 'hover:bg-accent border-transparent'}`}
-      onPointerDown={(e) => { e.preventDefault(); setThinkingMode(!thinkingMode); }}
+      onPointerDown={(e) => { e.preventDefault(); setThinkingMode(!thinkingMode); if (!thinkingMode) setAutoMode(false); }}
     >
       <div className="flex items-center gap-2">
         <Brain className={`h-4 w-4 ${thinkingMode ? 'text-purple-500' : 'text-muted-foreground'}`} />
         <span className={`text-sm font-medium ${thinkingMode ? 'text-purple-700 dark:text-purple-300' : ''}`}>深度思考</span>
       </div>
       <div className={`w-8 h-4.5 rounded-full transition-colors flex items-center ${thinkingMode ? 'bg-purple-500 justify-end' : 'bg-gray-300 dark:bg-gray-600 justify-start'}`}>
+        <div className="w-3.5 h-3.5 bg-white rounded-full mx-0.5 shadow-sm" />
+      </div>
+    </div>
+  );
+
+  // ★ Auto Mode 开关
+  const autoToggle = selectedPackageId && (
+    <div
+      className={`flex items-center justify-between px-3 py-2.5 mx-1 mb-1 rounded-md cursor-pointer transition-colors border ${autoMode ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700' : 'hover:bg-accent border-transparent'}`}
+      onPointerDown={(e) => { e.preventDefault(); setAutoMode(!autoMode); if (!autoMode) setThinkingMode(false); }}
+    >
+      <div className="flex items-center gap-2">
+        <Zap className={`h-4 w-4 ${autoMode ? 'text-blue-500' : 'text-muted-foreground'}`} />
+        <div className="flex flex-col">
+          <span className={`text-sm font-medium ${autoMode ? 'text-blue-700 dark:text-blue-300' : ''}`}>Auto</span>
+          <span className="text-[10px] text-muted-foreground leading-tight">自动选择模型</span>
+        </div>
+      </div>
+      <div className={`w-8 h-4.5 rounded-full transition-colors flex items-center ${autoMode ? 'bg-blue-500 justify-end' : 'bg-gray-300 dark:bg-gray-600 justify-start'}`}>
         <div className="w-3.5 h-3.5 bg-white rounded-full mx-0.5 shadow-sm" />
       </div>
     </div>
@@ -158,6 +188,7 @@ export function ChatHeader({
                 <SelectContent className="w-[280px]">
                   {packageItems}
                   {thinkingToggle}
+                  {autoToggle}
                 </SelectContent>
               </Select>
             </div>
@@ -173,6 +204,13 @@ export function ChatHeader({
                 <Headphones className="h-4 w-4" />
               </Button>
             </Link>
+            {/* 移动端分享 */}
+            {selectedConversationId && (
+              <Button size="sm" variant="ghost" className="md:hidden h-8 w-8 p-0 flex-shrink-0"
+                onClick={() => setShowShareDialog(true)} title="分享对话">
+                <Share2 className="h-4 w-4" />
+              </Button>
+            )}
             {/* 移动端新对话 */}
             <Button
               onClick={handleCreateConversation} size="sm"
@@ -185,6 +223,14 @@ export function ChatHeader({
           </div>
 
           <div className="hidden md:flex items-center gap-2 w-full md:w-auto flex-wrap md:flex-nowrap">
+            {/* 分享对话 */}
+            {selectedConversationId && (
+              <Button size="sm" variant="outline" className="hidden md:flex items-center gap-1.5 h-8"
+                onClick={() => setShowShareDialog(true)} title="分享对话">
+                <Share2 className="h-3.5 w-3.5" />
+                <span className="text-xs">分享</span>
+              </Button>
+            )}
             {/* 语音对话入口 */}
             <Link href={selectedConversationId ? `/voice-chat?conversationId=${selectedConversationId}&from=chat` : "/voice-chat?from=chat"}>
               <Button size="sm" variant="outline" className="hidden md:flex items-center gap-1.5 h-8" title="语音对话">
@@ -218,6 +264,7 @@ export function ChatHeader({
               <SelectContent className="w-[280px]">
                 {packageItems}
                 {thinkingToggle}
+                {autoToggle}
               </SelectContent>
             </Select>
             <Button onClick={handleCreateConversation} disabled={createConversationIsPending} className="hidden md:flex">
@@ -231,6 +278,14 @@ export function ChatHeader({
             />
           </div>
         </div>
+
+      {/* ★ 分享对话弹窗 */}
+      <ShareDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        conversationId={selectedConversationId}
+        conversationTitle={conversationTitle}
+      />
     </>
   );
 }

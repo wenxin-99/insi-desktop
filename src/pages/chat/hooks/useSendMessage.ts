@@ -22,6 +22,8 @@ export function useSendMessage(state: ChatStateReturn) {
     t, messages, setMessages, nextMsgId,
     selectedConversationId, setSelectedConversationId,
     selectedModelId, selectedPackageId,
+    currentProjectId,
+    activeBotId,
     message, setMessage,
     uploadedImages, setUploadedImages,
     uploadedFiles, setUploadedFiles,
@@ -44,7 +46,7 @@ export function useSendMessage(state: ChatStateReturn) {
     startThinking, onStreamStart, onStreamComplete,
     messagesEndRef, chatInputRef,
     sendingGuardRef, userScrolledUpRef,
-    hasDetectedToolCallRef, streamedContentRef,
+    hasDetectedToolCallRef, streamedContentRef, reasoningContentRef,
     streamingForConvIdRef, selectedConvIdRef,
     operationLogsRef, initialLoadDoneRef,
     lastFileNameRef, previewOpenedRef,
@@ -62,6 +64,7 @@ export function useSendMessage(state: ChatStateReturn) {
     isTtsAutoMode, streamingTts,
     playingTtsIndex, setPlayingTtsIndex,
     thinkingMode,
+    autoMode,
     currentThinkingSteps,
     userCity,
     selectedAspectRatio,
@@ -128,6 +131,8 @@ export function useSendMessage(state: ChatStateReturn) {
               modelId: selectedModelId || currentUser?.preferredModelId || chatModels?.[0]?.id || 1,
               title: '新对话',
               packageId: selectedPackageId || undefined,
+              projectId: currentProjectId || undefined,  // ★ P0: 自动关联到当前项目
+              botId: activeBotId || undefined,  // ★ Bot P0: 关联自定义 Bot
             },
             { onSuccess: resolve, onError: reject }
           );
@@ -182,6 +187,20 @@ export function useSendMessage(state: ChatStateReturn) {
     }
 
     // ═══════════ 8. 流式传输 ═══════════
+    // ★ 先清空所有流式共享状态，防止新消息渲染时读到上一轮的旧步骤/推理内容
+    //   （onStart 回调要等 SSE 连接建立后才触发，中间有数秒间隙会闪现旧数据）
+    setOperationLogs([]);
+    operationLogsRef.current = [];
+    setCurrentThinkingSteps([]);
+    setRealtimeThinkingSteps([]);
+    setReasoningContent('');
+    reasoningContentRef.current = '';
+    setThinkingStage('idle');
+    state.setWebSearchQuery(null);
+    state.setImageGenStage(null);
+    state.setImageGenProgress(null);
+    state.setThinkingSummary('');
+
     setIsStreamingMessage(true);
     streamingForConvIdRef.current = conversationId;
     setThinkingStartTime(Date.now());
@@ -221,6 +240,7 @@ export function useSendMessage(state: ChatStateReturn) {
       thinkingMode,
       userCity,
       selectedAspectRatio,
+      autoMode,
     );
   };
 

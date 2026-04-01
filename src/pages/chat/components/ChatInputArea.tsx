@@ -26,8 +26,9 @@ import {
   Mic, Bot, FileText, FileSpreadsheet, File, FileType,
   FileCode, Zap, Search, StopCircle, Square, Plus,
 } from 'lucide-react';
-import { useRef } from 'react';
-import { useState as useStateKB } from 'react';
+import { useRef, useState } from 'react';
+import { SlashCommandMenu } from '@/components/SlashCommandMenu';
+import type { SlashCommand } from '@/components/SlashCommandMenu';
 import type { SelectedKB } from '@/components/KnowledgeBasePicker';
 import type { SelectedGitHubRepo } from '@/components/GitHubRepoPicker';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +47,8 @@ import { UploadedFiles } from "./inputArea/UploadedFiles";
 import { TaskStatusPanel } from "./inputArea/TaskStatusPanel";
 import { InputToolbar } from "./inputArea/InputToolbar";
 import { QuotedRefPreview } from "./inputArea/QuotedRefPreview";
+import { MentionMenu } from "./inputArea/MentionMenu";
+import { CsvPreviewCard } from "@/components/CsvPreviewCard";
 
 export function ChatInputArea({
   state, handleSendMessage, handleStopStreaming,
@@ -76,14 +79,32 @@ export function ChatInputArea({
     conversations,
     streamingTts,
     quotedRef, setQuotedRef,
+    pendingMessages, setPendingMessages,
   } = state;
 
   // ★ 知识库选择状态
-  const [selectedKB, setSelectedKB] = useStateKB<SelectedKB | null>(null);
+  const [selectedKB, setSelectedKB] = useState<SelectedKB | null>(null);
   // ★ GitHub 仓库绑定状态
-  const [selectedGitHubRepo, setSelectedGitHubRepo] = useStateKB<SelectedGitHubRepo | null>(null);
+  const [selectedGitHubRepo, setSelectedGitHubRepo] = useState<SelectedGitHubRepo | null>(null);
   // ★ 附件菜单状态
-  const [attachMenuOpen, setAttachMenuOpen] = useStateKB(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  // ★ 斜杠命令面板
+  const [slashMenuVisible, setSlashMenuVisible] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  // ★ P0-3: @ 引用历史消息面板
+  const [mentionMenuVisible, setMentionMenuVisible] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+
+  const handleSlashSelect = (cmd: SlashCommand) => {
+    setSlashMenuVisible(false);
+    if (cmd.action) {
+      cmd.action();
+    } else if (cmd.prefix && chatInputRef.current) {
+      chatInputRef.current.setInput(cmd.prefix);
+      chatInputRef.current.focus();
+      setHasInputContent(true);
+    }
+  };
 
   const { voiceSettings } = useVoiceInputSettings();
 
@@ -156,6 +177,17 @@ export function ChatInputArea({
         const videoContext = `[引用视频 #${quotedRef.videoTaskId}${quotedRef.prompt ? `：${quotedRef.prompt}` : ''}] `;
         setQuotedRef(null);
         handleSendMessage(ghPrefix + videoContext + (text || ''));
+        return;
+      }
+      // ★ P0-3: 引用消息 → 注入到 prompt（截断过长内容）
+      if (quotedRef.type === 'message' && quotedRef.messageContent) {
+        const roleLabel = quotedRef.messageRole === 'user' ? '用户' : 'AI';
+        const truncatedContent = quotedRef.messageContent.length > 2000
+          ? quotedRef.messageContent.slice(0, 2000) + '\n...(内容已截断)'
+          : quotedRef.messageContent;
+        const msgContext = `[引用${roleLabel}的消息：\n${truncatedContent}\n]\n\n`;
+        setQuotedRef(null);
+        handleSendMessage(ghPrefix + msgContext + (text || ''));
         return;
       }
       setQuotedRef(null);
@@ -295,9 +327,39 @@ export function ChatInputArea({
             <QuotedRefPreview quotedRef={quotedRef} onRemove={() => setQuotedRef(null)} />
           )}
 
+          {/* ★ P1-1: 排队追问提示 */}
+          {pendingMessages.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-400 animate-in fade-in duration-200">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>排队中 · {pendingMessages.length} 条消息等待发送</span>
+              <button
+                onClick={() => setPendingMessages([])}
+                className="ml-auto text-[10px] px-1.5 py-0.5 rounded hover:bg-amber-500/20 transition-colors"
+              >
+                清空队列
+              </button>
+            </div>
+          )}
+
           {/* 已上传文件 */}
           <UploadedFiles uploadedImages={uploadedImages} uploadedFiles={uploadedFiles}
             onRemoveImage={removeImage} onRemoveFile={removeFile} onRetryUpload={retryUpload} />
+
+          {/* ★ CSV/Excel 即时预览 */}
+          {uploadedFiles
+            .filter((f: any) => f.file && /\.(csv|tsv|xlsx?|xlsm)$/i.test(f.name))
+            .map((f: any) => (
+              <CsvPreviewCard
+                key={f.name}
+                file={f.file}
+                onInjectPrompt={(prompt) => {
+                  chatInputRef.current?.setInput(prompt);
+                  chatInputRef.current?.focus();
+                  setHasInputContent(true);
+                }}
+              />
+            ))
+          }
 
             {/* LaTeX实时预览 - 使用 chatInputRef 获取当前输入值 */}
             {chatInputRef.current?.getValue()?.trim() && (
@@ -390,12 +452,65 @@ export function ChatInputArea({
                 </button>
 
                 {/* textarea */}
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 relative">
+                  {/* ★ 斜杠命令面板 */}
+                  <SlashCommandMenu
+                    query={slashQuery}
+                    visible={slashMenuVisible}
+                    onSelect={handleSlashSelect}
+                    onClose={() => setSlashMenuVisible(false)}
+                  />
+                  {/* ★ P0-3: @ 引用历史消息面板 */}
+                  <MentionMenu
+                    visible={mentionMenuVisible}
+                    query={mentionQuery}
+                    messages={messages}
+                    onSelect={(ref) => {
+                      // 清除输入框中的 @query 部分
+                      const current = chatInputRef.current?.getValue() || '';
+                      const lastAt = current.lastIndexOf('@');
+                      if (lastAt >= 0) {
+                        chatInputRef.current?.setInput(current.slice(0, lastAt));
+                      }
+                      setQuotedRef(ref);
+                      setMentionMenuVisible(false);
+                      chatInputRef.current?.focus();
+                    }}
+                    onClose={() => setMentionMenuVisible(false)}
+                  />
                   <ChatInput
                     ref={chatInputRef}
                     placeholder={conversationLimitInfo.isAtLimit ? "对话已达消息上限，请开启新对话" : undefined}
                     disabled={conversationLimitInfo.isAtLimit}
-                    onChange={(v) => setHasInputContent(v.trim().length > 0)}
+                    onChange={(v) => {
+                      setHasInputContent(v.trim().length > 0);
+                      // ★ 斜杠命令检测
+                      if (v.startsWith('/') && v.length <= 20 && !v.includes('\n')) {
+                        setSlashQuery(v);
+                        setSlashMenuVisible(true);
+                        setMentionMenuVisible(false);
+                      }
+                      // ★ P0-3: @ 引用历史消息检测（避免 email 地址误触发）
+                      else {
+                        const lastAt = v.lastIndexOf('@');
+                        // 只在 @ 前面是空格/换行/行首时触发，排除 email
+                        const charBefore = lastAt > 0 ? v[lastAt - 1] : '';
+                        const isWordBoundary = lastAt === 0 || charBefore === ' ' || charBefore === '\n';
+                        if (lastAt >= 0 && isWordBoundary) {
+                          const afterAt = v.slice(lastAt + 1);
+                          if (!afterAt.includes('\n') && afterAt.length <= 30) {
+                            setMentionQuery(afterAt);
+                            setMentionMenuVisible(true);
+                            setSlashMenuVisible(false);
+                          } else {
+                            setMentionMenuVisible(false);
+                          }
+                        } else {
+                          setSlashMenuVisible(false);
+                          setMentionMenuVisible(false);
+                        }
+                      }
+                    }}
                     onFileUpload={(files) => {
                       for (const f of files) {
                         if (!f.url && f.file) handleFileUpload(f.file);
@@ -404,6 +519,13 @@ export function ChatInputArea({
                       setHasInputContent(false);
                     }}
                     onSend={(payload: SendMessagePayload) => {
+                      // ★ P1-1: 流式期间排队而非中断
+                      if (isStreamingMessage && payload.text?.trim()) {
+                        setPendingMessages(prev => [...prev, payload.text]);
+                        chatInputRef.current?.clear();
+                        setHasInputContent(false);
+                        return;
+                      }
                       if (isStreamingMessage) handleStopStreaming();
                       if (payload.attachments) {
                         if (payload.attachments.images.length > 0) setUploadedImages(payload.attachments.images);
@@ -454,7 +576,15 @@ export function ChatInputArea({
 
                 {/* 发送/停止按钮 */}
                 <Button
-                  onClick={() => { if (isStreamingMessage) handleStopStreaming(); else handleSend(); }}
+                  onClick={() => {
+                    if (isStreamingMessage) {
+                      handleStopStreaming();
+                      // ★ P1-1: 手动停止时清空排队消息（用户主动中断 = 不再需要后续）
+                      if (pendingMessages.length > 0) setPendingMessages([]);
+                    } else {
+                      handleSend();
+                    }
+                  }}
                   disabled={isUploading || (!isStreamingMessage && !hasInputContent && uploadedImages.length === 0 && uploadedFiles.length === 0 && !quotedRef)}
                   size="icon"
                   className={cn(

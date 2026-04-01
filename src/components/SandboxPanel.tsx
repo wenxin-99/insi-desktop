@@ -16,6 +16,8 @@ import { BrowserPreview } from "./sandboxPanel/BrowserPreview";
 import { CodeEditor } from "./sandboxPanel/CodeEditor";
 import { TerminalView } from "./sandboxPanel/TerminalView";
 
+import { TaskInstructionInput } from "./sandboxPanel/TaskInstructionInput";
+
 interface SandboxPanelProps {
   browser: BrowserState;
   code: CodeState;
@@ -27,6 +29,9 @@ interface SandboxPanelProps {
   socket?: Socket | null;
   clickIndicator?: { x: number; y: number; description: string; key: number } | null;
   screenshotTimeout?: boolean;
+  pendingConfirmation?: { action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number } | null;
+  onConfirmationResolved?: () => void;
+  cursorPosition?: { x: number; y: number } | null;
 }
 
 const tabs = [
@@ -40,6 +45,8 @@ export default function SandboxPanel({
   activeTab, onTabChange,
   isConnected, taskId, socket,
   clickIndicator, screenshotTimeout,
+  pendingConfirmation, onConfirmationResolved,
+  cursorPosition,
 }: SandboxPanelProps) {
   const [uptime, setUptime] = useState(0);
   useEffect(() => {
@@ -163,10 +170,13 @@ export default function SandboxPanel({
         <div className="hud-corner hud-corner-bl" style={{ borderColor: activeTab_.color }} />
         <div className="hud-corner hud-corner-br" style={{ borderColor: activeTab_.color }} />
 
-        {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} clickIndicator={clickIndicator} screenshotTimeout={screenshotTimeout} />}
+        {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} clickIndicator={clickIndicator} screenshotTimeout={screenshotTimeout} pendingConfirmation={pendingConfirmation} onConfirmationResolved={onConfirmationResolved} cursorPosition={cursorPosition} />}
         {activeTab === "code" && <CodeEditor code={code} />}
         {activeTab === "terminal" && <TerminalView terminal={terminal} />}
       </div>
+
+      {/* ★ P1⑥：任务中途指令输入 */}
+      <TaskInstructionInput taskId={taskId ?? null} socket={socket ?? null} isRunning={!!taskId && isConnected} />
     </div>
   );
 }

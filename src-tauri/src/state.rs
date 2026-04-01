@@ -63,15 +63,19 @@ pub struct AppState {
     pub os_version: String,
     /// 客户端版本
     pub client_version: String,
-    /// 是否已获得用户授权（截屏权限等）
+    /// 是否已获得用户授权（服务端确认的权限状态）
     pub authorized: RwLock<bool>,
     /// 控制 WebSocket 连接生命周期
     pub should_connect: RwLock<bool>,
+    /// 客户端请求授权标记（由 IPC authorize 命令设置，心跳循环中发送给服务端）
+    pub pending_authorize: RwLock<bool>,
+    /// 客户端请求撤销标记
+    pub pending_revoke: RwLock<bool>,
 }
 
 impl AppState {
     pub fn new() -> Arc<Self> {
-        let sys = sysinfo::System::new_all();
+        let _sys = sysinfo::System::new_all();
         let os_version = sysinfo::System::long_os_version()
             .unwrap_or_else(|| "unknown".into());
 
@@ -94,6 +98,8 @@ impl AppState {
             client_version: env!("CARGO_PKG_VERSION").into(),
             authorized: RwLock::new(false),
             should_connect: RwLock::new(false),
+            pending_authorize: RwLock::new(false),
+            pending_revoke: RwLock::new(false),
         })
     }
 }

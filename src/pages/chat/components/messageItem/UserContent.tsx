@@ -105,7 +105,25 @@ export function UserContent({
       ? (msg as any).images.map((img: any) => (typeof img === 'string' ? { url: img, name: '图片' } : img))
       : undefined;
     const resendFiles = (msg as any).files?.length ? (msg as any).files : undefined;
-    setMessages((prev: any[]) => prev.slice(0, index));
+    
+    // ★ 保留分支历史：编辑消息时保存当前版本 + 后续对话到分支
+    setMessages((prev: any[]) => {
+      const discarded = prev.slice(index); // 当前消息 + 后续所有消息
+      const currentMsg = { ...prev[index] };
+      const existingBranches = currentMsg._branches || [];
+      
+      // 保存旧版本到分支
+      if (discarded.length >= 1) {
+        const newBranch = { messages: discarded, createdAt: Date.now() };
+        currentMsg._branches = [...existingBranches, newBranch];
+      }
+
+      // 截断到编辑消息之前，不包含当前消息（新版本会通过 handleSendMessage 重新生成）
+      // 但保留分支数据在前一条消息上不可行，所以我们需要另一种方式
+      // → 方案：截断到当前消息之前，分支数据跟着新发的消息走
+      const kept = prev.slice(0, index);
+      return kept;
+    });
     setUploadedImages([]);
     setUploadedFiles([]);
     setEditingMessageIndex(null);
@@ -114,7 +132,7 @@ export function UserContent({
 
   return (
     <div
-      className="space-y-2 text-[15px] leading-relaxed"
+      className="space-y-2 text-[15px] leading-relaxed bg-primary/[0.06] dark:bg-primary/[0.08] rounded-2xl rounded-tr-sm px-3.5 py-2.5 md:px-4 md:py-3"
       style={{ wordWrap: 'break-word', overflowWrap: 'break-word', wordBreak: 'break-word', maxWidth: '100%' }}
     >
       {/* 图片缩略图 */}
@@ -181,12 +199,6 @@ export function UserContent({
           displayContent.replace(/\[文件: [^\]]+\]/g, '').trim() === ''
         ) && (
         <div className="space-y-2">
-          {/* 图片描述：始终显示，超过50字自动截断 */}
-          {msg.images && msg.images.length > 0 && (
-            <div className="border-b border-border pb-2">
-              <span className="text-sm font-medium text-muted-foreground">图片描述：</span>
-            </div>
-          )}
           {(() => {
             const cleanedContent = displayContent.replace(/!\[[^\]]*\]\([^)]+\)/g, '').trim();
             const isLong = cleanedContent.length > 50;

@@ -9,8 +9,8 @@
  *   <InlineStepBlock text="审视了代码结构" detail={...} />
  */
 
-import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import { AiLogo } from '@/components/AiLogo';
 import { cn } from '@/lib/utils';
 
@@ -200,6 +200,23 @@ type TimelineItem =
   | { kind: 'thinking'; data: ThinkingStepItem };
 
 export function InlineStepList({ operations, thinkingSteps = [], isLive = false, onFileClick }: InlineStepListProps) {
+  const [collapsed, setCollapsed] = useState(!isLive);
+  const prevIsLiveRef = useRef(isLive);
+
+  // ★ 流式结束瞬间自动折叠
+  useEffect(() => {
+    if (prevIsLiveRef.current && !isLive) {
+      // isLive 从 true → false，说明流式刚结束
+      setCollapsed(true);
+    }
+    prevIsLiveRef.current = isLive;
+  }, [isLive]);
+
+  // ★ 流式开始时展开
+  useEffect(() => {
+    if (isLive) setCollapsed(false);
+  }, [isLive]);
+
   // 1. 过滤隐藏的内部操作
   const visible = operations.filter(op => !isHidden(op.action, op.target));
 
@@ -239,8 +256,38 @@ export function InlineStepList({ operations, thinkingSteps = [], isLive = false,
 
   if (timeline.length === 0) return null;
 
+  // ★ 完成态折叠：只显示摘要行
+  if (collapsed && !isLive) {
+    // 提取关键数字摘要
+    const stepCount = timeline.filter(i => i.kind === 'operation').length;
+    return (
+      <div className="my-1">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="flex items-center gap-1.5 py-0.5 text-[13px] text-muted-foreground/60 hover:text-muted-foreground transition-colors group cursor-pointer"
+        >
+          <AiLogo size="xs" />
+          <span>已完成 {stepCount} 个步骤</span>
+          <ChevronRight className="h-3 w-3 opacity-40 group-hover:opacity-70 transition-opacity" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-0.5 my-1">
+      {/* 折叠按钮（展开态，仅完成后显示） */}
+      {!isLive && (
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="flex items-center gap-1 mb-0.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
+        >
+          <ChevronDown className="h-3 w-3" />
+          <span>收起步骤</span>
+        </button>
+      )}
       {timeline.map((item) => {
         if (item.kind === 'thinking') {
           // 思考步骤 → 对话式过渡文字（普通文本段落）

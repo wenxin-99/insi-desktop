@@ -1,17 +1,18 @@
 /**
- * ChatToolbar — 顶部工具栏（方案 A）
+ * ChatToolbar — 顶部工具栏
  *
- * 布局: [≡ 对话历史] .... [套餐选择] .... [语音] [+ 新对话]
- * 移动端: [工作台] [≡] .... [套餐] .... [+]
+ * 布局: [≡ 侧边栏] .... [套餐选择] .... [语音] [人格] [+ 新对话]
+ * 移动端: [≡] .... [套餐] .... [+]
  */
 import { Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { FilePreviewSheet } from '@/components/FilePreviewSheet';
 import { useSidebar } from '@/components/ui/sidebar';
-import { Menu, Plus, Headphones, Brain, LayoutDashboard } from 'lucide-react';
+import { PanelLeft, Plus, Headphones, Brain, Zap, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ChatStateReturn } from '../types';
+import { ProjectSelector } from './ProjectSelector';
 
 interface ChatToolbarProps {
   state: ChatStateReturn;
@@ -22,10 +23,11 @@ export function ChatToolbar({ state, handleCreateConversation }: ChatToolbarProp
   const {
     selectedConversationId, setSelectedConversationId,
     selectedPackageId, setSelectedPackageId,
+    currentProjectId, setCurrentProjectId,
     setSelectedModelId,
-    setShowMobileSidebar,
     modelPackages,
     thinkingMode, setThinkingMode,
+    autoMode, setAutoMode,
     previewFile, setPreviewFile,
     previewFiles, activePreviewIndex, setActivePreviewIndex,
     updatePackageMutation,
@@ -56,14 +58,33 @@ export function ChatToolbar({ state, handleCreateConversation }: ChatToolbarProp
   const ThinkingToggle = () =>
     selectedPackageId ? (
       <div
-        className={`flex items-center justify-between px-3 py-2.5 mx-1 mt-1 mb-1 rounded-md cursor-pointer transition-colors border ${thinkingMode ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-700' : 'hover:bg-accent border-transparent'}`}
-        onPointerDown={(e) => { e.preventDefault(); setThinkingMode(!thinkingMode); }}
+        className={`flex items-center justify-between px-3 py-2.5 mx-1 mt-1 mb-0.5 rounded-md cursor-pointer transition-colors border ${thinkingMode ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-700' : 'hover:bg-accent border-transparent'}`}
+        onPointerDown={(e) => { e.preventDefault(); setThinkingMode(!thinkingMode); if (!thinkingMode) setAutoMode(false); }}
       >
         <div className="flex items-center gap-2">
           <Brain className={`h-4 w-4 ${thinkingMode ? 'text-purple-500' : 'text-muted-foreground'}`} />
           <span className={`text-sm font-medium ${thinkingMode ? 'text-purple-700 dark:text-purple-300' : ''}`}>深度思考</span>
         </div>
         <div className={`w-8 h-4.5 rounded-full transition-colors flex items-center ${thinkingMode ? 'bg-purple-500 justify-end' : 'bg-gray-300 dark:bg-gray-600 justify-start'}`}>
+          <div className="w-3.5 h-3.5 bg-white rounded-full mx-0.5 shadow-sm" />
+        </div>
+      </div>
+    ) : null;
+
+  const AutoToggle = () =>
+    selectedPackageId ? (
+      <div
+        className={`flex items-center justify-between px-3 py-2.5 mx-1 mb-1 rounded-md cursor-pointer transition-colors border ${autoMode ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700' : 'hover:bg-accent border-transparent'}`}
+        onPointerDown={(e) => { e.preventDefault(); setAutoMode(!autoMode); if (!autoMode) setThinkingMode(false); }}
+      >
+        <div className="flex items-center gap-2">
+          <Zap className={`h-4 w-4 ${autoMode ? 'text-blue-500' : 'text-muted-foreground'}`} />
+          <div className="flex flex-col">
+            <span className={`text-sm font-medium leading-tight ${autoMode ? 'text-blue-700 dark:text-blue-300' : ''}`}>Auto 模式</span>
+            <span className="text-[10px] text-muted-foreground leading-tight">根据问题自动选模型</span>
+          </div>
+        </div>
+        <div className={`w-8 h-4.5 rounded-full transition-colors flex items-center ${autoMode ? 'bg-blue-500 justify-end' : 'bg-gray-300 dark:bg-gray-600 justify-start'}`}>
           <div className="w-3.5 h-3.5 bg-white rounded-full mx-0.5 shadow-sm" />
         </div>
       </div>
@@ -82,6 +103,7 @@ export function ChatToolbar({ state, handleCreateConversation }: ChatToolbarProp
           </SelectItem>
         ))}
       <ThinkingToggle />
+      <AutoToggle />
     </>
   );
 
@@ -89,14 +111,19 @@ export function ChatToolbar({ state, handleCreateConversation }: ChatToolbarProp
     <div className="flex items-center justify-between h-12 px-2 md:px-4 flex-shrink-0 border-b border-border/30">
       {/* ── 左侧 ── */}
       <div className="flex items-center gap-1">
-        {/* 移动端：打开全局导航侧边栏 */}
-        <Button variant="ghost" size="sm" className="md:hidden h-8 w-8 p-0" onClick={() => setGlobalSidebarOpen(true)} title="导航">
-          <LayoutDashboard className="h-4 w-4" />
+        {/* ★ 移动端侧边栏按钮（桌面端由 SidebarHeader 内置按钮控制） */}
+        <Button variant="ghost" size="sm" className="md:hidden h-8 w-8 p-0"
+          onClick={() => setGlobalSidebarOpen(true)}
+          title="对话列表"
+        >
+          <PanelLeft className="h-[18px] w-[18px]" />
         </Button>
-        {/* ★ 对话历史抽屉按钮 — 所有屏幕可用 */}
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowMobileSidebar(true)} title="对话历史">
-          <Menu className="h-[18px] w-[18px]" />
-        </Button>
+        {/* ★ P0: 项目选择器 */}
+        <ProjectSelector
+          conversationId={selectedConversationId}
+          currentProjectId={currentProjectId}
+          onProjectChange={setCurrentProjectId}
+        />
       </div>
 
       {/* ── 中间：套餐选择 ── */}
@@ -105,6 +132,7 @@ export function ChatToolbar({ state, handleCreateConversation }: ChatToolbarProp
           <div className="font-medium truncate flex items-center gap-1.5">
             {selectedPackageId ? modelPackages?.find((p: any) => p.id === selectedPackageId)?.displayName || '选择套餐' : '选择套餐'}
             {thinkingMode && <Brain className="h-3 w-3 text-purple-500 animate-pulse flex-shrink-0" />}
+            {autoMode && <Zap className="h-3 w-3 text-blue-500 flex-shrink-0" />}
           </div>
         </SelectTrigger>
         <SelectContent className="w-[280px]"><PackageOptions /></SelectContent>
@@ -122,6 +150,12 @@ export function ChatToolbar({ state, handleCreateConversation }: ChatToolbarProp
         <FilePreviewSheet previewFile={previewFile} onClose={() => setPreviewFile(null)} mobile
           files={previewFiles} activeFileIndex={activePreviewIndex}
           onFileSelect={(i) => { setActivePreviewIndex(i); const f = previewFiles[i]; if (f) setPreviewFile(f); }} />
+        {/* ★ 人格配置入口 */}
+        <Link href="/settings/persona">
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="人格配置">
+            <Wand2 className="h-3.5 w-3.5" />
+          </Button>
+        </Link>
         <Button onClick={handleCreateConversation} disabled={createConversationMutation.isPending}
           size="sm" className="h-8 md:h-9 px-3 md:px-4" title="新对话">
           <Plus className="h-4 w-4 md:mr-1.5" />

@@ -22,7 +22,17 @@ export function useMessageBuilder(state: ChatStateReturn) {
 
     if ((effectiveImages.length > 0 && !shouldIgnoreUploadedImages) || effectiveFiles.length > 0) {
       const contentParts: any[] = [];
-      if (enhancedMessage.trim()) contentParts.push({ type: 'text', text: enhancedMessage });
+      if (enhancedMessage.trim()) {
+        contentParts.push({ type: 'text', text: enhancedMessage });
+      } else {
+        // ★ 纯文件/图片上传无文字时注入默认指令，避免 AI 收到空 text
+        const hasFiles = effectiveFiles.length > 0;
+        const hasImages = effectiveImages.length > 0 && !shouldIgnoreUploadedImages;
+        const fallback = hasFiles && hasImages
+          ? '请分析这些文件和图片的内容'
+          : hasFiles ? '请分析这个文件' : '请分析这张图片';
+        contentParts.push({ type: 'text', text: fallback });
+      }
       if (!shouldIgnoreUploadedImages) {
         effectiveImages.forEach((img: any) => contentParts.push({ type: 'image_url', image_url: { url: img.url } }));
       }

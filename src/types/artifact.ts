@@ -8,7 +8,7 @@
 export interface ArtifactData {
   id: string;
   title: string;
-  language: 'html' | 'react' | 'vue' | 'css' | 'javascript';
+  language: 'html' | 'react' | 'vue' | 'css' | 'javascript' | 'mermaid' | 'svg';
   code: string;
   description?: string;
   version: number;

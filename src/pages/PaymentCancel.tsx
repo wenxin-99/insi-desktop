@@ -50,7 +50,7 @@ export default function PaymentCancel() {
           <div className="flex flex-col gap-3">
             <Button
               className="w-full"
-              onClick={() => setLocation('/pricing')}
+              onClick={() => setLocation('/recharge')}
             >
               <CreditCard className="w-4 h-4 mr-2" />
               重新选择产品

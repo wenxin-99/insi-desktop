@@ -170,7 +170,7 @@ export function PlaybookDetail({ id, onBack }: Props) {
           <button onClick={() => setShowRatingDialog(true)} className="px-3 py-2 border rounded-xl text-sm hover:bg-muted flex items-center gap-1.5">
             <Star className="w-4 h-4" /> 评分
           </button>
-          {!pb.isOfficial && (
+          {(pb.isOwner || pb.isAdmin) && !pb.isOfficial && (
             <>
               <button onClick={() => navigate(`/playbooks/${id}/edit`)} className="px-3 py-2 border rounded-xl text-sm hover:bg-muted flex items-center gap-1.5">
                 <Edit className="w-4 h-4" /> 编辑

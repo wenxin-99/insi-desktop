@@ -36,6 +36,10 @@ export default function ForumLogin() {
       });
 
       if (response.data.success && response.data.token) {
+        // ★ 清除上一个账号的聊天状态残留，防止新账号继承旧对话
+        localStorage.removeItem('selectedConversationId');
+        localStorage.removeItem('preferredPackageId');
+        
         // 保存 token 到 localStorage
         localStorage.setItem('auth_token', response.data.token);
         
@@ -60,9 +64,12 @@ export default function ForumLogin() {
         
         setSuccess(true);
         
-        // 登录成功，延迟跳转以显示成功消息
+        // 登录成功，延迟跳转
         setTimeout(() => {
-          window.location.href = "/";
+          // ★ 支持 redirect 参数（微信绑定等场景）
+          const params = new URLSearchParams(window.location.search);
+          const redirect = params.get("redirect");
+          window.location.href = redirect || "/";
         }, 1500);
       } else {
         setError(response.data.message || "登录失败");
@@ -187,6 +194,23 @@ export default function ForumLogin() {
           >
             <Github className="h-5 w-5" />
             使用 GitHub 账号登录
+          </Button>
+
+          {/* 微信登录 */}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full h-12 text-base font-medium gap-2 border-green-300 hover:bg-green-50 text-green-700 mt-3"
+            onClick={() => {
+              // 自动判断：微信内走 H5 授权，PC 走扫码
+              const redirect = new URLSearchParams(window.location.search).get("redirect") || "/";
+              window.location.href = `/api/wechat/oauth/login?redirect=${encodeURIComponent(redirect)}`;
+            }}
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05a6.329 6.329 0 01-.253-1.82c0-3.54 3.196-6.421 7.134-6.421.26 0 .514.017.767.042C16.078 4.773 12.73 2.188 8.691 2.188zm-2.67 4.401c.56 0 1.015.46 1.015 1.028 0 .566-.455 1.027-1.015 1.027-.56 0-1.016-.46-1.016-1.027 0-.568.456-1.028 1.016-1.028zm5.339 0c.559 0 1.015.46 1.015 1.028 0 .566-.456 1.027-1.015 1.027-.56 0-1.016-.46-1.016-1.027 0-.568.456-1.028 1.016-1.028zM16.93 8.69c-3.37 0-6.107 2.507-6.107 5.587 0 3.082 2.738 5.588 6.107 5.588.68 0 1.334-.103 1.953-.283a.707.707 0 01.588.08l1.313.768a.27.27 0 00.138.045c.133 0 .24-.113.24-.24 0-.06-.024-.12-.04-.177l-.268-1.021a.49.49 0 01.175-.546c1.502-1.103 2.46-2.737 2.46-4.544.001-3.08-2.737-5.587-6.106-5.587h-.453zm-2.773 3.14c.46 0 .833.376.833.843 0 .466-.373.843-.833.843a.838.838 0 01-.833-.843c0-.467.373-.843.833-.843zm4.637 0c.46 0 .834.376.834.843 0 .466-.374.843-.834.843a.838.838 0 01-.833-.843c0-.467.373-.843.833-.843z"/>
+            </svg>
+            微信登录
           </Button>
 
           <div className="mt-6 text-center space-y-3">

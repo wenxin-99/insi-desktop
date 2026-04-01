@@ -74,11 +74,12 @@ export function AutomationSandbox({ taskId }: { taskId: number }) {
   const handleTakeoverClick = (e: React.MouseEvent<HTMLImageElement>) => {
     if (!takeoverActive || !imgRef.current) return;
     e.preventDefault();
-    const rect = imgRef.current.getBoundingClientRect();
-    const x = Math.round((e.clientX - rect.left) * (1920 / rect.width));
-    const y = Math.round((e.clientY - rect.top) * (1080 / rect.height));
+    const img = imgRef.current;
+    const rect = img.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * (img.naturalWidth || 1280));
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * (img.naturalHeight || 720));
     sandbox.socket?.emit("takeover_action", { taskId, action: "click", payload: { x, y } });
-    imgRef.current.focus();
+    img.focus();
   };
 
   const handleTakeoverKeyDown = (e: React.KeyboardEvent) => {

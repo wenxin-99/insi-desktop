@@ -1,33 +1,7 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import Prism from "prismjs";
-import "prismjs/themes/prism-tomorrow.css";
-import "prismjs/components/prism-javascript";
-import "prismjs/components/prism-typescript";
-import "prismjs/components/prism-python";
-import "prismjs/components/prism-java";
-import "prismjs/components/prism-c";
-import "prismjs/components/prism-cpp";
-import "prismjs/components/prism-csharp";
-import "prismjs/components/prism-markup";
-import "prismjs/components/prism-markup-templating";
-import "prismjs/components/prism-php";
-import "prismjs/components/prism-ruby";
-import "prismjs/components/prism-go";
-import "prismjs/components/prism-rust";
-import "prismjs/components/prism-sql";
-import "prismjs/components/prism-bash";
-import "prismjs/components/prism-json";
-import "prismjs/components/prism-yaml";
-import "prismjs/components/prism-css";
-import "prismjs/components/prism-markdown";
-import "prismjs/components/prism-docker";
-import "prismjs/components/prism-diff";
+import { useState, useRef, useMemo, useCallback } from "react";
+import { streamingHighlightToHtml } from '@/lib/streamingHighlight';
 
-
-
-// 导入Prism.js核心样式
-
-// 导入常用编程语言支持
+// 虚拟滚动代码块 — 使用轻量语法高亮
 
 interface VirtualCodeBlockProps {
   code: string;
@@ -53,7 +27,6 @@ export function VirtualCodeBlock({
   const [scrollTop, setScrollTop] = useState(0);
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const codeRef = useRef<HTMLElement>(null);
 
   // 将代码分割成行
   const lines = useMemo(() => code.split('\n'), [code]);
@@ -84,20 +57,10 @@ export function VirtualCodeBlock({
     setScrollTop(target.scrollTop);
   }, []);
 
-  // 对可见代码应用语法高亮
-  useEffect(() => {
-    if (!codeRef.current || !language || language === "text") return;
-
-    try {
-      // 使用Prism高亮可见代码
-      Prism.highlightElement(codeRef.current);
-    } catch (error) {
-      console.warn(`Failed to highlight code with Prism: ${language}`, error);
-    }
-  }, [visibleLines, language, startIndex, endIndex]);
-
-  // 生成可见代码文本
-  const visibleCode = visibleLines.join('\n');
+  // 生成可见代码的高亮 HTML（同步轻量 tokenizer，虚拟滚动无性能问题）
+  const highlightedVisibleCode = useMemo(() => {
+    return streamingHighlightToHtml(visibleLines.join('\n'), language);
+  }, [visibleLines, language]);
 
   return (
     <div
@@ -179,9 +142,11 @@ export function VirtualCodeBlock({
               background: 'transparent',
             }}
           >
-            <code ref={codeRef} className={`language-${language}`}>
-              {visibleCode}
-            </code>
+            <code
+              className={`language-${language}`}
+              style={{ color: '#d4d4d8' }}
+              dangerouslySetInnerHTML={{ __html: highlightedVisibleCode }}
+            />
           </pre>
         </div>
       </div>

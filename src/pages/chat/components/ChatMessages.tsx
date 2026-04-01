@@ -184,10 +184,16 @@ export const ChatMessages = memo(
         // 流式传输：最后一条助手消息使用 streamedContent
         const isLastAssistant =
           realIndex === messages.length - 1 && msg.role === 'assistant';
+        // ★ 修复 React Error #31: msg.content 可能是多模态数组
+        const rawContent = typeof msg.content === 'string'
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.filter((item: any) => item.type === 'text' && item.text).map((item: any) => item.text).join('\n')
+            : String(msg.content || '');
         const displayContent =
           isLastAssistant && isStreaming && streamedContent
             ? streamedContent
-            : msg.content;
+            : rawContent;
 
         const displayMsg = {
           ...msg,

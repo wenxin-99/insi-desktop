@@ -162,6 +162,13 @@ export default function VPSSandboxPanel({ taskId, userId, isOpen, onClose }: VPS
 
   return (
     <div className={panelClass}>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .vps-scroll::-webkit-scrollbar{width:8px;height:8px}
+        .vps-scroll::-webkit-scrollbar-track{background:transparent}
+        .vps-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px}
+        .vps-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.25)}
+        .vps-scroll::-webkit-scrollbar-corner{background:transparent}
+      `}} />
       {/* 头部工具栏 */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-900 text-white shrink-0">
         <div className="flex items-center gap-2">
@@ -222,7 +229,7 @@ export default function VPSSandboxPanel({ taskId, userId, isOpen, onClose }: VPS
               </div>
               <div
                 ref={terminalRef}
-                className="flex-1 overflow-auto bg-gray-950 p-3 font-mono text-xs leading-5"
+                className="vps-scroll flex-1 overflow-auto bg-gray-950 p-3 font-mono text-xs leading-5"
               >
                 {terminalLines.length === 0 ? (
                   <div className="text-gray-500 text-center mt-8">等待 Agent 执行命令...</div>
@@ -280,7 +287,7 @@ export default function VPSSandboxPanel({ taskId, userId, isOpen, onClose }: VPS
                 </div>
                 <div
                   ref={terminalRef}
-                  className="flex-1 overflow-auto bg-gray-950 p-3 font-mono text-xs leading-5"
+                  className="vps-scroll flex-1 overflow-auto bg-gray-950 p-3 font-mono text-xs leading-5"
                 >
                   {terminalLines.length === 0 ? (
                     <div className="text-gray-500 text-center mt-8">等待 Agent 执行命令...</div>
@@ -352,7 +359,7 @@ function renderDiffView(
         {currentDiff.filePath}
       </div>
       {/* Diff 内容 */}
-      <div className="flex-1 overflow-auto font-mono text-xs">
+      <div className="vps-scroll flex-1 overflow-auto font-mono text-xs">
         <table className="w-full border-collapse">
           <tbody>
             {diffLines.map((line, i) => {

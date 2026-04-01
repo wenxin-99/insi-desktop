@@ -48,7 +48,7 @@ export function MessageList({
     isLoadingMessages,
     showScrollToBottom, setShowScrollToBottom,
     activeResearchTaskId, previewFile,
-    isSidebarOpen, isHistoryCollapsed,
+    isSidebarOpen,
     messagesEndRef, messagesContainerRef, chatInputRef,
     userScrolledUpRef,
     conversations,
@@ -153,7 +153,7 @@ export function MessageList({
           >
             <div className={cn(
               "space-y-1 md:space-y-1 md:mx-auto md:w-full transition-all duration-300 ease-in-out pb-2",
-              (activeResearchTaskId || previewFile) && isSidebarOpen && !isHistoryCollapsed
+              (activeResearchTaskId || previewFile) && isSidebarOpen
                 ? "md:max-w-[750px]"
                 : "md:max-w-[900px]"
             )}>
@@ -202,15 +202,28 @@ export function MessageList({
               )}
 
               {/* ═══════ 消息列表（★ 统一渲染：流式+完成态同一 DOM 节点） ═══════ */}
+              <div className={isLoadingMessages ? 'opacity-0' : 'animate-in fade-in duration-300'}>
               {messages.map((msg, index) => {
                 if (msg.role === 'system') return null;
 
                 const isLastAssistant = index === messages.length - 1 && msg.role === 'assistant';
                 const isStreamingThis = isStreamingMessage && isLastAssistant;
                 // ★ 流式期间使用 streamedContent，完成态使用 msg.content
+                // ★ 修复 React Error #31: msg.content 可能是多模态数组 [{type:"text",text:"..."}]
+                const rawContent = (() => {
+                  const c = msg.content;
+                  if (typeof c === 'string') return c;
+                  if (Array.isArray(c)) {
+                    return c
+                      .filter((item: any) => item.type === 'text' && item.text)
+                      .map((item: any) => item.text)
+                      .join('\n');
+                  }
+                  return String(c || '');
+                })();
                 const displayContent = isStreamingThis
                   ? (streamedContent || '')
-                  : (isLastAssistant && !msg.content && streamedContent) ? streamedContent : msg.content;
+                  : (isLastAssistant && !rawContent && streamedContent) ? streamedContent : rawContent;
 
                 return (
                   <MessageItem
@@ -228,6 +241,7 @@ export function MessageList({
                   />
                 );
               })}
+              </div>{/* fade-in wrapper end */}
 
               {/* ═══════ 滚动锚点 ═══════ */}
               <div ref={messagesEndRef} />

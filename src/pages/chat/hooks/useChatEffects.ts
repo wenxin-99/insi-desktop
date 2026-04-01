@@ -74,15 +74,29 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
   useEffect(() => { selectedConvIdRef.current = selectedConversationId; }, [selectedConversationId]);
 
   // ═══════════ 模型/套餐偏好自动选择 ═══════════
+  // ★ FIX: 使用 ref 防止重复应用。原代码在每次 currentUser refetch 时都覆盖 selectedPackageId，
+  // 导致用户切换套餐后，如果 mutation 未完成就触发了 refetch（比如余额查询），
+  // 旧的 preferredPackageId 会覆盖用户刚选的套餐。
+  const initialPreferenceAppliedRef = useRef(false);
   useEffect(() => {
-    if (currentUser) {
-      if (currentUser.preferredPackageId) {
-        if (selectedPackageId !== currentUser.preferredPackageId) setSelectedPackageId(currentUser.preferredPackageId);
-        if (selectedModelId !== null) setSelectedModelId(null);
-        if (currentUser.preferredModelId) updatePreferenceMutation.mutate({ preferredModelId: null, preferredPackageId: currentUser.preferredPackageId });
-      } else if (currentUser.preferredModelId && !selectedModelId && !selectedPackageId) {
-        setSelectedModelId(currentUser.preferredModelId);
-      }
+    if (!currentUser) return;
+    // 只在首次加载时从服务端偏好同步，后续由用户交互驱动
+    if (initialPreferenceAppliedRef.current) return;
+    initialPreferenceAppliedRef.current = true;
+
+    // ★ 优先使用 localStorage（代表用户最近一次显式选择），其次用服务端偏好
+    const localPref = localStorage.getItem('preferredPackageId');
+    const localPkgId = localPref ? parseInt(localPref, 10) : null;
+
+    if (localPkgId && localPkgId !== selectedPackageId) {
+      setSelectedPackageId(localPkgId);
+      if (selectedModelId !== null) setSelectedModelId(null);
+    } else if (currentUser.preferredPackageId) {
+      if (selectedPackageId !== currentUser.preferredPackageId) setSelectedPackageId(currentUser.preferredPackageId);
+      if (selectedModelId !== null) setSelectedModelId(null);
+      if (currentUser.preferredModelId) updatePreferenceMutation.mutate({ preferredModelId: null, preferredPackageId: currentUser.preferredPackageId });
+    } else if (currentUser.preferredModelId && !selectedModelId && !selectedPackageId) {
+      setSelectedModelId(currentUser.preferredModelId);
     }
   }, [currentUser?.preferredPackageId, currentUser?.preferredModelId]);
 
@@ -126,18 +140,36 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
     if (!currentUser) return;
     const prevUserId = prevUserIdRef.current;
     prevUserIdRef.current = currentUser.id;
-    // 用户 ID 变化 → 说明切换了账号（GitHub OAuth / 退出再登录）
+
+    // ★ 首次加载：检查 localStorage 中的 lastChatUserId
+    // 如果与当前用户不匹配，说明是切换账号后的首次加载（页面刷新/GitHub OAuth 回调）
+    if (prevUserId === null) {
+      const lastUserId = localStorage.getItem('lastChatUserId');
+      if (lastUserId && parseInt(lastUserId, 10) !== currentUser.id) {
+        console.log(`[Chat] Account switch detected (localStorage): ${lastUserId} → ${currentUser.id}, clearing stale state`);
+        setSelectedConversationId(null);
+        setMessages([]);
+        initialLoadDoneRef.current = false;
+      }
+    }
+
+    // 运行时用户 ID 变化 → SPA 内切换账号（不经过页面刷新）
     if (prevUserId !== null && prevUserId !== currentUser.id) {
       console.log(`[Chat] User changed: ${prevUserId} → ${currentUser.id}, clearing stale state`);
       setSelectedConversationId(null);
       setMessages([]);
       initialLoadDoneRef.current = false;
     }
+
+    // ★ 始终更新 lastChatUserId，供下次登录比对
+    localStorage.setItem('lastChatUserId', String(currentUser.id));
   }, [currentUser?.id]);
 
   // ═══════════ 自动选中对话（首次加载） ═══════════
   useEffect(() => {
     if (initialLoadDoneRef.current) return;
+    // ★ 等待 currentUser 就绪，确保用户切换检测已先执行
+    if (!currentUser) return;
 
     // ★ conversations 已加载但为空（新用户没有对话） → 清除残留 ID
     if (conversations && conversations.length === 0) {
@@ -159,7 +191,7 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
     const latestConversation = conversations[0];
     setSelectedConversationId(latestConversation.id);
     loadConversationMessages(latestConversation.id);
-  }, [conversations]);
+  }, [conversations, currentUser?.id]);
 
   // ═══════════ 后台任务完成事件 ═══════════
   useEffect(() => {
@@ -251,11 +283,18 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
         if (allPublished.length > 0) {
           allPublished.forEach((item: any) => {
             const typeLabel = item.type === 'post' ? '📝 发帖' : '💬 回复';
+            const titleStr = item.title ? ` "${item.title}"` : '';
             const urlShort = item.url ? `[查看](${item.url})` : '（未获取链接）';
-            actionLines.push(`| ${typeLabel} | ${urlShort} | ${item.length} 字 |`);
+            const lengthStr = item.length > 0 ? `${item.length} 字` : '-';
+            actionLines.push(`| ${typeLabel}${titleStr} | ${urlShort} | ${lengthStr} |`);
           });
         } else if (contentInfo?.publishedUrl) {
-          actionLines.push(`| 📝 发帖 | [查看](${contentInfo.publishedUrl}) | ${contentInfo.contentLength} 字 |`);
+          const titleStr = contentInfo.title ? ` "${contentInfo.title}"` : '';
+          actionLines.push(`| 📝 发帖${titleStr} | [查看](${contentInfo.publishedUrl}) | ${contentInfo.contentLength} 字 |`);
+        } else if (summary?.finalUrl && /\/t\/\d+|\/topic\/|\/thread\/|\/d\//.test(summary.finalUrl)) {
+          // ★ 兜底：用 finalUrl 生成最小报告
+          const titleStr = summary.finalTitle ? ` "${summary.finalTitle}"` : '';
+          actionLines.push(`| 📝 发帖${titleStr} | [查看](${summary.finalUrl}) | - |`);
         }
 
         const completedAt = new Date(summary.completedAt);
@@ -286,6 +325,10 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
           if (postCount > 0) parts.push(`发帖 ${postCount} 篇`);
           if (replyCount > 0) parts.push(`回复 ${replyCount} 条`);
           summaryText += ` · ${parts.join('、')}`;
+        }
+        // ★ 显示费用
+        if (summary?.billing?.totalCost) {
+          summaryText += ` · 费用 ${summary.billing.totalCost} 🐟`;
         }
       }
 
@@ -470,28 +513,61 @@ export function useChatEffects(state: ChatStateReturn, config: EffectsConfig) {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [voiceDialogOpen]);
 
-  // ═══════════ 流式自动滚动 ═══════════
-  // ★ 改用 scrollTop 直接赋值（instant），不再使用 scrollIntoView({ behavior: 'smooth' })
-  //   smooth 动画在移动端会与用户触摸滚动"打架"，导致要滑好几次才能停住
-  const scrollRafRef = useRef<number | null>(null);
+  // ═══════════ 流式自动滚动（主动式插值追踪） ═══════════
+  // ★ 替代 instant scrollTop = scrollHeight — 用 lerp 插值平滑追踪内容增长
+  //   每帧将 scrollTop 向目标位置靠近 20%，消除"追赶跳动"
+  //   移动端兼容：不使用 CSS smooth（会与触摸打架），纯 JS 插值
+  const scrollLoopRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (!isStreaming || !messagesContainerRef.current) return;
-    if (userScrolledUpRef.current) return;
-    // 使用 rAF 防抖，避免每个 chunk 都触发滚动（高频更新时只执行最后一次）
-    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      if (userScrolledUpRef.current) return;
-      const el = messagesContainerRef.current;
-      if (el) {
-        // ★ instant scroll — 不产生动画，不与用户触摸冲突
-        el.scrollTop = el.scrollHeight;
+    const el = messagesContainerRef.current;
+    if (!el) return;
+
+    if (isStreaming) {
+      // 启动插值滚动循环
+
+      const scrollLoop = () => {
+        if (userScrolledUpRef.current || !messagesContainerRef.current) {
+          scrollLoopRef.current = requestAnimationFrame(scrollLoop);
+          return;
+        }
+        const container = messagesContainerRef.current;
+        const targetTop = container.scrollHeight - container.clientHeight;
+        const currentTop = container.scrollTop;
+        const delta = targetTop - currentTop;
+
+        if (delta > 1) {
+          // ★ 优化⑥：柔和插值因子，消除"跳着追"感
+          // 原 0.35/0.25/0.18 太激进，长回复时滚动抖动
+          // 新 0.15/0.12/0.08 更丝滑，接近 Claude 的跟随手感
+          const factor = delta > 200 ? 0.15 : delta > 50 ? 0.12 : 0.08;
+          container.scrollTop = currentTop + Math.max(1, delta * factor);
+        } else if (delta > 0) {
+          container.scrollTop = targetTop;
+        }
+
+        scrollLoopRef.current = requestAnimationFrame(scrollLoop);
+      };
+
+      scrollLoopRef.current = requestAnimationFrame(scrollLoop);
+    } else {
+      // 流式结束：停止循环，最终 snap 到底
+      if (scrollLoopRef.current) {
+        cancelAnimationFrame(scrollLoopRef.current);
+        scrollLoopRef.current = null;
       }
-    });
+      if (!userScrolledUpRef.current && el) {
+        el.scrollTop = el.scrollHeight - el.clientHeight;
+      }
+    }
+
     return () => {
-      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+      if (scrollLoopRef.current) {
+        cancelAnimationFrame(scrollLoopRef.current);
+        scrollLoopRef.current = null;
+      }
     };
-  }, [streamedContent, isStreaming]);
+  }, [isStreaming]);
 
   // ═══════════ 流式结束后重置滚动 ═══════════
   useEffect(() => {

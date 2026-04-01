@@ -236,7 +236,7 @@ export default function Subscription() {
                     {t('pages.dashboard.type') === '类型' ? '订阅会员享受更多特权和优惠，立即选择适合您的方案' : 'Subscribe to membership to enjoy more privileges and benefits, choose the plan that suits you now'}
                   </p>
                 </div>
-                <Button onClick={() => window.location.href = '/pricing'}>
+                <Button onClick={() => window.location.href = '/recharge'}>
                   <Crown className="w-4 h-4 mr-2" />
                   {t('pages.subscription.explorePlans')}
                 </Button>

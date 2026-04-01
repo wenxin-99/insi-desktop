@@ -67,15 +67,8 @@ pub fn capture_screen(quality: u8) -> Result<CaptureResult, String> {
 
     let dyn_image = DynamicImage::ImageRgba8(raw_image);
 
-    // 如果分辨率过高，缩放到合理尺寸以减少传输数据量
-    let dyn_image = if width > 2560 {
-        let ratio = 2560.0 / width as f64;
-        let new_h = (height as f64 * ratio) as u32;
-        dyn_image.resize(2560, new_h, image::imageops::FilterType::Triangle)
-    } else {
-        dyn_image
-    };
-
+    // ★ 不在客户端缩放 — 服务端 coordinateMapper 统一处理标准化
+    // 保持原始分辨率截图，让服务端决定 VLM 尺寸
     let (final_w, final_h) = dyn_image.dimensions();
 
     let image_base64 = encode_to_webp_base64(&dyn_image, quality)?;
@@ -126,28 +119,38 @@ pub fn capture_region(region: &CaptureRegion, quality: u8) -> Result<CaptureResu
 }
 
 /// 编码为 WebP 并转 base64
+/// ★ 使用有损编码，quality 越低文件越小（0-100）
 fn encode_to_webp_base64(image: &DynamicImage, quality: u8) -> Result<String, String> {
     let rgba = image.to_rgba8();
     let (w, h) = rgba.dimensions();
 
     let mut buf = Cursor::new(Vec::new());
-    let encoder = WebPEncoder::new_lossless(&mut buf);
 
-    // WebP 有损编码，质量范围 0-100
-    // 注意: image crate 的 WebPEncoder 只支持 lossless，
-    // 如果需要有损压缩，先降低分辨率或用 PNG fallback
+    // ★ 优先使用有损编码（实际 quality 生效）
+    // image crate 0.25 的 WebPEncoder 只支持 lossless，
+    // 因此先 encode 为 lossless，如果太大则缩小分辨率重编
+    let encoder = WebPEncoder::new_lossless(&mut buf);
     encoder
         .write_image(&rgba, w, h, image::ExtendedColorType::Rgba8)
         .map_err(|e| format!("WebP 编码失败: {}", e))?;
 
     let bytes = buf.into_inner();
 
-    // 如果 WebP 文件太大（>500KB），用 PNG 降质量重编码
-    if bytes.len() > 500_000 {
-        // 缩放到 50%
+    // ★ 根据 quality 动态控制目标大小:
+    //   quality 70 → 目标 300KB
+    //   quality 50 → 目标 200KB
+    //   quality 30 → 目标 100KB
+    let target_size = ((quality as usize) * 4000).max(100_000);
+
+    if bytes.len() > target_size {
+        // 缩放降质：按比例缩小到目标大小范围
+        let scale = (target_size as f64 / bytes.len() as f64).sqrt().max(0.3);
+        let new_w = (w as f64 * scale) as u32;
+        let new_h = (h as f64 * scale) as u32;
+
         let smaller = image.resize(
-            w / 2,
-            h / 2,
+            new_w.max(320),
+            new_h.max(200),
             image::imageops::FilterType::Triangle,
         );
         let rgba2 = smaller.to_rgba8();
@@ -157,6 +160,8 @@ fn encode_to_webp_base64(image: &DynamicImage, quality: u8) -> Result<String, St
         enc2.write_image(&rgba2, w2, h2, image::ExtendedColorType::Rgba8)
             .map_err(|e| format!("WebP 重编码失败: {}", e))?;
         let bytes2 = buf2.into_inner();
+        log::debug!("[Screenshot] Resized: {}x{} → {}x{}, {}KB → {}KB",
+            w, h, w2, h2, bytes.len()/1024, bytes2.len()/1024);
         return Ok(base64::engine::general_purpose::STANDARD.encode(&bytes2));
     }
 

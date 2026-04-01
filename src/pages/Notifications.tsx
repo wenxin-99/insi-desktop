@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { Bell, BellOff, Check, CheckCheck, Trash2, AlertCircle, Info, TrendingDown, ArrowLeft, MessageSquareText, Video, FlaskConical } from "lucide-react";
 import { useState, useMemo } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 
 export default function Notifications() {
   const { notifications, unreadCount, markAsRead, clearNotifications } = useNotifications();
@@ -76,6 +77,7 @@ export default function Notifications() {
   };
 
   return (
+    <DashboardLayout>
     <div className="container mx-auto py-8 space-y-6">
       <Button
         variant="ghost"
@@ -246,5 +248,6 @@ export default function Notifications() {
         </TabsContent>
       </Tabs>
     </div>
+    </DashboardLayout>
   );
 }

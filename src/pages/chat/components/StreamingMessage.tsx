@@ -17,6 +17,7 @@ import { InlineThinkingBlock } from '@/components/InlineThinkingBlock';
 import { InlineStepList } from '@/components/InlineStepBlock';
 import { ImageGenerationProgress, isImageGenerationFlow } from '@/components/ImageGenerationProgress';
 import { ArtifactInlineTrigger } from '@/components/ArtifactInlineTrigger';
+import { ToolComponentList } from '@/components/streaming';
 import { ThinkingAnimation } from '@/components/ThinkingAnimation';
 import { SearchingIndicator } from '@/components/WebSearchIndicator';
 import { AiLogo } from '@/components/AiLogo';
@@ -173,9 +174,9 @@ export function StreamingMessage({ state }: StreamingMessageProps) {
                   }}
                 >
                   <SafeMarkdown>{reasoningContent || '正在思考...'}</SafeMarkdown>
-                  {/* 打字光标 */}
+                  {/* 打字光标 — 经典 step-blink */}
                   {isReasoning && (
-                    <span className="inline-block w-[2px] h-[1em] bg-purple-500/60 ml-0.5 animate-pulse align-text-bottom" />
+                    <span className="streaming-cursor" />
                   )}
                 </div>
                 {/* 推理面板内"回到最新"按钮 */}
@@ -242,6 +243,14 @@ export function StreamingMessage({ state }: StreamingMessageProps) {
             );
           })()}
 
+          {/* ═══════ 流式工具组件渲染 ═══════ */}
+          {(state as any).activeToolComponents?.length > 0 && (
+            <ToolComponentList
+              tools={(state as any).activeToolComponents}
+              isLive={true}
+            />
+          )}
+
           {/* ═══════ 联网搜索状态指示器 ═══════ */}
           {(state as any).webSearchQuery && (
             <div className="mb-2">
@@ -285,14 +294,14 @@ export function StreamingMessage({ state }: StreamingMessageProps) {
                   "rounded-lg p-4 md:p-4 sm:p-3 animate-in fade-in duration-300",
                   hasArtifact ? "" : "bg-muted"
                 )}>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 streaming-content">
                     <SafeMarkdownWithDownload
                       content={displayContent.replace(/!\[[^\]]*\]\([^)]+\)/g, '')}
                       streaming={true}
                       conversationId={state.selectedConversationId ?? undefined}
                     />
                     {!hasArtifact && (
-                      <span className="inline-block w-[2px] h-[1.1em] bg-current opacity-70 ml-[1px] align-text-bottom animate-pulse" />
+                      <span className="streaming-cursor" />
                     )}
                   </div>
                 </div>

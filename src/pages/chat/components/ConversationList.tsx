@@ -14,17 +14,66 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { BackgroundTaskBadge } from '@/components/BackgroundTaskIndicator';
 import { FishCoinBalance } from '@/components/FishCoinBalance';
-import { Plus, Download, Trash2, Tag, X, ChevronLeft, ChevronRight, MoreHorizontal, Search, Share2 } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import { Plus, Download, Trash2, Tag, X, MoreHorizontal, Search, Share2, FolderOpen, Pin, Archive, ChevronDown } from 'lucide-react';
+import { memo, useCallback, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { trpc } from '@/lib/trpc';
 import type { ChatStateReturn } from '../types';
+
+// ═══════════ 时间分组工具函数 ═══════════
+
+function groupByTime(conversations: any[]): { label: string; items: any[] }[] {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const week = new Date(today.getTime() - 7 * 86400000);
+  const month = new Date(today.getTime() - 30 * 86400000);
+
+  // 置顶对话单独分组（置顶优先于归档）
+  const pinned = conversations.filter((c: any) => c.pinned);
+  const unpinned = conversations.filter((c: any) => !c.pinned && !c.archived);
+  const archived = conversations.filter((c: any) => c.archived && !c.pinned);
+
+  const groups: { label: string; items: any[] }[] = [];
+
+  if (pinned.length > 0) {
+    groups.push({ label: '📌 置顶', items: pinned });
+  }
+
+  const timeGroups = [
+    { label: '今天', items: [] as any[] },
+    { label: '昨天', items: [] as any[] },
+    { label: '过去 7 天', items: [] as any[] },
+    { label: '过去 30 天', items: [] as any[] },
+    { label: '更早', items: [] as any[] },
+  ];
+
+  for (const conv of unpinned) {
+    const d = new Date(conv.updatedAt || conv.createdAt);
+    if (d >= today) timeGroups[0].items.push(conv);
+    else if (d >= yesterday) timeGroups[1].items.push(conv);
+    else if (d >= week) timeGroups[2].items.push(conv);
+    else if (d >= month) timeGroups[3].items.push(conv);
+    else timeGroups[4].items.push(conv);
+  }
+
+  for (const g of timeGroups) {
+    if (g.items.length > 0) groups.push(g);
+  }
+
+  if (archived.length > 0) {
+    groups.push({ label: '🗄️ 已归档', items: archived });
+  }
+
+  return groups;
+}
 
 // ═══════════ 模块级 ConversationItem（只创建一次，memo 生效） ═══════════
 
-interface ConversationItemProps {
+export interface ConversationItemProps {
   conv: any;
   onSelect: () => void;
   isMobile?: boolean;
@@ -34,12 +83,14 @@ interface ConversationItemProps {
   onExportPdf: (id: number) => void;
   onManageTags: (id: number) => void;
   onShare: (id: number) => void;
+  onPin?: (id: number, pinned: boolean) => void;
+  onArchive?: (id: number, archived: boolean) => void;
   onCloseMobileSidebar?: () => void;
 }
 
-const ConversationItem = memo(function ConversationItem({
+export const ConversationItem = memo(function ConversationItem({
   conv, onSelect, isMobile, isSelected,
-  onDelete, onExport, onExportPdf, onManageTags, onShare, onCloseMobileSidebar,
+  onDelete, onExport, onExportPdf, onManageTags, onShare, onPin, onArchive, onCloseMobileSidebar,
 }: ConversationItemProps) {
   return (
     <div
@@ -50,6 +101,7 @@ const ConversationItem = memo(function ConversationItem({
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
+          {conv.pinned && <Pin className={`w-3 h-3 flex-shrink-0 ${isSelected ? 'text-primary-foreground/70' : 'text-primary'}`} />}
           <div className="text-sm font-medium truncate" title={conv.title}>{conv.title}</div>
           <BackgroundTaskBadge conversationId={conv.id} />
         </div>
@@ -57,6 +109,13 @@ const ConversationItem = memo(function ConversationItem({
           <span className="text-xs opacity-70">
             {new Date(conv.createdAt).toLocaleDateString('zh-CN')}
           </span>
+          {/* ★ P0: 项目标记 */}
+          {conv.projectId && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-primary/8 text-primary/70">
+              <FolderOpen className="w-2.5 h-2.5" />
+              项目
+            </span>
+          )}
           {conv.tags && conv.tags.length > 0 && (
             <div className="flex gap-1 flex-wrap">
               {conv.tags.slice(0, 2).map((tag: any) => (
@@ -87,6 +146,25 @@ const ConversationItem = memo(function ConversationItem({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {onPin && (
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                onPin(conv.id, !conv.pinned);
+                if (isMobile && onCloseMobileSidebar) onCloseMobileSidebar();
+              }}>
+                <Pin className="h-4 w-4 mr-2" />{conv.pinned ? '取消置顶' : '置顶'}
+              </DropdownMenuItem>
+            )}
+            {onArchive && (
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                onArchive(conv.id, !conv.archived);
+                if (isMobile && onCloseMobileSidebar) onCloseMobileSidebar();
+              }}>
+                <Archive className="h-4 w-4 mr-2" />{conv.archived ? '取消归档' : '归档'}
+              </DropdownMenuItem>
+            )}
+            {(onPin || onArchive) && <DropdownMenuSeparator />}
             <DropdownMenuItem onClick={(e) => {
               e.stopPropagation();
               onManageTags(conv.id);
@@ -112,6 +190,7 @@ const ConversationItem = memo(function ConversationItem({
             }}>
               <Share2 className="h-4 w-4 mr-2" />分享对话
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
@@ -162,18 +241,98 @@ export const ConversationList = memo(function ConversationList({
     isHistoryCollapsed, setIsHistoryCollapsed,
     setManagingTagsForConversation, setShowTagManagement,
     conversations,
+    currentProjectId, setCurrentProjectId,
     balance, refetchBalance, isLoadingBalance,
     createConversationMutation,
+    refetchConversations,
   } = state;
+
+  // ★ P0-1: 置顶/归档 mutation
+  const pinMutation = trpc.conversation.pin.useMutation({
+    onSuccess: () => refetchConversations(),
+  });
+  const archiveMutation = trpc.conversation.archive.useMutation({
+    onSuccess: () => refetchConversations(),
+  });
+
+  // ★ P0-1: 归档区折叠状态
+  const [showArchived, setShowArchived] = useState(false);
 
   const handleManageTags = useCallback((convId: number) => {
     setManagingTagsForConversation(convId);
     setShowTagManagement(true);
   }, [setManagingTagsForConversation, setShowTagManagement]);
 
+  const handlePin = useCallback((id: number, pinned: boolean) => {
+    pinMutation.mutate({ id, pinned });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate is stable
+  }, []);
+
+  const handleArchive = useCallback((id: number, archived: boolean) => {
+    archiveMutation.mutate({ id, archived });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate is stable
+  }, []);
+
   const closeMobileSidebar = useCallback(() => {
     setShowMobileSidebar(false);
   }, [setShowMobileSidebar]);
+
+  // ★ P0-1: 对话按时间分组
+  const groupedConversations = useMemo(() => {
+    const filtered = conversations?.filter((conv: any) => !currentProjectId || conv.projectId === currentProjectId) || [];
+    return groupByTime(filtered);
+  }, [conversations, currentProjectId]);
+
+  const renderGroupedList = (isMobile: boolean) => {
+    if (groupedConversations.length === 0) {
+      return currentProjectId
+        ? <EmptyState text="当前项目没有对话" />
+        : <EmptyState text={t('chat.clickNewToStart')} />;
+    }
+
+    return groupedConversations.map((group) => {
+      const isArchivedGroup = group.label === '🗄️ 已归档';
+
+      return (
+        <div key={group.label}>
+          {/* 分组标题 */}
+          <div
+            className={`sticky top-0 z-10 flex items-center gap-1 px-1 py-1.5 text-xs font-medium text-muted-foreground bg-card/95 backdrop-blur-sm ${isArchivedGroup ? 'cursor-pointer hover:text-foreground' : ''}`}
+            onClick={isArchivedGroup ? () => setShowArchived(!showArchived) : undefined}
+          >
+            <span>{group.label}</span>
+            <span className="text-[10px] opacity-60">({group.items.length})</span>
+            {isArchivedGroup && (
+              <ChevronDown className={`w-3 h-3 ml-auto transition-transform ${showArchived ? 'rotate-180' : ''}`} />
+            )}
+          </div>
+          {/* 该组对话列表 */}
+          {(!isArchivedGroup || showArchived) && (
+            <div className="space-y-1">
+              {group.items.map((conv: any) => (
+                <ConversationItem
+                  key={conv.id} conv={conv} isMobile={isMobile} isSelected={selectedConversationId === conv.id}
+                  onSelect={() => {
+                    setSelectedConversationId(conv.id);
+                    loadConversationMessages(conv.id);
+                    if (isMobile) closeMobileSidebar();
+                  }}
+                  onDelete={handleDeleteConversation}
+                  onExport={(id) => handleExportConversation(id)}
+                  onExportPdf={handleExportPdf}
+                  onManageTags={handleManageTags}
+                  onShare={handleShareConversation}
+                  onPin={handlePin}
+                  onArchive={handleArchive}
+                  onCloseMobileSidebar={isMobile ? closeMobileSidebar : undefined}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
 
   return (
     <>
@@ -210,24 +369,18 @@ export const ConversationList = memo(function ConversationList({
                   <span className="text-xs">新对话</span>
                 </Button>
               </div>
-              <div className="space-y-2">
-                {conversations?.map((conv: any) => (
-                  <ConversationItem
-                    key={conv.id} conv={conv} isMobile isSelected={selectedConversationId === conv.id}
-                    onSelect={() => {
-                      setSelectedConversationId(conv.id);
-                      loadConversationMessages(conv.id);
-                      closeMobileSidebar();
-                    }}
-                    onDelete={handleDeleteConversation}
-                    onExport={(id) => handleExportConversation(id)}
-                    onExportPdf={handleExportPdf}
-                    onManageTags={handleManageTags}
-                    onShare={handleShareConversation}
-                    onCloseMobileSidebar={closeMobileSidebar}
-                  />
-                ))}
-                {(!conversations || conversations.length === 0) && <EmptyState text={t('chat.clickNewToStart')} />}
+              {/* ★ P2: 项目过滤提示 */}
+              {currentProjectId && (
+                <div className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded-md bg-primary/5 border border-primary/10 text-xs text-primary/80">
+                  <FolderOpen className="w-3 h-3 shrink-0" />
+                  <span className="truncate">仅显示当前项目对话</span>
+                  <button onClick={() => setCurrentProjectId(null)} className="ml-auto hover:text-primary">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+              <div className="space-y-1">
+                {renderGroupedList(true)}
               </div>
             </CardContent>
           </Card>
@@ -244,6 +397,7 @@ export const ConversationList = memo(function ConversationList({
   return (
     ps.conversations === ns.conversations &&
     ps.selectedConversationId === ns.selectedConversationId &&
+    ps.currentProjectId === ns.currentProjectId &&
     ps.showMobileSidebar === ns.showMobileSidebar &&
     ps.isHistoryCollapsed === ns.isHistoryCollapsed &&
     ps.balance === ns.balance &&

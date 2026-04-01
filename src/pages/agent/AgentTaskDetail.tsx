@@ -240,7 +240,10 @@ export function AgentTaskDetail({ task, steps, onBack, onCancel, onPause, onResu
           {showSandbox ? (
             <SandboxPanel browser={sandbox.browser} code={sandbox.code} terminal={sandbox.terminal}
               activeTab={activeTab} onTabChange={setActiveTab} isConnected={sandbox.isConnected}
-              taskId={taskIdNum} socket={sandbox.socket} clickIndicator={sandbox.clickIndicator} />
+              taskId={taskIdNum} socket={sandbox.socket} clickIndicator={sandbox.clickIndicator}
+              pendingConfirmation={sandbox.pendingConfirmation}
+              onConfirmationResolved={() => sandbox.setPendingConfirmation(null)}
+              cursorPosition={sandbox.cursorPosition} />
           ) : showResult ? (
             <div className="h-full p-6 space-y-5">
               {/* 完成：结果面板 */}

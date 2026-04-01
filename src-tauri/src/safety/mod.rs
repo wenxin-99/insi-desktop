@@ -16,6 +16,7 @@ pub enum ActionType {
     Scroll,
     Screenshot,
     Wait,
+    Clipboard,
 }
 
 /// 安全检查结果
@@ -35,7 +36,7 @@ impl SafetyResult {
         Self { allowed: false, reason: Some(reason.into()), needs_confirmation: false }
     }
 
-    fn confirm(reason: &str) -> Self {
+    fn _confirm(reason: &str) -> Self {
         Self { allowed: true, reason: Some(reason.into()), needs_confirmation: true }
     }
 }
@@ -65,11 +66,6 @@ pub fn is_dangerous_area(
             if y < 28 {
                 return true;
             }
-            // Dock（底部，通常 70px）
-            if y > (screen_height as i32 - 70) {
-                // Dock 区域允许操作（切换应用需要），但需要注意
-                return false;
-            }
             false
         }
         "linux" => {
@@ -92,7 +88,14 @@ pub fn is_dangerous_hotkey(keys: &[String]) -> Option<String> {
     let blocked = [
         ("ctrl+alt+delete", "系统安全操作"),
         ("ctrl+alt+del", "系统安全操作"),
-        ("cmd+option+esc", "强制退出管理器"),      // macOS
+        ("cmd+option+esc", "强制退出管理器"),
+        // ★ macOS 危险组合
+        ("cmd+shift+q", "退出登录/注销"),
+        ("cmd+ctrl+q", "锁定屏幕"),
+        ("cmd+option+power", "睡眠"),
+        ("cmd+ctrl+power", "强制重启"),
+        // ★ Windows 危险组合
+        ("win+l", "锁定计算机"),
     ];
 
     for (combo, reason) in &blocked {
@@ -101,7 +104,7 @@ pub fn is_dangerous_hotkey(keys: &[String]) -> Option<String> {
         }
     }
 
-    // 需要确认的快捷键
+    // 需要确认的快捷键（允许但记录日志）
     let confirm_needed = [
         ("alt+f4", "关闭当前窗口"),
         ("cmd+q", "退出当前应用"),
@@ -111,7 +114,6 @@ pub fn is_dangerous_hotkey(keys: &[String]) -> Option<String> {
 
     for (combo, _reason) in &confirm_needed {
         if key_str == *combo {
-            // 允许但记录日志
             log::warn!("执行可能关闭窗口的快捷键: {}", combo);
             return None;
         }
@@ -121,11 +123,7 @@ pub fn is_dangerous_hotkey(keys: &[String]) -> Option<String> {
 }
 
 /// 检查输入文字是否安全（不包含密码等敏感信息）
-///
-/// 注意：这只是客户端侧的基本检查，
-/// 服务端 AI 层有更严格的内容过滤。
 pub fn is_sensitive_text(text: &str) -> bool {
-    // 如果文字看起来像密码（包含混合大小写+数字+特殊字符且长度合适）
     if text.len() >= 6 && text.len() <= 64 {
         let has_upper = text.chars().any(|c| c.is_uppercase());
         let has_lower = text.chars().any(|c| c.is_lowercase());
@@ -133,13 +131,11 @@ pub fn is_sensitive_text(text: &str) -> bool {
         let has_special = text.chars().any(|c| !c.is_alphanumeric() && !c.is_whitespace());
         let no_spaces = !text.contains(' ');
 
-        // 强密码特征：混合字符且无空格
         if has_upper && has_lower && has_digit && has_special && no_spaces {
             return true;
         }
     }
 
-    // 常见敏感关键词
     let lower = text.to_lowercase();
     let sensitive_patterns = [
         "password:", "passwd:", "密码:", "pin:",
@@ -166,8 +162,8 @@ pub fn check_action_safety(
     extra_params: Option<&serde_json::Value>,
 ) -> SafetyResult {
     match action_type {
-        ActionType::Screenshot | ActionType::Wait => {
-            // 截图和等待始终安全
+        ActionType::Screenshot | ActionType::Wait | ActionType::Clipboard => {
+            // 截图、等待和剪贴板始终安全
             SafetyResult::allow()
         }
 
@@ -184,7 +180,6 @@ pub fn check_action_safety(
         }
 
         ActionType::Drag => {
-            // 检查起点和终点
             if let Some(params) = extra_params {
                 let from_x = params.get("fromX").and_then(|v| v.as_i64()).map(|v| v as i32);
                 let from_y = params.get("fromY").and_then(|v| v.as_i64()).map(|v| v as i32);

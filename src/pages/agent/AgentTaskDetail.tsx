@@ -243,7 +243,10 @@ export function AgentTaskDetail({ task, steps, onBack, onCancel, onPause, onResu
               taskId={taskIdNum} socket={sandbox.socket} clickIndicator={sandbox.clickIndicator}
               pendingConfirmation={sandbox.pendingConfirmation}
               onConfirmationResolved={() => sandbox.setPendingConfirmation(null)}
-              cursorPosition={sandbox.cursorPosition} />
+              cursorPosition={sandbox.cursorPosition}
+              browserTabs={sandbox.browserTabs}
+              helpNeeded={sandbox.helpNeeded}
+              onHelpDismiss={() => sandbox.setHelpNeeded(null)} />
           ) : showResult ? (
             <div className="h-full p-6 space-y-5">
               {/* 完成：结果面板 */}

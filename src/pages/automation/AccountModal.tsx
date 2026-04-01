@@ -12,13 +12,16 @@ export function AccountModal({ open, onClose, onSave, editAccount }: {
   open: boolean; onClose: () => void;
   onSave: (data: any) => void; editAccount?: SiteAccount | null;
 }) {
-  const [form, setForm] = useState({ siteName: "", siteUrl: "", loginUrl: "", username: "", password: "", notes: "" });
+  const [form, setForm] = useState({ siteName: "", siteUrl: "", loginUrl: "", username: "", password: "", notes: "", cookies: "" });
+  const [showCookieInput, setShowCookieInput] = useState(false);
 
   useEffect(() => {
     if (editAccount) {
-      setForm({ siteName: editAccount.siteName, siteUrl: editAccount.siteUrl, loginUrl: editAccount.loginUrl, username: editAccount.username, password: "", notes: editAccount.notes || "" });
+      setForm({ siteName: editAccount.siteName, siteUrl: editAccount.siteUrl, loginUrl: editAccount.loginUrl, username: editAccount.username, password: "", notes: editAccount.notes || "", cookies: "" });
+      setShowCookieInput(false);
     } else {
-      setForm({ siteName: "", siteUrl: "", loginUrl: "", username: "", password: "", notes: "" });
+      setForm({ siteName: "", siteUrl: "", loginUrl: "", username: "", password: "", notes: "", cookies: "" });
+      setShowCookieInput(false);
     }
   }, [editAccount, open]);
 
@@ -60,6 +63,28 @@ export function AccountModal({ open, onClose, onSave, editAccount }: {
             <label className="block text-sm font-medium mb-1">备注</label>
             <textarea className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" rows={2}
               value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+          </div>
+
+          {/* ★ Cookie 导入 */}
+          <div className="border-t pt-3">
+            <button type="button" onClick={() => setShowCookieInput(!showCookieInput)}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+              {showCookieInput ? "收起 Cookie 导入 ↑" : "导入 Cookie（跳过登录）→"}
+            </button>
+            {showCookieInput && (
+              <div className="mt-2 space-y-1">
+                <p className="text-[11px] text-gray-500">
+                  从浏览器扩展（如 EditThisCookie）导出 JSON 格式的 Cookie，粘贴到下方。导入后 Insi 可直接使用你的登录态，无需重新输入密码。
+                </p>
+                <textarea
+                  className="w-full border rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  rows={4}
+                  placeholder='[{"name":"session","value":"abc123","domain":".example.com","path":"/"}]'
+                  value={form.cookies}
+                  onChange={e => setForm(f => ({ ...f, cookies: e.target.value }))}
+                />
+              </div>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">

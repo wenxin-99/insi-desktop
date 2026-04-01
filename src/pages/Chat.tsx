@@ -311,6 +311,7 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
     previewFiles, activePreviewIndex, setActivePreviewIndex,
     activeArtifact, setActiveArtifact,
     sandboxData, sandboxActiveTab, setSandboxActiveTab,
+    isReconnecting,
     messages,
   } = state;
 
@@ -493,6 +494,12 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
                   </button>
                 </div>
                 <div className="flex-1 min-h-0">
+                  {isReconnecting && !sandboxData?.isConnected && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.3"/><path d="M12 2a10 10 0 019.95 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                      正在恢复任务现场...
+                    </div>
+                  )}
                   {sandboxData && (
                     <SandboxPanel
                       browser={sandboxData.browser}
@@ -508,6 +515,9 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
                       pendingConfirmation={sandboxData.pendingConfirmation}
                       onConfirmationResolved={() => sandboxData.setPendingConfirmation(null)}
                       cursorPosition={sandboxData.cursorPosition}
+                      browserTabs={sandboxData.browserTabs}
+                      helpNeeded={sandboxData.helpNeeded}
+                      onHelpDismiss={() => sandboxData.setHelpNeeded(null)}
                     />
                   )}
                 </div>
@@ -598,6 +608,9 @@ useReplyNotification({ isStreaming: state.isStreaming, isResearchMode: state.isR
             pendingConfirmation={sandboxData.pendingConfirmation}
             onConfirmationResolved={() => sandboxData.setPendingConfirmation(null)}
             cursorPosition={sandboxData.cursorPosition}
+            browserTabs={sandboxData.browserTabs}
+            helpNeeded={sandboxData.helpNeeded}
+            onHelpDismiss={() => sandboxData.setHelpNeeded(null)}
           />
         )}
       {/* ═══════ 移动端 Artifact 通知条 + 全屏预览（xl 以下） ═══════ */}

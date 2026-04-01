@@ -15,8 +15,10 @@ import type { BrowserState, CodeState, TerminalState } from "@/hooks/useSandboxS
 import { BrowserPreview } from "./sandboxPanel/BrowserPreview";
 import { CodeEditor } from "./sandboxPanel/CodeEditor";
 import { TerminalView } from "./sandboxPanel/TerminalView";
+import { RemoteFileExplorer } from "./sandboxPanel/RemoteFileExplorer";
 
 import { TaskInstructionInput } from "./sandboxPanel/TaskInstructionInput";
+import { FolderOpen } from "lucide-react";
 
 interface SandboxPanelProps {
   browser: BrowserState;
@@ -32,6 +34,9 @@ interface SandboxPanelProps {
   pendingConfirmation?: { action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number } | null;
   onConfirmationResolved?: () => void;
   cursorPosition?: { x: number; y: number } | null;
+  browserTabs?: Array<{ index: number; url: string; title: string; active: boolean }>;
+  helpNeeded?: { reason: string; category: string } | null;
+  onHelpDismiss?: () => void;
 }
 
 const tabs = [
@@ -47,8 +52,11 @@ export default function SandboxPanel({
   clickIndicator, screenshotTimeout,
   pendingConfirmation, onConfirmationResolved,
   cursorPosition,
+  browserTabs,
+  helpNeeded, onHelpDismiss,
 }: SandboxPanelProps) {
   const [uptime, setUptime] = useState(0);
+  const [showFiles, setShowFiles] = useState(false);
   useEffect(() => {
     const t = setInterval(() => setUptime(s => s + 1), 1000);
     return () => clearInterval(t);
@@ -131,11 +139,11 @@ export default function SandboxPanel({
       <div className="flex items-center border-b border-border/50 bg-muted/10">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+          const isActive = activeTab === tab.id && !showFiles;
           return (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => { onTabChange(tab.id); setShowFiles(false); }}
               className={`hud-tab flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-mono tracking-wide ${isActive ? 'active' : ''}`}
               style={{
                 color: isActive ? tab.color : undefined,
@@ -160,19 +168,39 @@ export default function SandboxPanel({
             </button>
           );
         })}
+
+        {/* ★ SSH 文件/运维快捷入口 */}
+        <button
+          onClick={() => setShowFiles(!showFiles)}
+          className={`hud-tab flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-mono tracking-wide ${showFiles ? "active" : ""}`}
+          style={{
+            color: showFiles ? "#f59e0b" : undefined,
+            textShadow: showFiles ? "0 0 10px rgba(245,158,11,0.3)" : undefined,
+          }}
+        >
+          <style>{`.hud-tab.active[style*="f59e0b"]::after { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.5); }`}</style>
+          <FolderOpen className={`w-3.5 h-3.5 ${showFiles ? "" : "text-muted-foreground/50"}`} />
+          <span className={showFiles ? "uppercase" : "uppercase text-muted-foreground/50"}>文件</span>
+        </button>
       </div>
 
       {/* ═══ 内容区 ═══ */}
       <div className="flex-1 overflow-hidden relative">
         {/* HUD 四角标记 */}
-        <div className="hud-corner hud-corner-tl" style={{ borderColor: activeTab_.color }} />
-        <div className="hud-corner hud-corner-tr" style={{ borderColor: activeTab_.color }} />
-        <div className="hud-corner hud-corner-bl" style={{ borderColor: activeTab_.color }} />
-        <div className="hud-corner hud-corner-br" style={{ borderColor: activeTab_.color }} />
+        <div className="hud-corner hud-corner-tl" style={{ borderColor: showFiles ? "#f59e0b" : activeTab_.color }} />
+        <div className="hud-corner hud-corner-tr" style={{ borderColor: showFiles ? "#f59e0b" : activeTab_.color }} />
+        <div className="hud-corner hud-corner-bl" style={{ borderColor: showFiles ? "#f59e0b" : activeTab_.color }} />
+        <div className="hud-corner hud-corner-br" style={{ borderColor: showFiles ? "#f59e0b" : activeTab_.color }} />
 
-        {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} clickIndicator={clickIndicator} screenshotTimeout={screenshotTimeout} pendingConfirmation={pendingConfirmation} onConfirmationResolved={onConfirmationResolved} cursorPosition={cursorPosition} />}
-        {activeTab === "code" && <CodeEditor code={code} />}
-        {activeTab === "terminal" && <TerminalView terminal={terminal} />}
+        {showFiles ? (
+          <RemoteFileExplorer taskId={taskId ?? null} socket={socket ?? null} />
+        ) : (
+          <>
+            {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} clickIndicator={clickIndicator} screenshotTimeout={screenshotTimeout} pendingConfirmation={pendingConfirmation} onConfirmationResolved={onConfirmationResolved} cursorPosition={cursorPosition} browserTabs={browserTabs} helpNeeded={helpNeeded} onHelpDismiss={onHelpDismiss} />}
+            {activeTab === "code" && <CodeEditor code={code} />}
+            {activeTab === "terminal" && <TerminalView terminal={terminal} />}
+          </>
+        )}
       </div>
 
       {/* ★ P1⑥：任务中途指令输入 */}

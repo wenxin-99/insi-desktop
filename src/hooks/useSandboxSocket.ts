@@ -195,6 +195,10 @@ export function useSandboxSocket(taskId: number | null) {
   // ★ P1④：AI 光标位置 + 操作预告
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const [agentActionPreview, setAgentActionPreview] = useState<{ action: string; description: string } | null>(null);
+  // ★ 多 Tab
+  const [browserTabs, setBrowserTabs] = useState<Array<{ index: number; url: string; title: string; active: boolean }>>([]);
+  // ★ 需要帮助（CAPTCHA、登录失败等）
+  const [helpNeeded, setHelpNeeded] = useState<{ reason: string; category: string } | null>(null);
   // 截图超时提示
   const [screenshotTimeout, setScreenshotTimeout] = useState(false);
   // ★ 关键操作确认
@@ -399,6 +403,14 @@ export function useSandboxSocket(taskId: number | null) {
         setTimeout(() => setAgentActionPreview(null), 3000);
         break;
 
+      case "tabs_update" as any:
+        setBrowserTabs(event.payload.tabs || []);
+        break;
+
+      case "help_needed" as any:
+        setHelpNeeded({ reason: event.payload.reason || "", category: event.payload.category || "other" });
+        break;
+
       case "confirmation_required" as any:
         setPendingConfirmation({
           action: event.payload.action || "",
@@ -506,5 +518,10 @@ export function useSandboxSocket(taskId: number | null) {
     // ★ P1④：AI 光标 + 操作预告
     cursorPosition,
     agentActionPreview,
+    // ★ 多 Tab
+    browserTabs,
+    // ★ 需要帮助通知
+    helpNeeded,
+    setHelpNeeded,
   };
 }

@@ -165,9 +165,10 @@ export function useChatState(): ChatStateReturn {
   const [isResearchMode, setIsResearchMode] = useState(false);
   const [isStartingResearch, setIsStartingResearch] = useState(false);
   const [activeResearchTaskId, setActiveResearchTaskId] = useState<number | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   // ★ P0③：页面加载时自动重连正在运行的任务
-  const { data: runningTasks } = trpc.agent.activeRunning.useQuery(undefined, {
+  const { data: runningTasks, isLoading: isLoadingRunning } = trpc.agent.activeRunning.useQuery(undefined, {
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -177,6 +178,7 @@ export function useChatState(): ChatStateReturn {
       const tid = parseInt(String(first.taskId)) || 0;
       if (tid > 0) {
         console.log(`[AutoReconnect] Reconnecting to running task ${tid}: "${first.prompt}"`);
+        setIsReconnecting(true);
         setActiveResearchTaskId(tid);
       }
     }
@@ -185,6 +187,13 @@ export function useChatState(): ChatStateReturn {
   // ═══════════ 沙箱 ═══════════
   const [sandboxActiveTab, setSandboxActiveTab] = useState<'browser' | 'code' | 'terminal'>('browser');
   const sandboxData = useSandboxSocket(activeResearchTaskId);
+
+  // ★ 重连成功后清除状态
+  useEffect(() => {
+    if (isReconnecting && sandboxData.isConnected) {
+      setIsReconnecting(false);
+    }
+  }, [isReconnecting, sandboxData.isConnected]);
 
   // ═══════════ TTS ═══════════
   const { playingTtsIndex, setPlayingTtsIndex, isTtsAutoMode, setIsTtsAutoMode, streamingTts, handleTtsPlay } = useTTS(selectedPackageId);
@@ -444,6 +453,7 @@ export function useChatState(): ChatStateReturn {
     isStartingResearch, setIsStartingResearch,
     activeResearchTaskId, setActiveResearchTaskId,
     sandboxActiveTab, setSandboxActiveTab, sandboxData,
+    isReconnecting,
     backgroundTaskCount, runningTaskCount, isConversationRunning,
     simulatedSteps, startThinking, onStreamStart, onStreamComplete, resetSimulatedThinking,
     thinkingStartTime, setThinkingStartTime,

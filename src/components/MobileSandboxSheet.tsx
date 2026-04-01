@@ -31,6 +31,9 @@ interface MobileSandboxSheetProps {
   pendingConfirmation?: { action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number } | null;
   onConfirmationResolved?: () => void;
   cursorPosition?: { x: number; y: number } | null;
+  browserTabs?: Array<{ index: number; url: string; title: string; active: boolean }>;
+  helpNeeded?: { reason: string; category: string } | null;
+  onHelpDismiss?: () => void;
 }
 
 const TABS = [
@@ -46,7 +49,8 @@ const SHEET_HEIGHTS: Record<SheetHeight, string> = {
 
 export const MobileSandboxSheet = memo(function MobileSandboxSheet({
   browser, code, terminal, activeTab, onTabChange, isConnected, taskId, socket, isActive,
-  pendingConfirmation, onConfirmationResolved, cursorPosition,
+  pendingConfirmation, onConfirmationResolved, cursorPosition, browserTabs,
+  helpNeeded, onHelpDismiss,
 }: MobileSandboxSheetProps) {
   const [sheetHeight, setSheetHeight] = useState<SheetHeight>("closed");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -150,7 +154,7 @@ export const MobileSandboxSheet = memo(function MobileSandboxSheet({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden rounded-t-lg mx-1">
-          {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} pendingConfirmation={pendingConfirmation} onConfirmationResolved={onConfirmationResolved} cursorPosition={cursorPosition} />}
+          {activeTab === "browser" && <BrowserPreview browser={browser} taskId={taskId} socket={socket} pendingConfirmation={pendingConfirmation} onConfirmationResolved={onConfirmationResolved} cursorPosition={cursorPosition} browserTabs={browserTabs} helpNeeded={helpNeeded} onHelpDismiss={onHelpDismiss} />}
           {activeTab === "code" && <CodeEditor code={code} />}
           {activeTab === "terminal" && <TerminalView terminal={terminal} />}
         </div>

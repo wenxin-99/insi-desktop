@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Insi Cookie Sync",
+  "version": "1.0.0",
+  "description": "一键同步浏览器登录态到 Insi AI，免去重复登录",
+  "permissions": ["cookies", "activeTab", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

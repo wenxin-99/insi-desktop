@@ -15,14 +15,18 @@ import type { Socket } from "socket.io-client";
 import type { BrowserState } from "@/hooks/useSandboxSocket";
 import { ConfirmationOverlay } from "./ConfirmationOverlay";
 import { AICursor } from "./AICursor";
+import { HelpNeededBanner } from "./HelpNeededBanner";
 
-export function BrowserPreview({ browser, taskId, socket, clickIndicator, screenshotTimeout, pendingConfirmation, onConfirmationResolved, cursorPosition }: {
+export function BrowserPreview({ browser, taskId, socket, clickIndicator, screenshotTimeout, pendingConfirmation, onConfirmationResolved, cursorPosition, browserTabs, helpNeeded, onHelpDismiss }: {
   browser: BrowserState; taskId?: number | null; socket?: Socket | null;
   clickIndicator?: { x: number; y: number; description: string; key: number } | null;
   screenshotTimeout?: boolean;
   pendingConfirmation?: { action: string; description: string; screenshot: string; timeoutMs: number; timestamp: number } | null;
   onConfirmationResolved?: () => void;
   cursorPosition?: { x: number; y: number } | null;
+  browserTabs?: Array<{ index: number; url: string; title: string; active: boolean }>;
+  helpNeeded?: { reason: string; category: string } | null;
+  onHelpDismiss?: () => void;
 }) {
   const [zoom, setZoom] = useState(1);
   const [isImageExpanded, setIsImageExpanded] = useState(false);
@@ -163,6 +167,26 @@ export function BrowserPreview({ browser, taskId, socket, clickIndicator, screen
         .orbit-ring { animation: orbit linear infinite; }
       `}</style>
 
+      {/* ★ 多 Tab 栏（2+ Tab 时显示） */}
+      {browserTabs && browserTabs.length > 1 && (
+        <div className="flex items-center gap-0.5 px-2 py-1 bg-muted/30 border-b border-border/30 overflow-x-auto scrollbar-hide">
+          {browserTabs.map((tab) => (
+            <button
+              key={tab.index}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] max-w-[140px] min-w-0 transition-all shrink-0 ${
+                tab.active
+                  ? "bg-background border border-border/60 shadow-sm text-foreground font-medium"
+                  : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50"
+              }`}
+              title={tab.url}
+            >
+              <Globe className="w-2.5 h-2.5 shrink-0" />
+              <span className="truncate">{tab.title || (() => { try { return new URL(tab.url).hostname; } catch { return `Tab ${tab.index}`; } })()}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 地址栏 */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 bg-muted/20">
         <div className="flex gap-1 shrink-0">
@@ -200,6 +224,15 @@ export function BrowserPreview({ browser, taskId, socket, clickIndicator, screen
 
       {/* 内容区 */}
       <div className="flex-1 relative overflow-auto bg-muted/10">
+        {/* ★ AI 求助通知（验证码/登录失败等） */}
+        {helpNeeded && (
+          <HelpNeededBanner
+            reason={helpNeeded.reason}
+            category={helpNeeded.category}
+            onDismiss={() => onHelpDismiss?.()}
+            onTakeover={taskId && screenshotSrc ? toggleTakeover : undefined}
+          />
+        )}
         {screenshotSrc ? (
           <div className="p-2 flex items-start justify-center min-h-full">
             <img ref={imgRef} src={screenshotSrc} alt={browser.title || "Preview"}

@@ -7,11 +7,11 @@
  *
  * 无需 reactflow 外部依赖，纯 SVG + CSS 实现。
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Brain, Wrench, Eye, AlertTriangle, CheckCircle, FileText,
   ArrowRight, ChevronDown, ChevronUp, LayoutList, GitBranch,
-  Play, X,
+  Play, Pause, X,
 } from "lucide-react";
 import type { AgentStep } from "./types";
 
@@ -215,11 +215,31 @@ function ReplayView({ steps, onScreenshotClick }: {
   onScreenshotClick?: (src: string) => void;
 }) {
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const step = steps[currentIdx];
   if (!step) return <div className="text-center text-muted-foreground py-10 text-sm">无可回放的截图步骤</div>;
 
   const src = `data:image/jpeg;base64,${step.metadata?.screenshotBase64 || ""}`;
   const total = steps.length;
+
+  // ★ 自动播放
+  useEffect(() => {
+    if (!playing) {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      return;
+    }
+    timerRef.current = setInterval(() => {
+      setCurrentIdx(prev => {
+        if (prev >= total - 1) { setPlaying(false); return prev; }
+        return prev + 1;
+      });
+    }, 1500);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [playing, total]);
+
+  // 手动操作时暂停自动播放
+  const manualNav = (idx: number) => { setPlaying(false); setCurrentIdx(idx); };
 
   return (
     <div className="space-y-3">
@@ -235,16 +255,35 @@ function ReplayView({ steps, onScreenshotClick }: {
             {step.observation?.substring(0, 100) || ""}
           </div>
         </div>
+        {/* 播放状态指示 */}
+        {playing && (
+          <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 text-white text-[10px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            播放中
+          </div>
+        )}
       </div>
 
       {/* 进度条 + 控制 */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <button
-          onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}
+          onClick={() => manualNav(Math.max(0, currentIdx - 1))}
           disabled={currentIdx === 0}
           className="text-xs px-2 py-1 rounded-lg border hover:bg-muted disabled:opacity-30"
         >
-          ← 上一步
+          ←
+        </button>
+
+        {/* ★ 播放/暂停按钮 */}
+        <button
+          onClick={() => {
+            if (currentIdx >= total - 1 && !playing) { setCurrentIdx(0); setPlaying(true); }
+            else setPlaying(!playing);
+          }}
+          className="p-1.5 rounded-lg border hover:bg-muted transition-colors"
+          title={playing ? "暂停" : "自动播放"}
+        >
+          {playing ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
         </button>
 
         {/* 进度条 */}
@@ -252,7 +291,7 @@ function ReplayView({ steps, onScreenshotClick }: {
           {steps.map((_, i) => (
             <button
               key={i}
-              onClick={() => setCurrentIdx(i)}
+              onClick={() => manualNav(i)}
               className={`flex-1 h-1.5 rounded-full transition-colors ${
                 i === currentIdx ? "bg-primary" : i < currentIdx ? "bg-primary/40" : "bg-muted"
               }`}
@@ -261,11 +300,11 @@ function ReplayView({ steps, onScreenshotClick }: {
         </div>
 
         <button
-          onClick={() => setCurrentIdx(Math.min(total - 1, currentIdx + 1))}
+          onClick={() => manualNav(Math.min(total - 1, currentIdx + 1))}
           disabled={currentIdx >= total - 1}
           className="text-xs px-2 py-1 rounded-lg border hover:bg-muted disabled:opacity-30"
         >
-          下一步 →
+          →
         </button>
       </div>
 

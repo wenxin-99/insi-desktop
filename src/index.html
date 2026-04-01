@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Insi Desktop Agent</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f0f14;
+      --bg-card: #1a1a24;
+      --border: #2a2a3a;
+      --text: #e4e4ef;
+      --text-dim: #8888a0;
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 标题栏（可拖动） */
+    .titlebar {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      -webkit-app-region: drag;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .titlebar span { margin-left: 6px; }
+
+    /* 主内容 */
+    .container {
+      flex: 1;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Logo */
+    .logo {
+      text-align: center;
+      padding: 16px 0 8px;
+    }
+    .logo h1 {
+      font-size: 20px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--primary), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .logo p {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* 状态指示器 */
+    .status-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.connected { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.4); }
+    .status-dot.connecting { background: var(--warning); animation: pulse 1.5s infinite; }
+    .status-dot.disconnected { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-text { font-size: 14px; font-weight: 500; }
+    .status-detail { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+
+    /* 表单 */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group label {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+    .form-group input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+      border-color: var(--primary);
+    }
+    .form-group input::placeholder {
+      color: #555;
+    }
+
+    /* 按钮 */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.1); }
+
+    /* 屏幕信息 */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .info-item {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .info-item .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .info-item .value {
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    /* 底部 */
+    .footer {
+      padding: 12px 20px;
+      text-align: center;
+      font-size: 11px;
+      color: #444;
+      border-top: 1px solid var(--border);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    💻 <span>Insi Desktop Agent</span>
+  </div>
+
+  <div class="container">
+    <div class="logo">
+      <h1>Insi Desktop</h1>
+      <p>AI 桌面控制助手</p>
+    </div>
+
+    <!-- 状态卡片 -->
+    <div class="status-card">
+      <div class="status-row">
+        <div id="statusDot" class="status-dot disconnected"></div>
+        <span id="statusText" class="status-text">未连接</span>
+      </div>
+      <div id="statusDetail" class="status-detail"></div>
+
+      <div id="infoGrid" class="info-grid hidden">
+        <div class="info-item">
+          <div class="label">操作系统</div>
+          <div id="infoPlatform" class="value">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">分辨率</div>
+          <div id="infoScreen" class="value">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 登录表单（未连接时显示） -->
+    <div id="loginForm">
+      <div class="form-group">
+        <label>服务器地址</label>
+        <input type="text" id="serverUrl" value="https://insights.ren" placeholder="https://insights.ren" />
+      </div>
+      <div class="form-group" style="margin-top: 8px;">
+        <label>登录 Token</label>
+        <input type="password" id="authToken" placeholder="从 insights.ren 设置中复制" />
+      </div>
+      <button id="loginBtn" class="btn btn-primary" style="margin-top: 12px;">
+        🔗 连接服务端
+      </button>
+    </div>
+
+    <!-- 已连接状态 -->
+    <div id="connectedPanel" class="hidden">
+      <button id="disconnectBtn" class="btn btn-danger">
+        断开连接
+      </button>
+      <p style="font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 8px;">
+        你现在可以在 insights.ren 聊天中发送桌面控制指令
+      </p>
+    </div>
+  </div>
+
+  <div class="footer">
+    v<span id="version">0.1.0</span> · insights.ren
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+
+    const $ = (id) => document.getElementById(id);
+
+    // 状态轮询
+    let pollInterval = null;
+
+    async function updateStatus() {
+      try {
+        const status = await invoke("get_status");
+        const dot = $("statusDot");
+        const text = $("statusText");
+        const detail = $("statusDetail");
+
+        dot.className = "status-dot " + (
+          status.connected ? "connected" :
+          status.status === "Connecting" || status.status === "Reconnecting" ? "connecting" :
+          "disconnected"
+        );
+
+        text.textContent = status.connected ? "已连接" :
+          status.status === "Connecting" ? "连接中..." :
+          status.status === "Reconnecting" ? "重新连接中..." :
+          "未连接";
+
+        if (status.connected && status.screen) {
+          $("loginForm").classList.add("hidden");
+          $("connectedPanel").classList.remove("hidden");
+          $("infoGrid").classList.remove("hidden");
+          $("infoPlatform").textContent = status.platform === "macos" ? "macOS" :
+            status.platform === "windows" ? "Windows" : "Linux";
+          $("infoScreen").textContent = `${status.screen.width}×${status.screen.height}`;
+          detail.textContent = `缩放: ${status.screen.scale}x · ${status.osVersion}`;
+        } else {
+          $("loginForm").classList.remove("hidden");
+          $("connectedPanel").classList.add("hidden");
+          $("infoGrid").classList.add("hidden");
+          detail.textContent = "";
+        }
+
+        $("version").textContent = status.clientVersion || "0.1.0";
+      } catch (e) {
+        console.error("Status update failed:", e);
+      }
+    }
+
+    // 登录
+    $("loginBtn").addEventListener("click", async () => {
+      const token = $("authToken").value.trim();
+      const serverUrl = $("serverUrl").value.trim();
+
+      if (!token) {
+        alert("请输入登录 Token");
+        return;
+      }
+
+      $("loginBtn").disabled = true;
+      $("loginBtn").textContent = "⏳ 连接中...";
+
+      try {
+        await invoke("login", { token, serverUrl: serverUrl || null });
+        // 保存到 localStorage
+        localStorage.setItem("insi_token", token);
+        localStorage.setItem("insi_server", serverUrl);
+      } catch (e) {
+        alert("连接失败: " + e);
+      } finally {
+        $("loginBtn").disabled = false;
+        $("loginBtn").textContent = "🔗 连接服务端";
+      }
+    });
+
+    // 断开连接
+    $("disconnectBtn").addEventListener("click", async () => {
+      await invoke("disconnect");
+      localStorage.removeItem("insi_token");
+    });
+
+    // 自动登录（从 localStorage 恢复）
+    async function autoLogin() {
+      const token = localStorage.getItem("insi_token");
+      const server = localStorage.getItem("insi_server");
+
+      if (token) {
+        $("authToken").value = token;
+        if (server) $("serverUrl").value = server;
+        try {
+          await invoke("login", { token, serverUrl: server || null });
+        } catch (e) {
+          console.warn("Auto-login failed:", e);
+        }
+      }
+    }
+
+    // 初始化
+    updateStatus();
+    autoLogin();
+    pollInterval = setInterval(updateStatus, 2000);
+  </script>
+</body>
+</html>

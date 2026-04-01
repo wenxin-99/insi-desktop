@@ -1,0 +1,1367 @@
+{
+  "home": {
+    "title": "paper insights",
+    "welcome": "欢迎回来，{{name}}",
+    "subtitle": "开启智能学术研究之旅，让Insi成为您的研究助手",
+    "balance": "余额",
+    "coin": "币",
+    "nav": {
+      "dashboard": "管理后台",
+      "features": "功能介绍",
+      "tutorial": "使用教程",
+      "pricing": "定价"
+    },
+    "enterWorkspace": "进入工作台",
+    "features": {
+      "homework": {
+        "title": "作业智能批改",
+        "description": "批量上传作业图片，Insi自动批改并生成错题本，提升学习效率"
+      },
+      "paperAnalysis": {
+        "title": "论文智能解析",
+        "description": "上传PDF论文，Insi自动提取摘要、方法、结论等关键信息"
+      },
+      "academicChat": {
+        "title": "Insi学术对话",
+        "description": "与Insi讨论研究问题，获取专业的学术建议和文献推荐"
+      },
+      "dataVisualization": {
+        "title": "数据可视化",
+        "description": "将研究数据转化为直观的图表，快速发现数据规律"
+      },
+      "researchInspiration": {
+        "title": "研究灵感",
+        "description": "基于现有研究，Insi帮助您发现新的研究方向和创新点"
+      }
+    },
+    "benefits": {
+      "fastParsing": "快速解析，秒级响应",
+      "deepUnderstanding": "深度理解，精准提取",
+      "dataVisualization": "数据可视化，洞察趋势",
+      "academicSecurity": "学术级安全，隐私保护"
+    },
+    "whyChoose": "为什么选择 paper insights",
+    "readyToStart": {
+      "title": "准备好开始了吗？",
+      "description": "访问工作台，开始使用智能学术研究功能"
+    }
+  },
+  "dashboard": {
+    "menu": {
+      "user": {
+        "workspace": "工作台",
+        "aiChat": "Insi",
+        "imageHistory": "图片历史",
+        "videoHistory": "视频历史",
+        "coinManagement": "🐟币管理",
+        "productPurchase": "产品购买",
+        "orderHistory": "订单历史",
+        "subscriptionManagement": "订阅管理",
+        "inviteFriends": "邀请好友",
+        "userFeedback": "用户反馈",
+        "helpCenter": "帮助中心",
+        "automationSandbox": "网站自动化沙箱",
+        "scheduledTasks": "定时任务"
+      },
+      "admin": {
+        "dashboard": "仪表板",
+        "userManagement": "用户管理",
+        "modelManagement": "模型管理",
+        "modelComparison": "模型对比",
+        "packageManagement": "套餐管理",
+        "quotaManagement": "配额管理",
+        "discountManagement": "折扣管理",
+        "coinManagement": "🐟币管理",
+        "homeworkPricing": "作业批改费用",
+        "imageGenerationPricing": "图片生成费用",
+        "pdfWatermarkConfig": "PDF水印配置",
+        "videoApiConfig": "视频API配置",
+        "paymentConfig": "支付配置",
+        "invitationCodes": "邀请码",
+        "feedbackManagement": "反馈管理",
+        "systemNotifications": "系统通知",
+        "dataExport": "数据导出",
+        "systemSettings": "系统设置",
+        "proxyManagement": "代理管理",
+        "storageSettings": "云存储设置",
+        "imageTest": "图片生成测试",
+        "voiceSettings": "语音服务设置",
+        "sshSettings": "SSH / VPS 远程管理"
+      }
+    },
+    "user": "用户",
+    "signInToContinue": "登录以继续",
+    "signInDescription": "访问此页面需要登录认证，请点击下方按钮进行登录。",
+    "signInButton": "登录",
+    "signOut": "退出登录"
+  },
+  "chat": {
+    "title": "智能对话",
+    "inputPlaceholder": "输入消息...",
+    "sendButton": "发送",
+    "uploadImage": "上传图片",
+    "uploadFile": "上传文件",
+    "voiceInput": "语音输入",
+    "voiceInputDetails": {
+      "pressToTalk": "按住说话",
+      "recording": "开始录音...",
+      "recordingInProgress": "正在录音中...",
+      "releaseToSend": "松开发送",
+      "slideToCancel": "滑动取消",
+      "cancel": "取消",
+      "cancelled": "已取消录音",
+      "success": "语音识别完成！",
+      "failed": "语音识别失败",
+      "processingFailed": "处理录音失败",
+      "fileTooLarge": "录音文件过大，请控制在16MB以内",
+      "microphoneError": "无法访问麦克风，请检查权限设置"
+    },
+    "stopGenerating": "停止生成",
+    "regenerate": "重新生成",
+    "copy": "复制",
+    "copied": "已复制",
+    "delete": "删除",
+    "newConversation": "新建对话",
+    "conversationList": "对话列表",
+    "noConversations": "暂无对话",
+    "deleteConversation": "删除对话",
+    "renameConversation": "重命名",
+    "confirmDelete": "确认删除该对话？",
+    "thinking": "思考中...",
+    "generating": "生成中...",
+    "thinkingAnimation": {
+      "thinking": "Insi正在思考",
+      "analyzing": "分析中",
+      "processing": "处理中",
+      "generating": "生成中"
+    },
+    "emptyState": {
+      "title": "你好，有什么可以帮你？",
+      "subtitle": "选择下方模板快速开始，或直接输入你的问题",
+      "showMore": "展开更多 ({{count}}个)",
+      "showLess": "收起",
+      "tip": "💡 你可以上传图片、文件，使用语音输入，或直接输入文字与Insi对话",
+      "supportInfo": "支持图片分析、AI绘画、视频生成、文档处理、作业批改、深度代理等多种功能",
+      "categories": {
+        "hot": "热门推荐",
+        "education": "学习教育",
+        "writing": "写作创作",
+        "work": "职场办公",
+        "research": "学术研究",
+        "media": "图片视频",
+        "coding": "编程开发",
+        "translate": "翻译语言",
+        "life": "生活助手"
+      },
+      "tpl": {
+        "deepResearch": {
+          "title": "深度代理",
+          "desc": "让Insi像代理研究员一样，对任意主题进行多轮搜索与深度分析",
+          "prompt": "请帮我深度研究以下课题，包括背景介绍、最新进展、主要观点和未来趋势：[请输入你的课题]"
+        },
+        "imageAnalysis": {
+          "title": "图片智能分析",
+          "desc": "上传图片，Insi帮你识别内容、提取文字、分析细节",
+          "prompt": "请分析我上传的这张图片，详细描述图中的内容和关键信息"
+        },
+        "writeEssay": {
+          "title": "AI写作助手",
+          "desc": "帮你写文章、论文、报告，自动生成结构清晰的高质量文本",
+          "prompt": "请帮我写一篇关于[主题]的文章，要求结构清晰、论证充分，大约1000字左右"
+        },
+        "codeHelp": {
+          "title": "编程助手",
+          "desc": "代码编写、Bug修复、算法优化，支持所有主流编程语言",
+          "prompt": "请帮我用Python编写一个[功能描述]的程序，要求代码规范、有注释说明"
+        },
+        "generateVideo": {
+          "title": "Insi视频生成",
+          "desc": "输入文字描述或上传图片，Insi为你生成创意视频",
+          "prompt": "请帮我生成一段视频，画面描述：[请描述你想要的画面内容和风格]"
+        },
+        "translate": {
+          "title": "智能翻译",
+          "desc": "支持多语言互译，保留原文风格和语境，翻译更自然",
+          "prompt": "请将以下内容翻译成英文，要求翻译自然流畅，保留原文的语气和风格：\n[请粘贴需要翻译的内容]"
+        },
+        "homeworkCorrection": {
+          "title": "作业智能批改",
+          "desc": "拍照上传作业，Insi自动批改打分、指出错误并给出详细解析",
+          "prompt": "请帮我批改这份作业，逐题分析对错，给出正确答案和详细的解题步骤"
+        },
+        "examPrep": {
+          "title": "考试冲刺准备",
+          "desc": "针对考试科目生成复习重点、模拟题和答题技巧",
+          "prompt": "我正在准备[考试名称]，请帮我整理核心考点、生成模拟题目并提供答题技巧和时间分配建议"
+        },
+        "studyPlan": {
+          "title": "定制学习计划",
+          "desc": "根据你的目标和时间，Insi为你制定科学的学习计划",
+          "prompt": "请帮我制定一份[科目/技能]的学习计划，我的目标是[具体目标]，每天可用[X]小时，计划周期[X]个月"
+        },
+        "conceptExplain": {
+          "title": "知识点通俗讲解",
+          "desc": "用简单易懂的方式解释复杂概念，支持举例和类比",
+          "prompt": "请用通俗易懂的方式向我解释[知识点/概念]，最好用生活中的例子来类比说明，就像在给一个初学者讲课一样"
+        },
+        "mathSolver": {
+          "title": "数学解题助手",
+          "desc": "拍照上传数学题或直接输入，AI给出详细解题步骤",
+          "prompt": "请帮我解答以下数学题，要求写出完整的解题过程和每一步的推导思路：\n[请输入题目]"
+        },
+        "englishPractice": {
+          "title": "英语口语陪练",
+          "desc": "模拟真实对话场景练习英语，Insi纠正语法并给出建议",
+          "prompt": "请做我的英语口语陪练老师，我们模拟一个[场景：如餐厅点餐/机场出行/面试]的对话情景。请先用英语和我打招呼开始对话，并在每轮对话后指出我的语法或表达问题"
+        },
+        "quizGenerator": {
+          "title": "智能出题",
+          "desc": "根据知识点自动生成选择题、填空题或问答题",
+          "prompt": "请根据[科目/章节/知识点]帮我生成10道练习题（包含5道选择题、3道填空题和2道简答题），并在最后附上答案和解析"
+        },
+        "readingComprehension": {
+          "title": "阅读理解辅导",
+          "desc": "分析文章结构、提炼主旨、解答阅读理解题",
+          "prompt": "请帮我分析以下这篇文章的结构、中心思想和写作手法，并回答后面的阅读理解题：\n[请粘贴文章内容]"
+        },
+        "writeEmail": {
+          "title": "商务邮件撰写",
+          "desc": "帮你写正式得体的商务邮件，支持多种场景和语气",
+          "prompt": "请帮我写一封商务邮件，场景：[如回复客户询价/会议邀请/项目进度汇报]，语气要求：正式但友好，收件人是[对方身份]"
+        },
+        "writeCopy": {
+          "title": "营销文案生成",
+          "desc": "为产品、活动生成吸引眼球的营销文案和广告词",
+          "prompt": "请帮我为[产品/活动名称]写一段营销推广文案，目标受众是[受众画像]，需要突出[核心卖点]，文案风格要求[活泼/专业/温情]"
+        },
+        "weeklyReport": {
+          "title": "周报/日报生成",
+          "desc": "输入工作内容关键词，AI帮你生成结构化的工作汇报",
+          "prompt": "请帮我根据以下工作内容生成一份周报，要求条理清晰、突出成果和下周计划：\n本周工作内容：[请列出关键事项]"
+        },
+        "creativeStory": {
+          "title": "创意故事写作",
+          "desc": "根据关键词或设定生成小说、故事、剧本等创意内容",
+          "prompt": "请帮我创作一个短篇故事，设定：[时代/世界观]，主角：[角色特征]，核心冲突：[矛盾点]，风格：[悬疑/温馨/科幻等]"
+        },
+        "resumeOptimize": {
+          "title": "简历优化润色",
+          "desc": "优化简历内容，突出核心优势，针对目标岗位调整表述",
+          "prompt": "请帮我优化以下简历内容，我要投递的岗位是[目标岗位]，请针对岗位要求优化措辞、突出匹配的经验和技能：\n[请粘贴简历内容]"
+        },
+        "xiaohongshu": {
+          "title": "小红书笔记",
+          "desc": "生成小红书风格的种草笔记，标题吸睛、排版美观",
+          "prompt": "请帮我写一篇小红书风格的种草笔记，主题是[产品/体验/攻略]，要求标题吸引人、有emoji点缀、分段清晰、附合适的标签推荐"
+        },
+        "polishText": {
+          "title": "文本润色改写",
+          "desc": "优化文字表达，修正语病，提升文章可读性和专业度",
+          "prompt": "请帮我润色以下文字，修正语法错误、优化表达、提升可读性，保持原意不变：\n[请粘贴需要润色的内容]"
+        },
+        "pptOutline": {
+          "title": "PPT大纲生成",
+          "desc": "输入主题自动生成演示文稿大纲和每页要点",
+          "prompt": "请帮我生成一份关于[主题]的PPT大纲，共约[X]页，包含标题页、目录页、内容页和总结页，每页列出标题和3-4个要点"
+        },
+        "meetingSummary": {
+          "title": "会议纪要整理",
+          "desc": "将会议讨论内容整理成结构化的会议纪要",
+          "prompt": "请帮我把以下会议讨论内容整理成正式的会议纪要，包含时间、参会人员、议题、讨论要点、决议和待办事项：\n[请粘贴会议内容]"
+        },
+        "swotAnalysis": {
+          "title": "SWOT竞品分析",
+          "desc": "对项目或产品进行优势、劣势、机会、威胁全面分析",
+          "prompt": "请帮我对[产品/项目/公司名称]进行SWOT分析，详细阐述其优势(Strengths)、劣势(Weaknesses)、机会(Opportunities)和威胁(Threats)，并给出战略建议"
+        },
+        "projectPlan": {
+          "title": "项目计划书",
+          "desc": "生成项目计划书，包含目标、时间线、里程碑和资源规划",
+          "prompt": "请帮我制定一份[项目名称]的项目计划书，包含：项目背景、目标、关键里程碑、时间节点、资源需求、风险评估和应对方案"
+        },
+        "contractReview": {
+          "title": "合同条款审查",
+          "desc": "分析合同关键条款，标注潜在风险点和注意事项",
+          "prompt": "请帮我审查以下合同内容，重点关注：权利义务是否对等、违约条款、免责条款、付款条件等关键条款，标注潜在风险并给出修改建议：\n[请粘贴合同内容]"
+        },
+        "interviewPrep": {
+          "title": "面试模拟准备",
+          "desc": "根据岗位模拟面试问题，提供参考答案和答题策略",
+          "prompt": "我即将面试[公司名称]的[岗位名称]，请帮我模拟面试，生成10个可能被问到的面试问题（含行为面试和技术面试），并为每个问题提供参考答案和回答策略"
+        },
+        "paperAnalysis": {
+          "title": "论文精读分析",
+          "desc": "上传PDF论文，AI提取摘要、方法、结论等关键信息",
+          "prompt": "请帮我精读分析上传的这篇论文，提取以下信息：研究背景、研究问题、方法论、主要发现、创新点、局限性和未来研究方向"
+        },
+        "literatureReview": {
+          "title": "文献综述辅助",
+          "desc": "帮你梳理研究领域的文献脉络和主要观点",
+          "prompt": "请帮我围绕[研究主题]进行文献综述的构思，梳理该领域的发展脉络、主要理论流派、核心争论、研究方法趋势和未来研究空白"
+        },
+        "abstractWriting": {
+          "title": "论文摘要撰写",
+          "desc": "根据论文正文自动生成中英文摘要",
+          "prompt": "请帮我根据以下论文内容生成一段200字左右的中文摘要和一段相应的英文Abstract，包含研究目的、方法、结果和结论：\n[请粘贴论文核心内容]"
+        },
+        "dataInterpret": {
+          "title": "实验数据分析",
+          "desc": "帮你分析实验数据、解读统计结果、提供可视化建议",
+          "prompt": "请帮我分析以下实验数据，给出描述性统计、主要趋势解读、可能的统计检验方法建议和数据可视化方案：\n[请粘贴数据或描述数据情况]"
+        },
+        "researchProposal": {
+          "title": "开题报告构思",
+          "desc": "帮你构思研究方向、设计研究框架和写开题报告",
+          "prompt": "我的研究方向是[研究领域]，请帮我构思一个开题报告框架，包含：选题背景与意义、国内外研究现状、研究内容与方法、技术路线、预期成果和创新点"
+        },
+        "imageGenerate": {
+          "title": "Insi绘画生成",
+          "desc": "用文字描述你想要的画面，Insi帮你生成精美图片",
+          "prompt": "请帮我生成一张图片，画面描述：[详细描述画面内容、风格、色调、构图等]"
+        },
+        "voiceTranscribe": {
+          "title": "语音转文字",
+          "desc": "上传音频文件，Insi自动转写为准确的文字内容",
+          "prompt": "请帮我将上传的语音文件转写为文字，并进行标点断句和段落整理"
+        },
+        "pdfSummary": {
+          "title": "PDF文档摘要",
+          "desc": "上传PDF文件，快速提取关键信息和核心要点",
+          "prompt": "请帮我分析上传的PDF文件，提取文档的核心内容、关键要点，并生成一份结构化的内容摘要"
+        },
+        "ocrExtract": {
+          "title": "OCR文字提取",
+          "desc": "从图片中识别并提取文字内容，支持手写体识别",
+          "prompt": "请帮我识别并提取这张图片中的所有文字内容，保持原文的排版格式"
+        },
+        "codeDebug": {
+          "title": "代码Bug诊断",
+          "desc": "粘贴报错代码，AI帮你定位问题并提供修复方案",
+          "prompt": "我的代码出现了以下错误，请帮我分析问题原因并给出修复方案：\n语言：[编程语言]\n错误信息：[报错内容]\n代码：\n[请粘贴相关代码]"
+        },
+        "codeExplain": {
+          "title": "代码逐行解读",
+          "desc": "看不懂代码？Insi帮你逐行解释每段代码的作用",
+          "prompt": "请帮我逐行解读以下代码，用中文说明每段代码的作用、使用的算法或设计模式：\n[请粘贴代码]"
+        },
+        "codeConvert": {
+          "title": "代码语言转换",
+          "desc": "将代码从一种编程语言转换为另一种，保持功能一致",
+          "prompt": "请帮我将以下[源语言]代码转换为[目标语言]代码，保持功能一致并遵循目标语言的最佳实践：\n[请粘贴代码]"
+        },
+        "sqlHelper": {
+          "title": "SQL查询生成",
+          "desc": "用自然语言描述需求，Insi帮你生成SQL查询语句",
+          "prompt": "请帮我写一条SQL查询，数据库结构如下：[表名和字段描述]，我需要查询：[用自然语言描述查询需求]"
+        },
+        "regexHelper": {
+          "title": "正则表达式助手",
+          "desc": "描述匹配规则，AI帮你生成和调试正则表达式",
+          "prompt": "请帮我写一个正则表达式，需求：[描述你要匹配/提取/替换的文本模式]，并给出几个测试用例说明匹配结果"
+        },
+        "academicTranslate": {
+          "title": "学术论文翻译",
+          "desc": "专业术语准确翻译，符合学术论文的行文规范",
+          "prompt": "请将以下学术论文段落翻译成[目标语言]，要求专业术语翻译准确，符合学术写作规范，保持论文的正式语体：\n[请粘贴学术文本]"
+        },
+        "grammarCheck": {
+          "title": "语法纠错润色",
+          "desc": "检查英文文本的语法错误并优化表达",
+          "prompt": "请帮我检查以下英文文本的语法错误、拼写错误和表达问题，给出修改建议和修改后的完整文本：\n[请粘贴英文内容]"
+        },
+        "japaneseLearn": {
+          "title": "日语学习助手",
+          "desc": "日语语法讲解、对话练习、词汇记忆辅助",
+          "prompt": "请做我的日语学习老师，帮我讲解[请输入你想学习的日语语法/词汇/场景]，包含发音要点、例句和常用表达，并用中日对照的方式展示"
+        },
+        "idiomExplain": {
+          "title": "成语典故大全",
+          "desc": "查询成语的意思、出处、用法和近义词反义词",
+          "prompt": "请帮我详细解释成语\"[成语]\"，包含：释义、出处典故、用法示例、近义词、反义词，并说明在现代语境中的使用场景"
+        },
+        "travelPlan": {
+          "title": "旅行行程规划",
+          "desc": "根据目的地、预算和天数生成详细旅行攻略",
+          "prompt": "请帮我规划一次[目的地]的旅行攻略，出行人数[X]人，预算[X]元，行程[X]天，要求包含每天的行程安排、交通方式、住宿推荐和必吃美食"
+        },
+        "recipeSuggest": {
+          "title": "食谱推荐",
+          "desc": "根据你现有的食材推荐菜谱和详细做法",
+          "prompt": "我现在有这些食材：[列出食材]，请推荐3个适合的菜谱，包含详细的烹饪步骤、调料用量和烹饪技巧"
+        },
+        "fitnessPlan": {
+          "title": "健身训练计划",
+          "desc": "根据你的目标和条件定制科学的健身方案",
+          "prompt": "请帮我制定一份健身计划，我的情况：[性别/年龄/身高/体重]，目标：[减脂/增肌/塑形]，每周可训练[X]天，有[有/无]器械，请给出每天的训练动作、组数和注意事项"
+        },
+        "healthAdvice": {
+          "title": "健康知识咨询",
+          "desc": "了解常见健康问题的科普知识和预防建议",
+          "prompt": "请帮我科普一下关于[健康话题/症状]的知识，包含可能的原因、日常预防建议和什么情况下应该就医（注：仅供参考，不替代专业医疗建议）"
+        },
+        "emotionSupport": {
+          "title": "情绪倾诉树洞",
+          "desc": "当你感到压力或困惑时，AI陪你聊天、理清思绪",
+          "prompt": "我最近感到有些[压力/焦虑/困惑]，主要是因为[简要描述]。能不能陪我聊聊，帮我理清一下思绪？"
+        },
+        "hobbyDiscover": {
+          "title": "兴趣爱好探索",
+          "desc": "根据你的兴趣和性格推荐适合的新爱好",
+          "prompt": "我想探索一些新的兴趣爱好，我目前的兴趣是[现有爱好]，性格偏[内向/外向]，每周有[X]小时空闲时间，预算[有限/中等/充裕]，请给我推荐5个适合我的新爱好并说明理由"
+        }
+      },
+      "templates": {
+        "analyzeImage": "分析这张图片",
+        "generateVideo": "生成一段视频",
+        "createDocument": "生成一份文档",
+        "transcribeAudio": "语音转文字"
+      }
+    },
+    "errors": {
+      "quotaExceeded": "对话配额已用完，请购买更多配额或升级订阅",
+      "insufficientBalance": "余额不足，请充值后再试",
+      "networkError": "网络连接失败，请检查网络后重试",
+      "serverError": "服务器错误，请稍后重试",
+      "unknownError": "发生未知错误，请重试",
+      "retryButton": "重试发送",
+      "messageRestored": "已恢复失败的消息，请再次发送"
+    },
+    "suggestions": {
+      "title": "你可能还想问"
+    },
+    "styleSelector": {
+      "title": "选择图片风格",
+      "currentStyle": "当前风格：{{style}}",
+      "clear": "清除",
+      "styles": {
+        "realistic": "📷 写实",
+        "cartoon": "🎨 卡通",
+        "watercolor": "🌈 水彩",
+        "oil": "🖼️ 油画",
+        "sketch": "✏️ 素描",
+        "cyberpunk": "🤖 赛博朋克",
+        "anime": "👾 动漫",
+        "3d": "🎮 3D渲染"
+      }
+    },
+    "aspectRatio": {
+      "label": "画幅比例",
+      "square": "正方形",
+      "landscape": "横屏",
+      "portrait": "竖屏"
+    },
+    "paste": {
+      "autoPackaging": "检测到大量文本（{{chars}}字符），已自动打包为txt文件上传"
+    },
+    "retry": "重试",
+    "uploadProgress": "正在上传 {{current}}/{{total}} 个文件",
+    "research": {
+      "modeEnabled": "联网代理已开启 — Insi 将自主搜索互联网并生成研究报告",
+      "closeMode": "关闭联网代理模式",
+      "openMode": "开启联网代理模式",
+      "enterPrompt": "请输入代理指令",
+      "started": "联网代理已启动（消耗 {{cost}} 🐟币）",
+      "startFailed": "启动联网代理失败",
+      "startFailedRetry": "启动联网代理失败，请稍后重试。",
+      "intentDetected": "检测到您可能需要联网代理，请确认：",
+      "tooltipTitle": "联网代理模式",
+      "tooltipDesc": "Insi 将自主搜索互联网、分析多方资料，并为您生成一份完整的代理报告。适合需要深入了解某个主题的场景。",
+      "tooltipCost": "提示：每次联网代理将消耗一定数量的 🐟币",
+      "confirm": {
+        "title": "检测到联网代理需求",
+        "subtitle": "Insi 将自主搜索互联网、分析资料并生成研究报告",
+        "webSearch": "联网搜索",
+        "deepAnalysis": "深度分析",
+        "generateReport": "生成报告",
+        "promptLabel": "代理指令：",
+        "reset": "重置",
+        "placeholder": "描述您想要代理的主题...",
+        "editHint": "您可以编辑代理指令以获得更精确的结果",
+        "costLabel": "消耗费用：",
+        "cancelChat": "取消，直接对话",
+        "starting": "启动中...",
+        "startResearch": "启动联网代理"
+      },
+      "cancelled": "已取消联网代理，消息将作为普通对话处理",
+      "sandbox": "Insi的电脑",
+      "taskLabel": "代理任务 #{{id}}",
+      "backToThinking": "返回思考步骤",
+      "title": "联网代理",
+      "status": {
+        "pending": "排队中",
+        "running": "代理中",
+        "completed": "已完成",
+        "failed": "失败"
+      },
+      "stepsCount": "{{count}} 个步骤",
+      "viewReport": "查看报告",
+      "collapseReport": "收起报告",
+      "viewInSandbox": "在沙箱中查看",
+      "researching": "正在代理中...",
+      "failedRefund": "联网代理失败，费用已退回",
+      "label": "联网搜索"
+    },
+    "video": {
+      "intentDetected": "检测到您想要生成视频，请确认以下信息：",
+      "analyzing": "正在分析图片并生成视频描述...",
+      "analyzingImage": "正在分析图片并生成...",
+      "defaultPrompt": "基于上传的图片生成视频",
+      "generate": "生成视频",
+      "detected": "检测到您想要生成视频，请确认以下信息："
+    },
+    "viewThinkingSteps": "查看Insi思考步骤",
+    "thinkingSteps": "Insi思考步骤",
+    "scrollToBottom": "滚动到底部",
+    "uploadAttachment": "上传附件",
+    "download": {
+      "success": "下载成功！",
+      "failed": "下载失败，请重试"
+    },
+    "downloadImage": "下载图片",
+    "sandboxPlaceholder": "当Insi回复时，这里会显示",
+    "thinkingStepsPlaceholder": "当Insi进行对话时，详细的思考步骤将在此显示",
+    "thinkingProcess": "Insi思考流程",
+    "imageDescription": "图片描述：",
+    "expand": "展开",
+    "collapse": "收起",
+    "clickNewToStart": "点击\"新对话\"开始",
+    "selectPackageFirst": "请先选择模型套餐",
+    "costMessage": "消耗 {{cost}} 🐟币，余额: {{balance}}",
+    "newConversationCreated": "新对话已创建",
+    "conversationNotFound": "对话不存在，已自动创建新对话",
+    "thinkingTime": "思考时间",
+    "aiAssistant": "Insi",
+    "export": {
+      "noContent": "没有可导出的对话内容",
+      "markdownSuccess": "已导出Markdown文件",
+      "wordSuccess": "已导出Word文档",
+      "wordFailed": "导出Word文档失败"
+    },
+    "upload": {
+      "sizeLimit": "文件大小超过限制（20MB）",
+      "unsupportedFormat": "不支持的图片格式，请使用 JPG、PNG、GIF、WebP 或 HEIC 格式",
+      "success": "上传成功！",
+      "failed": "上传失败",
+      "retryFailed": "无法重试，文件信息丢失",
+      "unknownError": "未知错误"
+    },
+    "downloadBtn": "下载",
+    "attachMenu": {
+      "image": "上传图片",
+      "imageHint": "JPG, PNG, GIF, WebP",
+      "file": "上传文件",
+      "fileHint": "PDF, Word, Excel, 代码...",
+      "camera": "拍照上传",
+      "cameraHint": "使用相机",
+      "dragHint": "也可以直接拖拽文件或粘贴图片到输入框"
+    }
+  },
+  "homework": {
+    "title": "作业批改",
+    "subtitle": "上传作业图片，Insi自动批改并生成详细报告",
+    "uploadHomework": "上传作业",
+    "uploadDescription": "支持一次上传多张图片（最多10张），Insi将逐一批改",
+    "batchUpload": "批量上传",
+    "startGrading": "开始批改",
+    "gradingHistory": "批改历史",
+    "viewHistory": "查看历史",
+    "errorNotebook": "错题本",
+    "viewDetails": "查看详情",
+    "downloadReport": "下载报告",
+    "noHomework": "暂无作业",
+    "uploadSuccess": "上传成功",
+    "gradingInProgress": "批改中...",
+    "gradingComplete": "批改完成",
+    "uploading": "上传中...",
+    "subjects": {
+      "math": "数学",
+      "chinese": "语文",
+      "english": "英语",
+      "physics": "物理",
+      "chemistry": "化学",
+      "other": "其他"
+    },
+    "form": {
+      "subject": "科目",
+      "grade": "年级（选填）",
+      "gradePlaceholder": "选择年级",
+      "title": "作业标题（选填）",
+      "titlePlaceholder": "例如：第三单元测验",
+      "uploadImages": "上传作业图片",
+      "clickToUpload": "点击上传图片（最多10张）",
+      "gradeOptions": {
+        "g1": "一年级",
+        "g2": "二年级",
+        "g3": "三年级",
+        "g4": "四年级",
+        "g5": "五年级",
+        "g6": "六年级",
+        "g7": "初一",
+        "g8": "初二",
+        "g9": "初三",
+        "g10": "高一",
+        "g11": "高二",
+        "g12": "高三"
+      },
+      "cameraUpload": "拍照",
+      "albumUpload": "从相册选择"
+    },
+    "results": {
+      "title": "批改结果",
+      "correct": "正确",
+      "wrong": "错误",
+      "accuracy": "正确率",
+      "totalQuestions": "总题数",
+      "detailedCorrection": "详细批改",
+      "imageIndex": "第 {{index}} 张作业",
+      "scoreLevel": {
+        "excellent": "优秀",
+        "good": "良好",
+        "pass": "及格",
+        "fail": "不及格"
+      },
+      "knowledgeAnalysis": "知识点掌握分析",
+      "originalImage": "原图",
+      "reportAiError": "AI判错了",
+      "reportAiErrorSuccess": "感谢反馈，已记录",
+      "confirmCorrect": "实际正确",
+      "confirmWrong": "确认错误",
+      "needReview": "需人工复核",
+      "lowConfidence": "该题识别置信度较低，建议人工核实",
+      "verificationSteps": "验算过程",
+      "mastered": "已掌握",
+      "notMastered": "待加强"
+    },
+    "history": {
+      "untitled": "未命名作业",
+      "noHistory": "暂无批改历史"
+    },
+    "errors": {
+      "fileLimitExceeded": "文件数量超限",
+      "maxTenImages": "最多只能上伀10张图片",
+      "selectImages": "请选择图片",
+      "uploadAtLeastOne": "请至少上传一张作业图片",
+      "uploadFailed": "图片上传失败",
+      "gradingFailed": "批改失败",
+      "gradingError": "批改过程中出现错误"
+    },
+    "costNotice": {
+      "title": "🐟 费用提示",
+      "description": "本次批改将消耗 {{cost}} 🐟币（{{count}}张图片 × {{perImage}}🐟币/张）"
+    },
+    "completeNotice": {
+      "description": "共批改{{total}}道题，正确率{{accuracy}}%"
+    },
+    "dragDropHint": "将图片拖拽到此处，或点击上传",
+    "dragDropActive": "松开鼠标放置图片",
+    "selectedCount": "已选择 {{count}} 张图片",
+    "compressing": "压缩中...",
+    "compressComplete": "压缩完成，节省 {{saved}}%",
+    "imageOrder": "拖拽可调整顺序",
+    "costConfirm": {
+      "title": "确认批改",
+      "description": "本次批改将消耗 {{cost}} 🐟币",
+      "detail": "{{count}} 张图片 · {{subject}} · {{grade}}",
+      "balance": "当前余额：{{balance}} 🐟币",
+      "balanceAfter": "批改后余额：{{after}} 🐟币",
+      "confirm": "确认批改",
+      "cancel": "取消"
+    },
+    "progress": {
+      "uploading": "正在上传图片",
+      "uploadingDetail": "第 {{current}}/{{total}} 张",
+      "recognizing": "AI 正在识别文字",
+      "recognizingDetail": "正在处理第 {{current}}/{{total}} 张",
+      "correcting": "AI 正在批改",
+      "correctingDetail": "正在分析第 {{current}}/{{total}} 张",
+      "generating": "生成报告",
+      "generatingDetail": "正在生成思维导图和学习建议",
+      "complete": "批改完成",
+      "completeDetail": "共 {{total}} 题，正确率 {{accuracy}}%"
+    },
+    "guide": {
+      "step1": "拍照/上传",
+      "step1Desc": "拍摄或选择作业图片",
+      "step2": "AI识别",
+      "step2Desc": "自动识别题目和答案",
+      "step3": "智能批改",
+      "step3Desc": "AI逐题批改判分",
+      "step4": "详细报告",
+      "step4Desc": "生成分析报告和建议"
+    }
+  },
+  "pages": {
+    "dashboard": {
+      "title": "工作台",
+      "welcome": "欢迎使用Insi代理平台",
+      "backToHome": "返回首页",
+      "vipStatus": "当前VIP等级",
+      "daysRemaining": "剩余天数",
+      "vipMember": "VIP会员",
+      "premiumVip": "高级VIP",
+      "days": "天",
+      "quickActions": {
+        "aiChat": {
+          "title": "Insi",
+          "description": "开始新的对话"
+        },
+        "imageGeneration": {
+          "title": "图片生成",
+          "description": "创作AI艺术"
+        },
+        "documentProcessing": {
+          "title": "文档处理",
+          "description": "上传并处理文档"
+        },
+        "voiceToText": {
+          "title": "语音转文字",
+          "description": "转录音频文件"
+        }
+      },
+      "discounts": {
+        "aiChat": "Insi对话折扣",
+        "imageGeneration": "图片生成折扣",
+        "documentProcessing": "文档处理折扣"
+      },
+      "balance": "余额",
+      "quota": {
+        "aiChat": "Insi对话",
+        "imageGeneration": "图片生成",
+        "documentProcessing": "文档处理",
+        "used": "已用",
+        "total": "总计",
+        "unlimited": "无限"
+      },
+      "forumBenefits": {
+        "title": "论坛等级权益",
+        "description": "根据论坛信任等级享受AI功能折扣",
+        "currentLevel": "当前等级",
+        "visitForum": "访问论坛",
+        "noDiscounts": "当前无活动折扣",
+        "discountDisabled": "管理员已关闭折扣系统",
+        "specialBenefits": "特殊权益",
+        "priorityQueue": "优先队列访问",
+        "earlyAccess": "新模型优先体验",
+        "dedicatedSupport": "专属客服支持",
+        "levelUpTip": "在论坛积极活跃可提升等级，获得更高折扣！"
+      },
+      "coinBalance": "🐟币余额",
+      "quotaUsage": "今日配额使用情况",
+      "quotaResetTime": "配额将于每日零点自动重置",
+      "recentConversations": "最近对话",
+      "quickStart": "快速开始",
+      "conversationHistory": "对话历史",
+      "totalConversations": "总对话数",
+      "fileProcessing": "文件处理",
+      "uploadedFiles": "已上传文件",
+      "recentConsumption": "最近消费",
+      "consumptionTrend": "🐟币消费趋势（最近30天）",
+      "consumptionTrendDesc": "查看你的🐟币消费和充值趋势",
+      "recentActivity": "最近活动",
+      "recentActivityDesc": "您的最近10笔交易记录",
+      "loading": "加载中...",
+      "noData": "暂无数据",
+      "noTransactions": "暂无交易记录",
+      "untitledConversation": "未命名对话",
+      "consume": "消费",
+      "recharge": "充值",
+      "date": "日期"
+    },
+    "transactions": {
+      "title": "🐟币管理",
+      "balance": "余额",
+      "recharge": "充值",
+      "transactionHistory": "交易历史",
+      "type": "类型",
+      "amount": "金额",
+      "balanceAfter": "余额",
+      "time": "时间",
+      "description": "说明",
+      "noTransactions": "暂无交易记录"
+    },
+    "pricing": {
+      "title": "选择适合您的方案",
+      "subtitle": "灵活的充值包和会员订阅，满足不同需求",
+      "backButton": "返回",
+      "tabs": {
+        "packages": "充值包",
+        "subscriptions": "会员订阅"
+      },
+      "badges": {
+        "popular": "热门",
+        "recommended": "推荐",
+        "save": "省"
+      },
+      "buttons": {
+        "buyNow": "立即购买",
+        "processing": "处理中...",
+        "monthlySubscribe": "按月订阅",
+        "yearlySubscribe": "按年订阅"
+      },
+      "subscription": {
+        "monthly": "月付",
+        "yearly": "年付",
+        "perMonth": "/月",
+        "perYear": "/年",
+        "equivalentTo": "相当于",
+        "memberBenefits": "会员特权"
+      },
+      "toast": {
+        "redirecting": "正在跳转到支付页面...",
+        "redirectingDesc": "请在新打开的标签页中完成支付",
+        "createSessionFailed": "创建支付会话失败",
+        "retryLater": "请稍后重试"
+      },
+      "faq": {
+        "title": "常见问题",
+        "howToUseCoins": {
+          "question": "如何使用🐟币？",
+          "answer": "🐟币可用于使用Insi聊天、图片生成、视频生成等功能。不同功能消耗的🐟币数量不同，具体以实际使用时显示为准。"
+        },
+        "subscriptionBenefits": {
+          "question": "会员订阅有什么优势？",
+          "answer": "会员订阅提供每月固定的🐟币额度、优先响应速度、专属AI模型等特权。年付订阅还可享受额外折扣。"
+        },
+        "paymentSecurity": {
+          "question": "支付安全吗？",
+          "answer": "我们使用Stripe作为支付服务提供商，您的支付信息完全加密且安全。我们不会存储您的信用卡信息。"
+        },
+        "cancelSubscription": {
+          "question": "如何取消订阅？",
+          "answer": "您可以随时在“订阅管理”页面取消订阅。取消后，您仍可使用至当前订阅周期结束。"
+        }
+      }
+    },
+    "orders": {
+      "title": "订单历史",
+      "subtitle": "查看您的所有购买记录",
+      "backButton": "返回",
+      "orderNumber": "订单号",
+      "product": "产品",
+      "amount": "金额",
+      "status": "状态",
+      "time": "时间",
+      "paid": "已支付",
+      "pending": "待支付",
+      "cancelled": "已取消",
+      "noOrders": "暂无订单记录",
+      "loading": "加载中...",
+      "filterTitle": "筛选条件",
+      "orderStatus": "订单状态",
+      "all": "全部",
+      "search": "搜索订单",
+      "searchPlaceholder": "搜索产品名称或订单号...",
+      "type": "类型",
+      "orderDetails": "订单详情"
+    },
+    "subscription": {
+      "title": "订阅管理",
+      "subtitle": "管理您的会员订阅",
+      "backButton": "返回",
+      "currentPlan": "当前套餐",
+      "status": "状态",
+      "active": "活跃",
+      "inactive": "未激活",
+      "canceled": "已取消",
+      "pastDue": "逾期",
+      "trialing": "试用中",
+      "renewalDate": "续费日期",
+      "cancel": "取消订阅",
+      "renew": "续货",
+      "changePlan": "更改套餐",
+      "manage": "管理订阅",
+      "noSubscription": "暂无订阅",
+      "noSubscriptionDesc": "您当前没有活跃的订阅",
+      "explorePlans": "浏览套餐",
+      "premiumMonthly": "高级会员 (月付)",
+      "premiumYearly": "高级会员 (年付)",
+      "basicMonthly": "基础会员 (月付)",
+      "basicYearly": "基础会员 (年付)",
+      "currentSubscription": "当前订阅",
+      "subscriptionDetails": "订阅详情",
+      "startDate": "开始日期",
+      "nextBillingDate": "下次计费日期",
+      "amount": "金额",
+      "billingCycle": "计费周期",
+      "monthly": "每月",
+      "yearly": "每年",
+      "daysRemaining": "剩余天数",
+      "days": "天",
+      "autoRenew": "自动续费",
+      "enabled": "已开启",
+      "disabled": "已关闭",
+      "cancelSubscriptionTitle": "取消订阅",
+      "cancelSubscriptionDesc": "请联系客服取消订阅，或在Stripe客户门户中管理",
+      "manageSubscriptionTitle": "管理订阅",
+      "manageSubscriptionDesc": "请联系客服管理订阅，或在Stripe客户门户中操作",
+      "subscriptionHistory": "订阅历史",
+      "allSubscriptions": "所有订阅",
+      "period": "订阅期间",
+      "to": "至"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "language": {
+      "title": "语言",
+      "zh": "简体中文",
+      "en": "English"
+    },
+    "theme": {
+      "title": "外观",
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    }
+  },
+  "imageGallery": {
+    "title": "图片历史",
+    "subtitle": "查看和管理您生成的所有图片",
+    "backButton": "返回",
+    "all": "全部图片",
+    "favorites": "我的收藏",
+    "selectionMode": "选择模式",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "batchDownload": "批量下载",
+    "batchDelete": "批量删除",
+    "cancel": "取消",
+    "download": "下载",
+    "delete": "删除",
+    "favorite": "收藏",
+    "unfavorite": "取消收藏",
+    "regenerate": "重新生成",
+    "edit": "编辑",
+    "prompt": "图片描述",
+    "createdAt": "创建时间",
+    "noImages": "暂无图片",
+    "noImagesDesc": "您还没有生成任何图片",
+    "noFavorites": "暂无收藏",
+    "noFavoritesDesc": "您还没有收藏任何图片",
+    "generateImage": "生成图片",
+    "stats": {
+      "total": "总图片数",
+      "favorites": "收藏数",
+      "thisMonth": "本月生成"
+    },
+    "toast": {
+      "deleteSuccess": "删除成功",
+      "deleteError": "删除失败",
+      "favoriteSuccess": "操作成功",
+      "favoriteError": "操作失败",
+      "downloadSuccess": "下载成功",
+      "downloadError": "下载失败",
+      "regenerateSuccess": "图片生成成功！",
+      "regenerateError": "生成失败：",
+      "selectImages": "请选择至少一张图片",
+      "downloadingZip": "正在打包下载...",
+      "emptyPrompt": "请输入图片描述"
+    },
+    "editDialog": {
+      "title": "编辑图片描述",
+      "placeholder": "输入新的图片描述...",
+      "cancel": "取消",
+      "regenerate": "重新生成"
+    }
+  },
+  "videoHistory": {
+    "back": "返回",
+    "title": "视频历史",
+    "description": "查看您的视频生成历史",
+    "searchPlaceholder": "搜索视频...",
+    "allS": "所有状态",
+    "allP": "所有类型",
+    "allStatus": "所有状态",
+    "allProviders": "所有提供商",
+    "statusFilter": "状态筛选",
+    "providerFilter": "提供商筛选",
+    "selected": "已选择 {{count}} 个",
+    "cancelSelection": "取消选择",
+    "deleting": "删除中...",
+    "batchDelete": "批量删除",
+    "packaging": "打包中...",
+    "batchDownload": "批量下载",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "noVideos": "暂无视频",
+    "noVideosDesc": "您还没有生成任何视频",
+    "noVideosFiltered": "没有符合筛选条件的视频",
+    "task": "任务",
+    "status": {
+      "pending": "等待中",
+      "processing": "处理中",
+      "completed": "已完成",
+      "failed": "失败",
+      "unknown": "未知"
+    },
+    "estimatedTime": {
+      "pending": "预计还需 {{seconds}} 秒",
+      "minutes": "预计还需 {{minutes}} 分钟",
+      "seconds": "预计还需 {{seconds}} 秒"
+    },
+    "toast": {
+      "success": "操作成功",
+      "error": "操作失败",
+      "deleteSuccess": "删除成功",
+      "deleteError": "删除失败",
+      "batchDeleteSuccess": "批量删除成功，已删除 {{count}} 个视频",
+      "batchDeleteError": "批量删除失败",
+      "downloadSuccess": "下载成功",
+      "downloadError": "下载失败",
+      "selectVideosToDelete": "请选择要删除的视频",
+      "selectVideosToDownload": "请选择要下载的视频",
+      "videoDownloadFailed": "视频 #{{id}} 下载失败",
+      "batchDownloadSuccess": "批量下载成功，已下载 {{count}} 个视频",
+      "batchDownloadError": "批量下载失败"
+    }
+  },
+  "invite": {
+    "back": "返回",
+    "badge": "邀请奖励",
+    "title": "邀请好友",
+    "description": "邀请好友加入，获取丰厚奖励",
+    "bonus": "邀请奖励",
+    "stats": {
+      "invited": "已邀请人数",
+      "totalRewards": "累计奖励",
+      "totalCodes": "生成的邀请码"
+    },
+    "generate": {
+      "title": "生成邀请码",
+      "description": "生成专属邀请码，分享给好友",
+      "button": "生成邀请码",
+      "generating": "生成中...",
+      "codeLabel": "邀请码",
+      "validity": "有效期7天"
+    },
+    "history": {
+      "title": "邀请历史",
+      "description": "查看您的邀请记录和奖励详情",
+      "status": {
+        "used": "已使用",
+        "expired": "已过期",
+        "unused": "未使用"
+      }
+    },
+    "toast": {
+      "generateSuccess": "邀请码生成成功",
+      "generateError": "邀请码生成失败",
+      "copied": "已复制到剪贴板"
+    }
+  },
+  "feedback": {
+    "title": "用户反馈",
+    "description": "详细描述",
+    "form": {
+      "title": "用户反馈",
+      "description": "告诉我们您的意见和建议",
+      "typeLabel": "反馈类型",
+      "ratingLabel": "评分",
+      "stars": "星",
+      "titleLabel": "标题",
+      "titlePlaceholder": "请输入反馈标题",
+      "contentLabel": "详细描述",
+      "contentPlaceholder": "请详细描述您的问题或建议",
+      "submit": "提交反馈",
+      "submitting": "提交中..."
+    },
+    "type": {
+      "bug": "错误报告",
+      "feature": "功能建议",
+      "improvement": "体验改进",
+      "other": "其他"
+    },
+    "status": {
+      "pending": "待处理",
+      "inProgress": "处理中",
+      "resolved": "已解决",
+      "closed": "已关闭"
+    },
+    "history": {
+      "title": "反馈历史",
+      "description": "查看您的历史反馈记录",
+      "empty": "暂无反馈记录"
+    },
+    "toast": {
+      "submitSuccess": "反馈提交成功",
+      "fillRequired": "请填写所有必填项"
+    }
+  },
+  "help": {
+    "badge": "帮助中心",
+    "title": "帮助中心",
+    "description": "常见问题解答和使用指南",
+    "backButton": "返回",
+    "searchPlaceholder": "搜索帮助文档...",
+    "tabs": {
+      "tutorials": "功能教程",
+      "faq": "常见问题"
+    },
+    "categories": {
+      "gettingStarted": "快速入门",
+      "account": "账户管理",
+      "billing": "计费与订阅",
+      "features": "功能使用",
+      "troubleshooting": "故障排除"
+    },
+    "tutorials": [
+      {
+        "title": "Insi 智能对话",
+        "description": "学习如何使用 Insi 对话进行智能问答",
+        "steps": [
+          "点击左侧导航栏的「Insi 对话」进入聊天页面",
+          "选择合适的 AI 模型（不同模型消耗不同数量的鱼币）",
+          "在输入框中输入你的问题或需求",
+          "点击发送按钮，Insi 将为你生成回答",
+          "你可以继续追问，Insi 会记住上下文",
+          "对话记录会自动保存，可在历史记录中查看"
+        ]
+      },
+      {
+        "title": "Insi 图片生成",
+        "description": "通过文字描述创作独特的艺术作品",
+        "steps": [
+          "进入「图片生成」页面",
+          "选择图片生成模型",
+          "在输入框中详细描述你想要的图片",
+          "描述越详细，生成的图片越符合预期",
+          "点击生成按钮，等待 Insi 创作",
+          "生成的图片可以下载保存"
+        ]
+      },
+      {
+        "title": "文档处理",
+        "description": "上传 PDF 和 Word 文档进行智能分析",
+        "steps": [
+          "进入「文档处理」页面",
+          "点击上传按钮选择文件（支持 PDF、Word）",
+          "文件自动上传到云端",
+          "选择处理方式（文字提取、摘要、分析等）",
+          "Insi 将处理文档并返回结果",
+          "处理记录保存在文件列表中"
+        ]
+      },
+      {
+        "title": "语音转文字",
+        "description": "将音频文件转换为文字",
+        "steps": [
+          "在「文档处理」页面选择音频文件",
+          "支持 MP3、WAV、M4A 等格式",
+          "上传后选择「语音转文字」功能",
+          "Insi 将自动识别并转录音频内容",
+          "转录结果可以复制或下载",
+          "支持多种语言识别"
+        ]
+      }
+    ],
+    "faqs": [
+      {
+        "question": "什么是鱼币？如何获取鱼币？",
+        "answer": "鱼币是平台的虚拟货币，用于支付 AI 服务费用。新用户注册即获得 100 鱼币。你可以通过充值页面购买更多鱼币，充值越多赠送越多！"
+      },
+      {
+        "question": "不同 AI 模型消耗多少鱼币？",
+        "answer": "不同模型的消耗费率不同，使用时会显示具体消耗。一般来说，越强大的模型消耗越多鱼币。你可以在模型选择器中查看每个模型的消耗详情。"
+      },
+      {
+        "question": "对话记录保存多久？",
+        "answer": "所有对话记录永久保存。你可以随时在聊天页面的历史记录中查看和继续之前的对话。"
+      },
+      {
+        "question": "上传的文件安全吗？",
+        "answer": "你的文件经过加密存储在云端，只有你本人可以访问。我们采用企业级安全措施保护你的数据隐私。"
+      },
+      {
+        "question": "生成的图片有版权吗？",
+        "answer": "通过 AI 生成的图片归你所有，可以自由使用。但请注意不要生成侵犯他人版权或违反法律法规的内容。"
+      },
+      {
+        "question": "如何充值鱼币？",
+        "answer": "点击左侧导航栏的「充值鱼币」进入充值页面，选择合适的套餐和支付方式（支付宝或微信），支付后鱼币立即到账。"
+      },
+      {
+        "question": "鱼币可以退款吗？",
+        "answer": "鱼币充值后不支持退款。请根据实际需求选择合适的充值套餐。如有特殊情况，请联系客服处理。"
+      },
+      {
+        "question": "如何查看鱼币消费记录？",
+        "answer": "点击「鱼币记录」可以查看详细的消费和充值记录，包括时间、金额、类型等信息，以及余额趋势图。"
+      },
+      {
+        "question": "Insi 对话有字数限制吗？",
+        "answer": "单次对话的输入和输出都有字数限制，具体取决于你选择的模型。如果需要处理长文本，建议分段进行。"
+      },
+      {
+        "question": "如何获得更好的 Insi 回答？",
+        "answer": "提供清晰、详细的问题描述，给出足够的上下文信息。图片生成时描述细节、风格、颜色等。文档处理时确保文件清晰可读。"
+      }
+    ],
+    "noResults": "未找到相关帮助文档",
+    "noResultsDesc": "请尝试其他关键词或联系客服支持",
+    "contactSupport": "联系客服",
+    "viewMore": "查看更多",
+    "videoTutorial": {
+      "title": "视频教程",
+      "description": "观看视频快速上手",
+      "comingSoon": "视频教程即将上线"
+    }
+  },
+  "fileUpload": {
+    "selectFile": "选择文件",
+    "dragAndDrop": "拖放文件到此处",
+    "uploading": "上传中...",
+    "uploadSuccess": "上传成功",
+    "uploadFailed": "上传失败",
+    "fileTooLarge": "文件过大",
+    "unsupportedFormat": "不支持的文件格式"
+  },
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "cancel": "取消",
+    "confirm": "确认",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "logout": "退出登录",
+    "user": "用户"
+  },
+  "subscription": {
+    "title": "订阅管理",
+    "description": "管理您的会员订阅",
+    "empty": "暂无订阅",
+    "emptyDescription": "订阅会员享受更多权益和优惠，选择适合您的套餐",
+    "browsePlans": "浏览套餐"
+  },
+  "aiOps": {
+    "title": "AI 运维中心",
+    "subtitle": "用户反馈智能分析 · Issue 自动归类 · 优先级评估",
+    "refresh": "刷新",
+    "stats": {
+      "newFeedback24h": "24h 新反馈",
+      "totalFeedback": "总计 {count} 条",
+      "pendingIssues": "待处理 Issue",
+      "totalIssues": "总计 {count} 个",
+      "criticalUrgent": "P0/P1 紧急",
+      "needsPriority": "需要优先处理",
+      "resolved": "已解决",
+      "passiveSignals": "被动信号 {count} 条"
+    },
+    "feedback": {
+      "thumbsUp": "回答有帮助",
+      "thumbsDown": "回答有问题",
+      "whatWrong": "哪里不好？",
+      "submit": "提交反馈",
+      "thanks": "感谢反馈，我们会持续改进",
+      "comment": "补充说明（可选）...",
+      "tags": {
+        "wrong_answer": "回答不准确",
+        "incomplete": "回答不完整",
+        "slow_response": "响应太慢",
+        "ui_broken": "显示异常",
+        "not_helpful": "没有帮助",
+        "other": "其他问题"
+      },
+      "global": {
+        "title": "提交反馈",
+        "typeBug": "Bug 报告",
+        "typeFeature": "功能建议",
+        "typeImprovement": "改进建议",
+        "typeOther": "其他",
+        "titleField": "标题",
+        "titleRequired": "请填写标题",
+        "descField": "详细说明",
+        "descPlaceholder": "请详细描述（操作步骤、期望结果、实际结果）...",
+        "ratingField": "整体体验评分",
+        "privacyNote": "提交时会自动采集当前页面路径和性能数据，帮助我们更快定位问题。不会采集任何个人隐私信息。",
+        "submitting": "提交中...",
+        "success": "反馈已提交，感谢您帮助我们改进！"
+      }
+    },
+    "issues": {
+      "title": "Issue 列表",
+      "allStatus": "全部状态",
+      "allPriority": "全部级别",
+      "noIssues": "暂无 Issue，一切正常",
+      "status": {
+        "open": "待处理",
+        "diagnosing": "诊断中",
+        "verified": "已验证",
+        "planning": "方案中",
+        "in_sandbox": "沙箱测试",
+        "pending_approval": "待审批",
+        "deploying": "部署中",
+        "monitoring": "监控中",
+        "resolved": "已解决",
+        "wontfix": "不修复",
+        "needs_human": "需人工"
+      },
+      "priority": {
+        "P0": "P0 紧急",
+        "P1": "P1 高",
+        "P2": "P2 中",
+        "P3": "P3 低"
+      }
+    },
+    "chat": {
+      "title": "AI 运维助手",
+      "subtitle": "用自然语言查询系统状态、反馈趋势、Issue 详情",
+      "clearChat": "清空对话",
+      "placeholder": "询问系统状态、反馈趋势、Issue 详情...",
+      "querying": "正在查询系统数据并分析..."
+    },
+    "approvals": {
+      "title": "修复审批",
+      "subtitle": "审查 AI 生成的修复方案 · 沙箱测试结果 · 一键部署",
+      "approve": "批准部署",
+      "reject": "拒绝",
+      "comment": "审批备注（可选）...",
+      "highRisk": "此方案风险等级为高，请仔细检查 Diff 后再决定",
+      "pipeline": "一键流水线",
+      "reproduce": "自动复现",
+      "verify": "验证问题",
+      "generate": "生成方案",
+      "sandbox": "沙箱测试",
+      "userVerify": "发起用户验证"
+    },
+    "knowledge": {
+      "title": "修复知识库",
+      "subtitle": "成功修复方案的沉淀 · 加速未来相似问题处理",
+      "search": "搜索问题、根因、解决方案...",
+      "allModules": "全部模块",
+      "noEntries": "暂无知识条目",
+      "noEntriesSub": "成功修复并经用户验证后会自动沉淀到这里",
+      "rootCause": "根因分析",
+      "solution": "解决方案",
+      "files": "修改文件",
+      "patchSummary": "补丁摘要",
+      "effectiveness": "修复有效率",
+      "reuseCount": "被复用次数"
+    },
+    "analytics": {
+      "title": "数据分析 & 自动化",
+      "subtitle": "趋势图表 · 模块健康度 · 流水线配置",
+      "runPipeline": "运行流水线",
+      "generateReport": "生成报告",
+      "healthScore": "健康评分",
+      "feedbackTrend": "反馈趋势",
+      "issueCompare": "Issue 创建 vs 解决",
+      "priorityDist": "优先级分布",
+      "categoryDist": "类别分布",
+      "moduleHealth": "模块健康度",
+      "automationConfig": "流水线自动化配置",
+      "automationLevel": "自动化等级",
+      "knowledgePreCheck": "知识库预查",
+      "autoUserVerify": "自动用户验证",
+      "requireApproval": "需要人工审批的优先级"
+    },
+    "menu": {
+      "opsCenter": "AI 运维中心",
+      "assistant": "AI 运维助手",
+      "approvals": "修复审批",
+      "knowledge": "修复知识库",
+      "analytics": "数据分析"
+    }
+  }
+}

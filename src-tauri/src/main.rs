@@ -204,7 +204,7 @@ async fn check_network(state: tauri::State<'_, Arc<AppState>>) -> Result<serde_j
         async {
             // 简单 TCP 连接测试
             let url_parsed = url::Url::parse(&health_url).map_err(|e| e.to_string())?;
-            let host = url_parsed.host_str().ok_or("无法解析主机名")?;
+            let host = url_parsed.host_str().ok_or_else(|| "无法解析主机名".to_string())?;
             let port = url_parsed.port_or_known_default().unwrap_or(443);
             let addr = format!("{}:{}", host, port);
 
@@ -349,10 +349,9 @@ fn main() {
             ])?;
 
             let _tray = TrayIconBuilder::new()
-                .id("main-tray")
                 .menu(&menu)
                 .tooltip("Insi Desktop Agent — 未连接")
-                .on_menu_event(move |app, event| {
+                .on_menu_event(move |app: &tauri::AppHandle, event| {
                     match event.id.as_ref() {
                         "quit" => {
                             log::info!("Quit requested from tray");
@@ -397,7 +396,7 @@ fn main() {
                         _ => {}
                     }
                 })
-                .on_tray_icon_event(|tray, event| {
+                .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -484,7 +483,6 @@ async fn update_tray_loop(state: Arc<AppState>, app: tauri::AppHandle) {
         };
 
         // 通过 tray_by_id 更新 tooltip
-        if let Some(tray) = app.tray_by_id("main-tray") {
             let _ = tray.set_tooltip(Some(tooltip));
         }
     }

@@ -367,7 +367,8 @@ async fn handle_server_message(
                     history.push(record);
                     // 保留最近 100 条
                     if history.len() > 100 {
-                        history.drain(0..history.len() - 100);
+                    let len = history.len();
+                        history.drain(0..len - 100);
                     }
                 }
             }

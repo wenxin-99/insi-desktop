@@ -344,7 +344,7 @@ export function MessageActions({
   };
 
   return (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} opacity-100 md:opacity-0 md:group-hover:opacity-100 md:transition-opacity gap-1`}>
+    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${playingTtsIndex === index ? 'opacity-100' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'} md:transition-opacity gap-1`}>
       {/* 复制（带 ✓ 反馈） */}
       <Button
         variant="ghost"

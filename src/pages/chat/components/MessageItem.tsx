@@ -500,7 +500,9 @@ export const MessageItem = memo(function MessageItem(props: MessageItemProps) {
     prevProps.index === nextProps.index &&
     prevProps.displayContent === nextProps.displayContent &&
     prevProps.isLastAssistant === nextProps.isLastAssistant &&
-    prevProps.state.editingMessageIndex === nextProps.state.editingMessageIndex
+    prevProps.state.editingMessageIndex === nextProps.state.editingMessageIndex &&
+    // ★ TTS 播放状态变化时需要重新渲染（图标切换 Volume2 ↔ Square + 点击行为切换）
+    (prevProps.state.playingTtsIndex === prevProps.index) === (nextProps.state.playingTtsIndex === nextProps.index)
   );
 });
 

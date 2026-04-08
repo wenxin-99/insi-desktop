@@ -257,6 +257,24 @@
   </div>
 
   <script>
+    // ★ 等待 Tauri IPC bridge 就绪（修复"打开没反应"）
+    function waitForTauri(cb, maxWait = 5000) {
+      if (window.__TAURI__ && window.__TAURI__.core) return cb();
+      const t0 = Date.now();
+      const timer = setInterval(() => {
+        if (window.__TAURI__ && window.__TAURI__.core) { clearInterval(timer); cb(); }
+        else if (Date.now() - t0 > maxWait) {
+          clearInterval(timer);
+          document.getElementById('statusText').textContent = '⚠ Tauri 未就绪';
+          document.getElementById('statusDetail').textContent = '请确认此页面在 Tauri 桌面客户端中打开';
+          console.error('[Insi] __TAURI__ not available after ' + maxWait + 'ms');
+        }
+      }, 50);
+    }
+
+    waitForTauri(initApp);
+
+    function initApp() {
     const { invoke } = window.__TAURI__.core;
 
     const $ = (id) => document.getElementById(id);
@@ -355,6 +373,7 @@
     updateStatus();
     autoLogin();
     pollInterval = setInterval(updateStatus, 2000);
+    } // end initApp
   </script>
 </body>
 </html>

@@ -7,7 +7,7 @@
     "frontendDist": "../frontend",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "mkdir -p ../frontend && cp ../src/index.html ../frontend/index.html"
   },
   "app": {
     "withGlobalTauri": true,

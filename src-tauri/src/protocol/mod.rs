@@ -366,8 +366,8 @@ async fn handle_server_message(
                     let mut history = state.operation_history.write();
                     history.push(record);
                     // 保留最近 100 条
-                    if history.len() > 100 {
                     let len = history.len();
+                    if len > 100 {
                         history.drain(0..len - 100);
                     }
                 }
@@ -616,7 +616,10 @@ fn is_p3_tool(tool: &str) -> bool {
     matches!(tool,
         "desktop.list_monitors" | "desktop.switch_monitor" |
         "desktop.app_info" | "desktop.app_list" | "desktop.app_focus" |
-        "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive"
+        "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive" |
+        // ★ v0.5.0 新增智能文件操作工具
+        "desktop.file_organize" | "desktop.file_rename_batch" |
+        "desktop.file_trash" | "desktop.file_group" | "desktop.file_rollback"
     )
 }
 
@@ -835,6 +838,80 @@ async fn handle_p3_tool(
             match crate::system::create_archive(&sources, output) {
                 Ok(()) => Some(json!({ "archived": true, "outputPath": output })),
                 Err(e) => Some(json!({ "success": false, "error": e })),
+            }
+        }
+
+        // ── v0.5.0 智能文件操作 ──
+        "desktop.file_organize" => {
+            let source = params.get("source").and_then(|v| v.as_str()).unwrap_or("~/Desktop");
+            let dry_run = params.get("dryRun").and_then(|v| v.as_bool()).unwrap_or(false);
+            let create_folders = params.get("createFoldersIfMissing").and_then(|v| v.as_bool()).unwrap_or(true);
+            let on_conflict = params.get("onConflict").and_then(|v| v.as_str()).unwrap_or("rename");
+
+            // rules 字段: 可能是数组也可能是 JSON 字符串(playbook 模板填的)
+            let rules_value = params.get("rules");
+            let rules: Vec<crate::file_ops::OrganizeRule> = match rules_value {
+                Some(serde_json::Value::Array(_)) => {
+                    serde_json::from_value(rules_value.unwrap().clone()).unwrap_or_default()
+                }
+                Some(serde_json::Value::String(s)) => {
+                    serde_json::from_str(s).unwrap_or_default()
+                }
+                _ => Vec::new(),
+            };
+
+            if rules.is_empty() {
+                Some(json!({ "success": false, "error": "rules 参数缺失或为空" }))
+            } else {
+                match crate::file_ops::file_organize(source, &rules, dry_run, create_folders, on_conflict) {
+                    Ok(r) => Some(json!(r)),
+                    Err(e) => Some(json!({ "success": false, "error": e })),
+                }
+            }
+        }
+        "desktop.file_rename_batch" => {
+            let source = params.get("source").and_then(|v| v.as_str()).unwrap_or("~/Desktop");
+            let pattern = params.get("pattern").and_then(|v| v.as_str()).unwrap_or("{name}");
+            let ext_filter = params.get("extensionFilter").and_then(|v| v.as_str());
+            let dry_run = params.get("dryRun").and_then(|v| v.as_bool()).unwrap_or(true);
+            match crate::file_ops::file_rename_batch(source, pattern, ext_filter, dry_run) {
+                Ok(r) => Some(json!(r)),
+                Err(e) => Some(json!({ "success": false, "error": e })),
+            }
+        }
+        "desktop.file_trash" => {
+            let paths: Vec<String> = params.get("paths")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            if paths.is_empty() {
+                Some(json!({ "success": false, "error": "paths 参数缺失或为空" }))
+            } else {
+                match crate::file_ops::file_trash(&paths) {
+                    Ok(r) => Some(json!(r)),
+                    Err(e) => Some(json!({ "success": false, "error": e })),
+                }
+            }
+        }
+        "desktop.file_group" => {
+            let source = params.get("source").and_then(|v| v.as_str()).unwrap_or("~/Desktop");
+            let group_by = params.get("groupBy").and_then(|v| v.as_str()).unwrap_or("extension");
+            let dry_run = params.get("dryRun").and_then(|v| v.as_bool()).unwrap_or(true);
+            let output = params.get("outputFolder").and_then(|v| v.as_str());
+            match crate::file_ops::file_group(source, group_by, dry_run, output) {
+                Ok(r) => Some(json!(r)),
+                Err(e) => Some(json!({ "success": false, "error": e })),
+            }
+        }
+        "desktop.file_rollback" => {
+            let txn_id = params.get("transactionId").and_then(|v| v.as_str()).unwrap_or("");
+            if txn_id.is_empty() {
+                Some(json!({ "success": false, "error": "transactionId 参数缺失" }))
+            } else {
+                match crate::file_ops::rollback_transaction(txn_id) {
+                    Ok(undone) => Some(json!({ "rolledBack": true, "undoneCount": undone })),
+                    Err(e) => Some(json!({ "success": false, "error": e })),
+                }
             }
         }
 

@@ -1,8 +1,9 @@
-//! Insi Desktop Agent v0.4.4
+//! Insi Desktop Agent v0.5.0
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod file_ops;
 mod input;
 mod permissions;
 mod protocol;

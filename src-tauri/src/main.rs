@@ -1,4 +1,4 @@
-//! Insi Desktop Agent v0.4.3
+//! Insi Desktop Agent v0.4.4
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -161,8 +161,64 @@ fn set_permission_level(level: String, state: tauri::State<Arc<AppState>>) -> se
     serde_json::json!({"success":true,"level":level})
 }
 
+/// 初始化崩溃日志
+fn init_crash_logging() {
+    let log_dir = dirs::data_local_dir()
+        .map(|d| d.join("InsiDesktop").join("logs"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./insi-desktop-logs"));
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    let log_file = log_dir.join(format!(
+        "insi-desktop-{}.log",
+        chrono::Local::now().format("%Y%m%d")
+    ));
+
+    let target = std::fs::OpenOptions::new()
+        .create(true).append(true).open(&log_file).ok();
+
+    let mut builder = env_logger::Builder::new();
+    builder.filter_level(log::LevelFilter::Info)
+        .parse_env("RUST_LOG")
+        .format_timestamp_millis();
+    if let Some(file) = target {
+        builder.target(env_logger::Target::Pipe(Box::new(file)));
+    }
+    let _ = builder.try_init();
+
+    let crash_log = log_dir.join("crash.log");
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info.location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown".into());
+        let payload = info.payload().downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| format!("{:?}", info.payload()));
+
+        let msg = format!(
+            "[{}] PANIC at {}
+  payload: {}
+  version: {}
+  os: {}
+
+",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            location, payload,
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+        );
+        let _ = std::fs::OpenOptions::new()
+            .create(true).append(true).open(&crash_log)
+            .and_then(|mut f| { use std::io::Write; f.write_all(msg.as_bytes()) });
+        eprintln!("{}", msg);
+    }));
+
+    log::info!("[Insi Desktop] Boot v{} on {} - log dir: {}",
+        env!("CARGO_PKG_VERSION"), std::env::consts::OS, log_dir.display());
+}
+
 fn main() {
-    env_logger::init();
+    init_crash_logging();
     let app_state = AppState::new();
     let state_for_ws = app_state.clone();
     let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);

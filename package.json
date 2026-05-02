@@ -1,6 +1,6 @@
 {
   "name": "insi-desktop",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Insi Desktop Agent",
   "scripts": {
     "dev": "cargo tauri dev",

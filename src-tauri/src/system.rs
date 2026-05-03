@@ -103,6 +103,11 @@ pub struct WindowListItem {
     pub title: String,
     pub pid: u32,
     pub focused: bool,
+    // ★ v0.6.0 加 bounds — 给 desktop.window_bounds 工具按 appName 查找时用
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// 获取当前活跃窗口信息
@@ -142,6 +147,10 @@ pub fn list_windows() -> Result<Vec<WindowListItem>, String> {
             title: w.title().unwrap_or_default(),
             pid: w.pid().unwrap_or(0),
             focused: i == 0,
+            x: w.x().unwrap_or(0),
+            y: w.y().unwrap_or(0),
+            width: w.width().unwrap_or(0),
+            height: w.height().unwrap_or(0),
         })
         .collect())
 }

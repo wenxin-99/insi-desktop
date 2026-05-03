@@ -619,7 +619,12 @@ fn is_p3_tool(tool: &str) -> bool {
         "desktop.file_list" | "desktop.file_search" | "desktop.file_move" | "desktop.file_archive" |
         // ★ v0.5.0 新增智能文件操作工具
         "desktop.file_organize" | "desktop.file_rename_batch" |
-        "desktop.file_trash" | "desktop.file_group" | "desktop.file_rollback"
+        "desktop.file_trash" | "desktop.file_group" | "desktop.file_rollback" |
+        // ★ v0.6.0 新增跨端 OCR 文件工具(读字节回传服务端 Tesseract 识别)
+        "desktop.ocr_file" |
+        // ★ v0.6.0 补漏:p4VisionTools 在服务端注册过但客户端从来没有 handler
+        // 之前每次调用都返回"未知工具",LLM 看到 metadata.bounds = {} 也莫名其妙
+        "desktop.window_bounds" | "desktop.taskbar_info"
     )
 }
 
@@ -913,6 +918,111 @@ async fn handle_p3_tool(
                     Err(e) => Some(json!({ "success": false, "error": e })),
                 }
             }
+        }
+
+        // ── v0.6.0 跨端 OCR 文件读取 ──
+        // 客户端只读字节,Tesseract 在服务端跑。
+        // 返回 fileBytes(base64) / mimeType / sizeBytes,服务端 desktop.ocr_file 工具消费。
+        "desktop.ocr_file" => {
+            let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if path.is_empty() {
+                Some(json!({ "success": false, "error": "path 参数缺失" }))
+            } else {
+                match crate::file_ops::read_image_as_base64(path) {
+                    Ok((b64, mime, size)) => Some(json!({
+                        "fileBytes": b64,
+                        "mimeType": mime,
+                        "sizeBytes": size,
+                        "path": path,
+                    })),
+                    Err(e) => Some(json!({ "success": false, "error": e })),
+                }
+            }
+        }
+
+        // ── v0.6.0 补漏:p4VisionTools 的窗口/任务栏感知 ──
+        "desktop.window_bounds" => {
+            // appName 可选;为空时返回前台窗口
+            let app_name = params.get("appName").and_then(|v| v.as_str()).unwrap_or("");
+            if app_name.is_empty() {
+                match crate::system::get_active_window() {
+                    Ok(info) => match info.bounds {
+                        Some(b) => Some(json!({
+                            "bounds": {
+                                "x": b.x, "y": b.y,
+                                "width": b.width, "height": b.height,
+                            },
+                            "appName": info.app_name,
+                            "windowTitle": info.window_title,
+                        })),
+                        None => Some(json!({ "success": false, "error": "前台窗口无 bounds 信息" })),
+                    },
+                    Err(e) => Some(json!({ "success": false, "error": e })),
+                }
+            } else {
+                // 找指定 app 的窗口
+                match crate::system::list_windows() {
+                    Ok(windows) => {
+                        let target = windows.iter().find(|w|
+                            w.app_name.eq_ignore_ascii_case(app_name)
+                                || w.app_name.contains(app_name)
+                        );
+                        match target {
+                            Some(w) => Some(json!({
+                                "bounds": {
+                                    "x": w.x, "y": w.y,
+                                    "width": w.width, "height": w.height,
+                                },
+                                "appName": w.app_name,
+                                "windowTitle": w.title,
+                            })),
+                            None => Some(json!({
+                                "success": false,
+                                "error": format!("未找到名为 \"{}\" 的窗口", app_name)
+                            })),
+                        }
+                    }
+                    Err(e) => Some(json!({ "success": false, "error": e })),
+                }
+            }
+        }
+        "desktop.taskbar_info" => {
+            // 平台启发式回报 — 不查 OS API,因为各平台都需要不同绑定。
+            // 后续工程要做精确的话,Mac NSStatusBar/Dock,Win SHAppBarMessage,Linux varies。
+            // 这里给 LLM 一个 "够用" 的默认值,避免它误点系统 UI。
+            #[cfg(target_os = "macos")]
+            let taskbar = json!({
+                "position": "bottom",  // 默认 dock 在底部(用户也可能改到左/右,无 API 查)
+                "width": 0u32, "height": 80u32,
+                "autoHide": false,
+                "platform": "macos",
+                "note": "启发式默认值;用户可能自定义 Dock 位置",
+            });
+            #[cfg(target_os = "windows")]
+            let taskbar = json!({
+                "position": "bottom",
+                "width": 0u32, "height": 40u32,
+                "autoHide": false,
+                "platform": "windows",
+                "note": "启发式默认值",
+            });
+            #[cfg(target_os = "linux")]
+            let taskbar = json!({
+                "position": "bottom",
+                "width": 0u32, "height": 32u32,
+                "autoHide": false,
+                "platform": "linux",
+                "note": "启发式默认值;桌面环境差异大",
+            });
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            let taskbar = json!({
+                "position": "unknown",
+                "width": 0u32, "height": 0u32,
+                "autoHide": false,
+                "note": "未知平台",
+            });
+
+            Some(json!({ "taskbar": taskbar }))
         }
 
         _ => None,

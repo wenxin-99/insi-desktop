@@ -630,3 +630,67 @@ pub fn rollback_transaction(txn_id: &str) -> Result<u32, String> {
 
     Ok(undone)
 }
+
+// ═══════════════════════════════════════════
+// v0.6.0: 读图片文件为 base64 — 给服务端 desktop.ocr_file 工具用
+// ═══════════════════════════════════════════
+
+/// 读图片文件,返回 (base64_bytes, mime_type, size_bytes)。
+///
+/// 安全:
+///   - 复用 is_path_safe 的家目录护栏(拦 /etc, /usr 等系统路径)
+///   - 上限 10 MB,超出直接拒
+///   - 仅识别图像扩展名(png/jpg/jpeg/webp/bmp),否则拒
+///   - 只读不写,即使被服务端 prompt injection 也不会改文件
+pub fn read_image_as_base64(path: &str) -> Result<(String, String, u64), String> {
+    use base64::Engine;
+
+    const MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+    let resolved = expand_home(path);
+
+    // 必须存在 + 必须是文件
+    if !resolved.exists() {
+        return Err(format!("文件不存在: {}", resolved.display()));
+    }
+    if !resolved.is_file() {
+        return Err(format!("路径不是文件: {}", resolved.display()));
+    }
+
+    // 安全护栏
+    is_path_safe(&resolved)?;
+
+    // 大小检查 — 在 read 之前先 stat,避免读到一半才发现
+    let metadata = fs::metadata(&resolved)
+        .map_err(|e| format!("无法读取文件元数据: {}", e))?;
+    let size = metadata.len();
+    if size > MAX_BYTES {
+        return Err(format!(
+            "文件大小 {:.1} MB 超过 {} MB 上限",
+            size as f64 / 1024.0 / 1024.0,
+            MAX_BYTES / 1024 / 1024,
+        ));
+    }
+
+    // 扩展名白名单
+    let ext = resolved
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "gif" => "image/gif",
+        _ => return Err(format!("不支持的扩展名 .{},仅接受 png/jpg/jpeg/webp/bmp/gif", ext)),
+    };
+
+    // 读字节
+    let bytes = fs::read(&resolved)
+        .map_err(|e| format!("读文件失败: {}", e))?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok((b64, mime.to_string(), size))
+}

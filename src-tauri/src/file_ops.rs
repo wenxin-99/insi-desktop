@@ -694,3 +694,12 @@ pub fn read_image_as_base64(path: &str) -> Result<(String, String, u64), String>
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok((b64, mime.to_string(), size))
 }
+
+// ═══════════════════════════════════════════
+// v0.7.0: 公开 expand_home 给 shell_exec 模块复用
+// ═══════════════════════════════════════════
+
+/// expand_home 的公开 wrapper(给 shell_exec.rs 用)
+pub fn expand_home_for_shell(path: &str) -> PathBuf {
+    expand_home(path)
+}

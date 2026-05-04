@@ -1,4 +1,4 @@
-//! Insi Desktop Agent v0.5.0
+//! Insi Desktop Agent v0.7.0
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -9,6 +9,7 @@ mod permissions;
 mod protocol;
 mod safety;
 mod screenshot;
+mod shell_exec;
 mod state;
 mod system;
 
@@ -57,6 +58,15 @@ fn disconnect(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.auth_token.write() = None;
     *state.authorized.write() = false;
     *state.current_task.write() = state::TaskPreview::default();
+    // ★ v0.7.0: 断开时清掉所有未响应的 shell_exec 审批
+    // server 那边已经断了,oneshot 等到 5min timeout 也是浪费,直接 send(false) 让 protocol 协程立刻退出
+    {
+        let mut responders = state.shell_approval_responders.write();
+        for (_, tx) in responders.drain() {
+            let _ = tx.send(false);
+        }
+        state.pending_shell_approvals.write().clear();
+    }
     serde_json::json!({"success":true})
 }
 
@@ -80,6 +90,14 @@ fn authorize(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
 fn revoke(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.authorized.write() = false;
     *state.pending_revoke.write() = true;
+    // ★ v0.7.0: 同 disconnect,撤权时也拒掉所有 pending 审批
+    {
+        let mut responders = state.shell_approval_responders.write();
+        for (_, tx) in responders.drain() {
+            let _ = tx.send(false);
+        }
+        state.pending_shell_approvals.write().clear();
+    }
     serde_json::json!({"success":true})
 }
 
@@ -88,6 +106,14 @@ fn kill_switch(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.authorized.write() = false;
     *state.pending_revoke.write() = true;
     { let mut t = state.current_task.write(); if t.active { t.active = false; t.status = "failed".into(); } }
+    // ★ v0.7.0: kill switch 必须最强力,所有审批立刻拒绝
+    {
+        let mut responders = state.shell_approval_responders.write();
+        for (_, tx) in responders.drain() {
+            let _ = tx.send(false);
+        }
+        state.pending_shell_approvals.write().clear();
+    }
     serde_json::json!({"success":true})
 }
 
@@ -160,6 +186,39 @@ fn set_permission_level(level: String, state: tauri::State<Arc<AppState>>) -> se
     }
     *state.permission_level.write() = level.clone();
     serde_json::json!({"success":true,"level":level})
+}
+
+/// ★ v0.7.0 前端轮询拿到当前所有待审批的 shell_exec 请求
+/// 通常用 get_status 顺带返回更省往返;这里独立 command 是为了前端能更频繁
+/// 单独拉(每 500ms),不必把 get_status 拉得那么快(影响其他状态读)。
+#[tauri::command]
+fn get_pending_shell_approvals(state: tauri::State<Arc<AppState>>) -> Vec<state::ShellApprovalRequest> {
+    state.pending_shell_approvals.read().clone()
+}
+
+/// ★ v0.7.0 前端响应一个待审批的 shell_exec 请求
+/// allow=true → 客户端会执行命令;allow=false → 立刻返回 denied 给服务端
+/// 一旦回应,该 action_id 的 oneshot 会被消费,该请求从 pending 队列移除
+#[tauri::command]
+fn respond_shell_approval(
+    action_id: String,
+    allow: bool,
+    state: tauri::State<Arc<AppState>>,
+) -> serde_json::Value {
+    let sender = state.shell_approval_responders.write().remove(&action_id);
+    match sender {
+        Some(tx) => {
+            // tx.send 失败说明 receiver 已 drop(可能因为审批超时),前端响应慢了一拍
+            // 这种情况 shell_exec 那边已经按超时拒绝了,我们什么都不用做
+            let _ = tx.send(allow);
+            serde_json::json!({"success": true, "actionId": action_id, "allow": allow})
+        }
+        None => serde_json::json!({
+            "success": false,
+            "error": "审批请求不存在或已过期",
+            "actionId": action_id
+        }),
+    }
 }
 
 /// 初始化崩溃日志
@@ -236,6 +295,8 @@ fn main() {
             get_status, login, disconnect, test_screenshot, authorize, revoke, kill_switch,
             check_permissions, open_permission_settings, request_screen_recording, request_accessibility,
             check_network, complete_onboarding, get_history, clear_history, get_settings, set_permission_level,
+            // ★ v0.7.0 shell_exec 审批流
+            get_pending_shell_approvals, respond_shell_approval,
         ])
         .setup(move |app| {
             let si = MenuItem::with_id(app, "status", "Status: Disconnected", false, None::<&str>)?;

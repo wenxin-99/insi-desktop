@@ -252,6 +252,76 @@
     </div>
   </div>
 
+  <!-- ★ v0.7.0 shell_exec 审批模态框 -->
+  <div id="shellApprovalOverlay" class="hidden" style="
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+    z-index: 9999; display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  ">
+    <div style="
+      background: var(--bg-card); border: 2px solid var(--warning);
+      border-radius: 14px; padding: 24px; max-width: 560px; width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    ">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+        <span style="font-size: 28px;">⚠️</span>
+        <h2 style="font-size: 18px; color: var(--warning);">服务端请求执行命令</h2>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px; line-height: 1.5;">
+        AI 助手想在你的电脑上跑下面的命令。请仔细看清楚再决定是否允许。
+      </p>
+
+      <div style="margin-top: 16px;">
+        <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">原因(由 AI 提供):</div>
+        <div id="shellApprovalReason" style="
+          background: rgba(99,102,241,0.1); border-left: 3px solid var(--primary);
+          padding: 10px 12px; border-radius: 6px; font-size: 13px;
+          color: var(--text); margin-bottom: 12px;
+        "></div>
+
+        <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">命令:</div>
+        <pre id="shellApprovalCommand" style="
+          background: #000; border: 1px solid var(--border); border-radius: 6px;
+          padding: 12px; font-size: 12px; font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+          color: #f0db4f; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+          max-height: 200px; overflow-y: auto;
+        "></pre>
+
+        <div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">
+          工作目录:<span id="shellApprovalWorkDir" style="color: var(--text);">~/</span>
+          · 超时:<span id="shellApprovalTimeout" style="color: var(--text);">30s</span>
+        </div>
+      </div>
+
+      <div style="
+        margin-top: 18px; padding: 10px 12px;
+        background: rgba(239,68,68,0.08); border-left: 3px solid var(--danger);
+        border-radius: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.5;
+      ">
+        💡 这条命令会在你的本地系统上执行,具备完整的破坏能力(删文件、改设置、跑下载脚本等)。
+        如果命令看起来不像 AI 应该需要的(尤其涉及系统目录、密码、网络下载),请<strong style="color: var(--danger);">拒绝</strong>。
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 18px;">
+        <button id="shellApprovalDeny" class="btn btn-danger" style="flex: 1;">
+          拒绝执行
+        </button>
+        <button id="shellApprovalAllow" style="
+          flex: 1; padding: 10px 16px; border-radius: 8px; border: none;
+          background: var(--warning); color: #1a1a24; font-weight: 600; cursor: pointer;
+        ">
+          允许执行
+        </button>
+      </div>
+
+      <p style="font-size: 11px; color: var(--text-dim); text-align: center; margin-top: 10px;">
+        5 分钟内不响应,自动拒绝
+      </p>
+    </div>
+  </div>
+
   <div class="footer">
     v<span id="version">0.1.0</span> · insights.ren
   </div>
@@ -368,6 +438,69 @@
         }
       }
     }
+
+    // ★ v0.7.0 shell_exec 审批 — 高频轮询 + 模态框
+    let currentApproval = null;  // { actionId, command, reason, workDir, timeoutMs, requestedAt }
+
+    function showApprovalModal(req) {
+      currentApproval = req;
+      $("shellApprovalReason").textContent = req.reason || "(未提供原因)";
+      $("shellApprovalCommand").textContent = req.command;
+      $("shellApprovalWorkDir").textContent = req.work_dir || "~/";
+      $("shellApprovalTimeout").textContent = `${Math.round((req.timeout_ms || 30000) / 1000)}s`;
+      $("shellApprovalOverlay").classList.remove("hidden");
+    }
+
+    function hideApprovalModal() {
+      currentApproval = null;
+      $("shellApprovalOverlay").classList.add("hidden");
+    }
+
+    async function pollShellApprovals() {
+      try {
+        const list = await invoke("get_pending_shell_approvals");
+        // 已在弹窗:看当前 actionId 还在不在,不在了 → 服务端撤回或超时,自动关闭
+        if (currentApproval) {
+          if (!list.find(r => r.action_id === currentApproval.action_id)) {
+            hideApprovalModal();
+          }
+          return;
+        }
+        // 没在弹窗:有新请求 → 弹第一个(FIFO)
+        if (list.length > 0) {
+          showApprovalModal(list[0]);
+        }
+      } catch (e) {
+        console.error("poll shell approvals failed:", e);
+      }
+    }
+
+    async function respondApproval(allow) {
+      if (!currentApproval) return;
+      const id = currentApproval.action_id;
+      // 立即关闭模态(避免用户多次点击)
+      hideApprovalModal();
+      try {
+        await invoke("respond_shell_approval", { actionId: id, allow });
+      } catch (e) {
+        console.error("respond_shell_approval failed:", e);
+        alert("响应失败:" + e);
+      }
+    }
+
+    $("shellApprovalAllow").addEventListener("click", () => respondApproval(true));
+    $("shellApprovalDeny").addEventListener("click", () => respondApproval(false));
+
+    // ★ ESC 键 = 拒绝(默认安全行为)
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && currentApproval) {
+        e.preventDefault();
+        respondApproval(false);
+      }
+    });
+
+    // 高频轮询(500ms)— 比 status 轮询更频繁,因为审批响应延迟直接影响 LLM 等待
+    setInterval(pollShellApprovals, 500);
 
     // 初始化
     updateStatus();

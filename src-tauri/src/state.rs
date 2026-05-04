@@ -5,7 +5,9 @@
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 
 /// 连接状态
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -139,6 +141,12 @@ pub struct AppState {
     pub operation_history: RwLock<Vec<OperationRecord>>,
     /// ★ 权限级别: standard / cautious / restricted
     pub permission_level: RwLock<String>,
+    /// ★ v0.7.0 desktop.shell_exec 审批请求队列
+    /// key = action_id; 待用户在前端审批的命令信息
+    pub pending_shell_approvals: RwLock<Vec<ShellApprovalRequest>>,
+    /// ★ v0.7.0 等待用户响应的 oneshot 发送端
+    /// 当前端调 respond_shell_approval 时,通过此 channel 把结果送回 protocol 循环
+    pub shell_approval_responders: RwLock<HashMap<String, oneshot::Sender<bool>>>,
 }
 
 /// 系统通知（供前端轮询取出并推送）
@@ -166,6 +174,23 @@ pub struct OperationRecord {
     pub ended_at: i64,
     /// 耗时（秒）
     pub duration_secs: f64,
+}
+
+/// ★ v0.7.0 shell_exec 审批请求 — 给前端弹模态框用
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShellApprovalRequest {
+    /// 与 server action_id 一致,前端 respond_shell_approval 时回传
+    pub action_id: String,
+    /// 要执行的命令(单行或多行)
+    pub command: String,
+    /// LLM 给的执行原因(展示给用户判断)
+    pub reason: String,
+    /// 工作目录(可选,空则用 home)
+    pub work_dir: Option<String>,
+    /// 超时(ms)
+    pub timeout_ms: u64,
+    /// 请求时间戳(ms),前端可显示"5 秒前请求"
+    pub requested_at: i64,
 }
 
 impl AppState {
@@ -200,6 +225,8 @@ impl AppState {
             onboarding_done: RwLock::new(false),
             operation_history: RwLock::new(Vec::new()),
             permission_level: RwLock::new("standard".into()),
+            pending_shell_approvals: RwLock::new(Vec::new()),
+            shell_approval_responders: RwLock::new(HashMap::new()),
         })
     }
 }

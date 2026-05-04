@@ -454,6 +454,60 @@ async fn handle_execute_action(
     let tool = payload.get("tool").and_then(|v| v.as_str()).unwrap_or("");
     let params = payload.get("params").cloned().unwrap_or(json!({}));
 
+    // ★ v0.7.0 desktop.shell_exec 单独处理 — 需要 AppState 来 park 审批请求
+    if tool == "desktop.shell_exec" {
+        // 还需要基本的连接授权(否则未授权用户就能弹审批框)
+        if !*state.authorized.read() {
+            send_action_result(client, &action_id, false, Some("未授权,请先在客户端点'授权控制'")).await;
+            return;
+        }
+        let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let reason = params.get("reason").and_then(|v| v.as_str()).unwrap_or("(无说明)").to_string();
+        let work_dir = params.get("workDir").and_then(|v| v.as_str()).map(String::from);
+        let timeout_ms = params.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30_000);
+
+        if command.is_empty() {
+            send_action_result(client, &action_id, false, Some("command 为空")).await;
+            return;
+        }
+
+        // 用 Arc 拷贝传给 shell_exec(它需要 Arc<AppState>,而我们只有 &AppState)
+        // 这里用一个小 hack:从 state 的字段重建 Arc 不可能,所以让 shell_exec 模块
+        // 用 &AppState 也行——重写为接 &AppState。
+        let exec_result = crate::shell_exec::run_with_approval_ref(
+            state,
+            action_id.clone(),
+            command,
+            reason,
+            work_dir,
+            timeout_ms,
+        ).await;
+
+        match exec_result {
+            Ok(r) => {
+                // success=true 仅当用户允许且命令真跑了(可能 exit_code != 0,但那是用户命令的事)。
+                // 用户拒绝/超时 → success=false 让 LLM 看 error 字段知情;不是 infra 失败。
+                let payload = json!({
+                    "actionId": action_id,
+                    "success": r.approved,
+                    "error": r.denial_reason,
+                    "stdout": r.stdout,
+                    "stderr": r.stderr,
+                    "exitCode": r.exit_code,
+                    "durationMs": r.duration_ms,
+                    "timedOut": r.timed_out,
+                });
+                if let Err(e) = client.emit("client_action_result", payload).await {
+                    log::error!("[Protocol] Failed to send shell_exec result: {}", e);
+                }
+            }
+            Err(e) => {
+                send_action_result(client, &action_id, false, Some(&format!("shell_exec 内部错误: {}", e))).await;
+            }
+        }
+        return;
+    }
+
     // ★ P3 结构化数据工具优先处理（不需要屏幕交互，不需要安全检查坐标）
     if is_p3_tool(tool) {
         // P3 工具不需要 GUI 授权，但仍需基本连接授权
@@ -623,8 +677,9 @@ fn is_p3_tool(tool: &str) -> bool {
         // ★ v0.6.0 新增跨端 OCR 文件工具(读字节回传服务端 Tesseract 识别)
         "desktop.ocr_file" |
         // ★ v0.6.0 补漏:p4VisionTools 在服务端注册过但客户端从来没有 handler
-        // 之前每次调用都返回"未知工具",LLM 看到 metadata.bounds = {} 也莫名其妙
         "desktop.window_bounds" | "desktop.taskbar_info"
+        // 注:desktop.shell_exec 不走 is_p3_tool / handle_p3_tool,
+        //    因为它需要 AppState 做审批 park,在 handle_execute_action 里特殊分支。
     )
 }
 

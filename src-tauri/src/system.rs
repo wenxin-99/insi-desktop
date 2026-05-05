@@ -394,7 +394,8 @@ pub fn create_archive(sources: &[String], output: &str) -> Result<(), String> {
 /// 展开 ~ 为 home 目录
 fn expand_home(path: &str) -> PathBuf {
     if path.starts_with("~/") || path.starts_with("~\\") {
-        if let Some(home) = dirs::home_dir() {
+        // ★ 2026-05-04 改用 file_ops::user_home(USERPROFILE 优先)避开 dirs crate 中文用户名截断
+        if let Some(home) = crate::file_ops::user_home() {
             return home.join(&path[2..]);
         }
     }

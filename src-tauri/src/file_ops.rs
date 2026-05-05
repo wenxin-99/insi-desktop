@@ -88,9 +88,48 @@ pub struct GroupResult {
 // 路径辅助
 // ═══════════════════════════════════════════
 
+/// 获取用户 home 目录,优先用 USERPROFILE 环境变量(Windows)避开 dirs crate 在某些
+/// Windows 配置下对中文/特殊字符用户名的截断 bug。
+///
+/// dirs crate v5.0.1 在用户名为"牧羊人"时被观察到截断成"六",导致所有依赖
+/// home 比较的路径检查失败。USERPROFILE 是 Windows 原生环境变量,不会被 dirs 二次处理。
+pub fn user_home() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(p) = std::env::var("USERPROFILE") {
+            if !p.is_empty() {
+                return Some(PathBuf::from(p));
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(p) = std::env::var("HOME") {
+            if !p.is_empty() {
+                return Some(PathBuf::from(p));
+            }
+        }
+    }
+    dirs::home_dir()
+}
+
+/// 剥离 Windows NT namespace 前缀 `\\?\`,把 `\\?\C:\foo` 还原成 `C:\foo`。
+/// canonicalize 在 Windows 会自动加这个前缀,但与 USERPROFILE / dirs::home_dir 返回的
+/// 普通路径比较时 starts_with 永远 false,导致路径校验全部失败。
+fn strip_nt_prefix(path: &str) -> String {
+    if path.starts_with(r"\\?\UNC\") {
+        // UNC 共享路径:\\?\UNC\server\share → \\server\share
+        format!(r"\\{}", &path[r"\\?\UNC\".len()..])
+    } else if path.starts_with(r"\\?\") {
+        path[r"\\?\".len()..].to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 fn expand_home(path: &str) -> PathBuf {
     if path.starts_with("~/") || path.starts_with("~\\") {
-        if let Some(home) = dirs::home_dir() {
+        if let Some(home) = user_home() {
             return home.join(&path[2..]);
         }
     }
@@ -104,8 +143,12 @@ fn expand_home(path: &str) -> PathBuf {
 ///   - C:\Windows / C:\Program Files / C:\Program Files (x86) (Windows)
 ///   - 仅允许 home dir 子树 + Desktop / Downloads / Documents / Pictures 等用户区域
 fn is_path_safe(path: &Path) -> Result<(), String> {
-    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let s = abs.to_string_lossy().to_lowercase();
+    let abs_raw = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    // ★ 2026-05-04 关键修复:Windows canonicalize 返回 \\?\C:\... 这种 NT 前缀路径,
+    //   与 user_home 返回的 C:\... 比较时永远 false,所有 file_organize / file_rename
+    //   等带写操作的工具会报"路径不在用户区域"误拒。剥离前缀后比较才正确。
+    let abs_str = strip_nt_prefix(&abs_raw.to_string_lossy());
+    let s = abs_str.to_lowercase();
 
     // Windows 系统路径黑名单
     #[cfg(target_os = "windows")]
@@ -137,10 +180,10 @@ fn is_path_safe(path: &Path) -> Result<(), String> {
     }
 
     // 必须在 home 目录或常见子目录内
-    if let Some(home) = dirs::home_dir() {
-        let home_lower = home.to_string_lossy().to_lowercase();
+    if let Some(home) = user_home() {
+        let home_lower = strip_nt_prefix(&home.to_string_lossy()).to_lowercase();
         if !s.starts_with(&home_lower) && !s.starts_with("/tmp") && !s.starts_with("/var/tmp") {
-            return Err(format!("路径不在用户区域,拒绝: {}", abs.display()));
+            return Err(format!("路径不在用户区域,拒绝: abs={} home={}", abs_str, home_lower));
         }
     }
 

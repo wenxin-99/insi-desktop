@@ -165,7 +165,8 @@ async fn execute_command(
     // Resolve work_dir: ~ expansion or fall back to home
     let cwd = match work_dir {
         Some(p) if !p.is_empty() => crate::file_ops::expand_home_for_shell(p),
-        _ => dirs::home_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+        // ★ 2026-05-04 改用 file_ops::user_home 避免 dirs crate 中文用户名截断
+        _ => crate::file_ops::user_home().unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
     };
 
     // Cross-platform shell selection

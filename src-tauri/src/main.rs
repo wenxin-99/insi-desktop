@@ -279,6 +279,31 @@ fn init_crash_logging() {
 
 fn main() {
     init_crash_logging();
+
+    // ★ 2026-05-04 启动诊断:打印 home dir 解析结果。
+    //   v0.7.0 在中文用户名(如"牧羊人")的 Windows 上,dirs crate 会把用户名截断成"六",
+    //   导致所有写操作工具(file_organize / file_rename_batch 等)报"路径不在用户区域"。
+    //   v0.7.1 引入 user_home(优先 USERPROFILE)修复,这条日志让用户/我们立刻能验证修复有效。
+    {
+        let dirs_home = dirs::home_dir();
+        let user_home_resolved = file_ops::user_home();
+        let userprofile = std::env::var("USERPROFILE").ok();
+        let home_var = std::env::var("HOME").ok();
+        eprintln!("[Startup] User home diagnostic (v0.7.1):");
+        eprintln!("  dirs::home_dir()  = {:?}", dirs_home);
+        eprintln!("  user_home()        = {:?}", user_home_resolved);
+        eprintln!("  USERPROFILE env   = {:?}", userprofile);
+        eprintln!("  HOME env          = {:?}", home_var);
+        if let (Some(d), Some(u)) = (&dirs_home, &user_home_resolved) {
+            if d != u {
+                eprintln!("  ⚠ MISMATCH detected — dirs crate returned different home than USERPROFILE.");
+                eprintln!("    user_home() (USERPROFILE) is being used; v0.7.1 fix is active.");
+            } else {
+                eprintln!("  ✓ both sources agree on home directory");
+            }
+        }
+    }
+
     let app_state = AppState::new();
     let state_for_ws = app_state.clone();
     let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);

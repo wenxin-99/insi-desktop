@@ -16,6 +16,7 @@
 //!   - 失败记录 transaction log,可 rollback
 
 use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -48,6 +49,45 @@ pub struct OrganizeResult {
     pub errors: Vec<String>,
     /// transaction log (仅当真执行时填充, 用于 rollback)
     pub transaction_id: Option<String>,
+    /// ★ 2026-05-06 诊断字段:把 skipped_count 拆成具体原因,
+    ///    防止 plan=0 时 LLM/用户看不出 42 项到底是文件夹、隐藏文件还是扩展名没命中。
+    pub skipped_breakdown: SkippedBreakdown,
+    /// ★ 2026-05-06 unmatched 扩展名直方图(按出现次数从多到少)。
+    ///    如果是 [{".lnk", 30}, {".url", 12}],一眼能看出"哦桌面全是 Windows 快捷方式,
+    ///    我的规则里压根没写这俩"。
+    pub extension_histogram: Vec<ExtensionTally>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SkippedBreakdown {
+    /// 隐藏文件(以 . 开头,如 .DS_Store / .gitignore)— 安全跳过
+    pub hidden: u32,
+    /// 已经是规则目标文件夹之一(防循环移动)
+    pub rule_folder: u32,
+    /// 是目录(file_organize 只动文件,不递归)
+    pub directory: u32,
+    /// 文件没有扩展名,无法分类
+    pub no_extension: u32,
+    /// 有扩展名但不在任何规则的 extensions 列表里
+    pub unmatched_extension: u32,
+    /// 读取 metadata 失败(权限/损坏的 symlink 等)
+    pub metadata_error: u32,
+    /// 各类样本文件名,每类最多 5 个,帮 LLM/用户快速看清问题在哪
+    pub samples: SkippedSamples,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SkippedSamples {
+    pub directory: Vec<String>,
+    pub unmatched_extension: Vec<String>,
+    pub no_extension: Vec<String>,
+    pub rule_folder: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExtensionTally {
+    pub extension: String,
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -236,6 +276,17 @@ pub fn file_organize(
     let mut moved_count: u32 = 0;
     let mut skipped_count: u32 = 0;
 
+    // ★ 2026-05-06 诊断:边扫边记录跳过原因,plan=0 时 LLM/用户能立刻看出
+    //    桌面到底是什么情况(全是文件夹 / 全是 .lnk 快捷方式 / 还是扩展名没覆盖到)。
+    let mut breakdown = SkippedBreakdown::default();
+    let mut unmatched_ext_counts: HashMap<String, u32> = HashMap::new();
+    const SAMPLE_CAP: usize = 5;
+    fn push_sample(samples: &mut Vec<String>, name: &str) {
+        if samples.len() < SAMPLE_CAP {
+            samples.push(name.to_string());
+        }
+    }
+
     // 扫源目录的直接子项(不递归 — 避免移动子文件夹里的东西出来)
     let read = fs::read_dir(&src_path)
         .map_err(|e| format!("读取目录失败 {}: {}", src_path.display(), e))?;
@@ -245,19 +296,50 @@ pub fn file_organize(
         let entry_path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
 
-        // 跳过隐藏文件 + 已经是规则目标文件夹本身
-        if name.starts_with('.') { continue; }
+        // 跳过隐藏文件
+        // ★ 2026-05-06 修复记账 bug:原来这里 continue 没增 skipped_count,
+        //    隐藏文件直接消失在统计里,跟实际 read_dir 数对不上。
+        if name.starts_with('.') {
+            breakdown.hidden += 1;
+            skipped_count += 1;
+            continue;
+        }
+
+        // 已经是规则目标文件夹本身(避免循环移动)
         let is_rule_folder = rules.iter().any(|r| r.folder == name);
-        if is_rule_folder { skipped_count += 1; continue; }
+        if is_rule_folder {
+            breakdown.rule_folder += 1;
+            push_sample(&mut breakdown.samples.rule_folder, &name);
+            skipped_count += 1;
+            continue;
+        }
 
-        // 只处理文件 + 软链(不动文件夹)
-        let metadata = match entry.metadata() { Ok(m) => m, Err(_) => continue };
-        if metadata.is_dir() { skipped_count += 1; continue; }
+        // 只处理文件(不动文件夹)
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => {
+                breakdown.metadata_error += 1;
+                skipped_count += 1;
+                continue;
+            }
+        };
+        if metadata.is_dir() {
+            breakdown.directory += 1;
+            push_sample(&mut breakdown.samples.directory, &name);
+            skipped_count += 1;
+            continue;
+        }
 
-        // 找匹配规则
-        let ext_lower = Path::new(&name).extension()
-            .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
-            .unwrap_or_default();
+        // 找匹配规则:先取扩展名(无扩展名单独成桶,跟"扩展名不在规则里"区分开)
+        let ext_lower = match Path::new(&name).extension() {
+            Some(e) => format!(".{}", e.to_string_lossy().to_lowercase()),
+            None => {
+                breakdown.no_extension += 1;
+                push_sample(&mut breakdown.samples.no_extension, &name);
+                skipped_count += 1;
+                continue;
+            }
+        };
 
         let matched_rule = rules.iter().find(|r| {
             r.extensions.iter().any(|e| {
@@ -268,7 +350,13 @@ pub fn file_organize(
 
         let rule = match matched_rule {
             Some(r) => r,
-            None => { skipped_count += 1; continue; }
+            None => {
+                *unmatched_ext_counts.entry(ext_lower.clone()).or_insert(0) += 1;
+                breakdown.unmatched_extension += 1;
+                push_sample(&mut breakdown.samples.unmatched_extension, &name);
+                skipped_count += 1;
+                continue;
+            }
         };
 
         let dest_dir = src_path.join(&rule.folder);
@@ -281,6 +369,13 @@ pub fn file_organize(
         });
     }
 
+    // 把 unmatched 扩展名 HashMap 转成按 count 降序的 Vec(显示更直观)
+    let mut extension_histogram: Vec<ExtensionTally> = unmatched_ext_counts
+        .into_iter()
+        .map(|(extension, count)| ExtensionTally { extension, count })
+        .collect();
+    extension_histogram.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.extension.cmp(&b.extension)));
+
     if dry_run {
         return Ok(OrganizeResult {
             dry_run: true,
@@ -291,6 +386,8 @@ pub fn file_organize(
             created_folders: vec![],
             errors,
             transaction_id: None,
+            skipped_breakdown: breakdown,
+            extension_histogram,
         });
     }
 
@@ -364,6 +461,8 @@ pub fn file_organize(
         created_folders,
         errors,
         transaction_id: Some(txn_id),
+        skipped_breakdown: breakdown,
+        extension_histogram,
     })
 }
 

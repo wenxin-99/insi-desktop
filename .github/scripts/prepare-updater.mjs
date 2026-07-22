@@ -5,22 +5,22 @@ const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const githubRef = process.env.GITHUB_REF ?? "";
 const isReleaseTag = githubRef.startsWith("refs/tags/v");
 const privateKey = (process.env.TAURI_SIGNING_PRIVATE_KEY ?? "").trim();
-
-if (isReleaseTag && !privateKey) {
-  console.error(
-    "::error::Release tags require the TAURI_SIGNING_PRIVATE_KEY repository secret. " +
-      "Add the Tauri updater private key that matches plugins.updater.pubkey before publishing a v* tag."
-  );
-  process.exit(1);
-}
+const updaterEnabled = isReleaseTag && privateKey.length > 0;
 
 config.bundle ??= {};
-config.bundle.createUpdaterArtifacts = isReleaseTag;
+config.bundle.createUpdaterArtifacts = updaterEnabled;
 
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-console.log(
-  isReleaseTag
-    ? "Signed updater artifacts enabled for release tag."
-    : "Updater artifacts disabled for PR/main build; platform installers remain enabled."
-);
+if (updaterEnabled) {
+  console.log("Signed updater artifacts enabled for release tag.");
+} else if (isReleaseTag) {
+  console.warn(
+    "::warning::TAURI_SIGNING_PRIVATE_KEY is not configured. " +
+      "Installers will still be built and published, but no updater manifest will be generated."
+  );
+} else {
+  console.log(
+    "Updater artifacts disabled for PR/main build; platform installers remain enabled."
+  );
+}

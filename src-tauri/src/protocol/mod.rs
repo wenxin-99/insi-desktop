@@ -12,13 +12,93 @@
 use crate::input;
 use crate::safety;
 use crate::screenshot;
-use crate::state::{AppState, ConnectionStatus};
+use crate::state::{AppState, ClientInterruptRequest, ConnectionStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// 幂等结果缓存上限(action_id 数)。超过后 FIFO 淘汰最旧的。
+const ACTION_CACHE_CAP: usize = 128;
+
+/// 需要用户"授权控制"才能执行的会改动本地系统的 P3 工具(删/移/整理/归档等)。
+/// 只读 P3 工具(list / search / app_info / window_bounds / taskbar 等)不在此列。
+fn is_mutating_p3_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "desktop.file_move"
+            | "desktop.file_archive"
+            | "desktop.file_organize"
+            | "desktop.file_rename_batch"
+            | "desktop.file_trash"
+            | "desktop.file_group"
+            | "desktop.file_rollback"
+    )
+}
+
+/// ★ v0.8.0 记录一次动作结果到幂等缓存(FIFO,上限 ACTION_CACHE_CAP)。
+/// 只在动作"真的执行了"时调用,以便服务端重试同一 action_id 时直接重发原结果,
+/// 而不是重复点击/输入/删文件。
+fn remember_action(state: &AppState, action_id: &str, result: &serde_json::Value) {
+    let mut map = state.executed_actions.write();
+    if map.insert(action_id.to_string(), result.clone()).is_none() {
+        let mut order = state.executed_order.write();
+        order.push_back(action_id.to_string());
+        while order.len() > ACTION_CACHE_CAP {
+            if let Some(old) = order.pop_front() {
+                map.remove(&old);
+            }
+        }
+    }
+}
+
+/// ★ v0.8.0 服务端下发 authorized 状态的安全同步:
+///   - 降级(true→false):立即生效(服务端有权随时撤销)。
+///   - 升级(false→true):仅当用户本地授权意图为 true 才接受;否则忽略。
+/// 防止 kill/revoke 之后 heartbeat_ack 或 permission_update 把控制权悄悄还回来。
+fn apply_server_authorized(state: &AppState, server_auth: bool) {
+    let local = *state.authorized.read();
+    if server_auth == local {
+        return;
+    }
+    if !server_auth {
+        *state.authorized.write() = false;
+        *state.in_takeover.write() = false;
+        *state.agent_awaiting.write() = false;
+        log::info!("[Protocol] Server revoked authorization (synced down)");
+    } else if *state.authorize_intent.read() {
+        *state.authorized.write() = true;
+        log::info!("[Protocol] Server confirmed authorization (local intent matches)");
+    } else {
+        log::warn!(
+            "[Protocol] Ignored server authorized=true — no local user intent (anti re-authorize guard)"
+        );
+    }
+}
+
+/// ★ v0.8.0 通过 notification 插件推送一条系统通知(需要 AppState 里已注入 app_handle)。
+fn notify(state: &AppState, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if let Some(app) = state.app_handle.read().clone() {
+        if let Err(e) = app.notification().builder().title(title).body(body).show() {
+            log::warn!("[Protocol] notification failed: {}", e);
+        }
+    }
+}
+
+/// ★ v0.8.0 把主窗口弹到前台并请求用户注意(用于 shell 审批等需要用户立刻看到的场景)。
+pub fn surface_main_window(state: &AppState) {
+    use tauri::Manager;
+    if let Some(app) = state.app_handle.read().clone() {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+            let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
+        }
+    }
+}
 
 /// 服务端发来的消息
 #[derive(Debug, Clone, Deserialize)]
@@ -44,7 +124,14 @@ pub async fn connect_and_serve(
     state: Arc<AppState>,
     mut shutdown_rx: mpsc::Receiver<()>,
 ) {
+    // ★ v0.8.0 指数退避:连接成功后重置为 1s,每次失败翻倍,上限 30s,叠加 <500ms 抖动。
+    let mut backoff_secs: u64 = 1;
     loop {
+        // ★ v0.8.0 每轮先看 shutdown,断连时也能及时退出(此前只在一次连接结束后才检查)。
+        if shutdown_rx.try_recv().is_ok() {
+            log::info!("[Protocol] Shutdown signal received (idle)");
+            break;
+        }
         // 检查是否应该连接
         if !*state.should_connect.read() {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -66,6 +153,7 @@ pub async fn connect_and_serve(
         match try_connect(&server_url, &token, state.clone()).await {
             Ok(()) => {
                 log::info!("[Protocol] Connection closed normally");
+                backoff_secs = 1; // ★ 成功建立过连接 → 重置退避
             }
             Err(e) => {
                 log::error!("[Protocol] Connection error: {}", e);
@@ -73,7 +161,7 @@ pub async fn connect_and_serve(
         }
 
         *state.connection_status.write() = ConnectionStatus::Disconnected;
-        // 断连时重置授权状态
+        // 断连时重置服务端确认的授权(但保留 authorize_intent,重连后自动恢复控制)
         *state.authorized.write() = false;
 
         // 检查是否收到 shutdown 信号
@@ -82,11 +170,14 @@ pub async fn connect_and_serve(
             break;
         }
 
-        // 重连延迟
+        // ★ v0.8.0 重连延迟:指数退避 + 抖动,避免服务端抖动时的重连风暴
         if *state.should_connect.read() {
             *state.connection_status.write() = ConnectionStatus::Reconnecting;
-            log::info!("[Protocol] Reconnecting in 5 seconds...");
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            let jitter_ms = (chrono::Utc::now().timestamp_subsec_millis() % 500) as u64;
+            let wait = Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms);
+            log::info!("[Protocol] Reconnecting in ~{}s...", backoff_secs);
+            tokio::time::sleep(wait).await;
+            backoff_secs = (backoff_secs.saturating_mul(2)).min(30);
         }
     }
 }
@@ -104,6 +195,7 @@ async fn try_connect(
 
     let state_clone = state.clone();
     let state_for_msg = state.clone();
+    let state_for_close = state.clone();
 
     let client = ClientBuilder::new(server_url)
         .namespace("/desktop")
@@ -113,8 +205,14 @@ async fn try_connect(
             Box::pin(async move {
                 if let Payload::Text(values) = payload {
                     if let Some(first) = values.first() {
-                        if let Ok(msg) = serde_json::from_value::<ServerMessage>(first.clone()) {
-                            handle_server_message(msg, &client, st).await;
+                        match serde_json::from_value::<ServerMessage>(first.clone()) {
+                            Ok(msg) => handle_server_message(msg, &client, st).await,
+                            // ★ v0.8.0 此前解析失败被静默丢弃;现在至少落日志,便于排协议不兼容
+                            Err(e) => log::warn!(
+                                "[Protocol] Unparseable server_message dropped: {} (raw: {})",
+                                e,
+                                first.to_string().chars().take(200).collect::<String>()
+                            ),
                         }
                     }
                 }
@@ -123,6 +221,14 @@ async fn try_connect(
         .on("error", |err, _| {
             Box::pin(async move {
                 log::error!("[Protocol] Socket.IO error: {:?}", err);
+            })
+        })
+        // ★ v0.8.0 socket 关闭时立即标记断连,让心跳循环尽快退出并触发重连
+        .on("close", move |_, _| {
+            let st = state_for_close.clone();
+            Box::pin(async move {
+                log::warn!("[Protocol] Socket closed by peer/transport");
+                *st.connection_status.write() = ConnectionStatus::Disconnected;
             })
         })
         .on("open", move |_, client: Client| {
@@ -152,14 +258,23 @@ async fn try_connect(
                 if let Err(e) = client.emit("client_auth", auth_data).await {
                     log::error!("[Protocol] Failed to send client_auth: {}", e);
                 }
+
+                // ★ v0.8.0 重连后自动恢复控制:若用户此前授权过(authorize_intent),
+                // 排队重发 client_authorize,让心跳循环下一 tick 补发,不用用户再点一次。
+                if *st.authorize_intent.read() {
+                    *st.pending_authorize.write() = true;
+                }
             })
         })
         .connect()
         .await
         .map_err(|e| format!("连接失败: {}", e))?;
 
-    // 心跳循环 + 授权信号发送
-    let heartbeat_interval = state.server_config.read().heartbeat_interval;
+    // 心跳循环 + 授权信号发送 + 中断转发
+    // ★ v0.8.0 clamp 心跳间隔到 [1s, 120s],避免服务端下发 heartbeatInterval=0 导致 busy-loop 刷屏。
+    let heartbeat_interval = state.server_config.read().heartbeat_interval.clamp(1000, 120_000);
+    // ★ v0.8.0 用局部计数器替代进程级 static,避免重连后首个心跳被历史计数错开。
+    let mut hb_count: u32 = 0;
     loop {
         tokio::time::sleep(Duration::from_millis(heartbeat_interval.min(3000))).await;
 
@@ -168,34 +283,85 @@ async fn try_connect(
             break;
         }
 
+        // ★ v0.8.0 close 事件已把状态置为 Disconnected → 尽快退出触发重连,别再往死连接发东西
+        if !matches!(*state.connection_status.read(), ConnectionStatus::Connected) {
+            log::warn!("[Protocol] Connection no longer Connected — exiting heartbeat loop");
+            break;
+        }
+
         // ★ 检查并发送 pending_authorize
         if *state.pending_authorize.read() {
-            *state.pending_authorize.write() = false;
             log::info!("[Protocol] Sending client_authorize to server...");
-            if let Err(e) = client.emit("client_authorize", json!({})).await {
-                log::warn!("[Protocol] Failed to emit client_authorize: {}", e);
+            match client.emit("client_authorize", json!({})).await {
+                // ★ v0.8.0 仅在发送成功后才清标记,失败保留下一 tick 重试(此前发送前就清,丢就永久丢)
+                Ok(_) => *state.pending_authorize.write() = false,
+                Err(e) => log::warn!("[Protocol] Failed to emit client_authorize: {}", e),
             }
         }
 
-        // ★ 检查并发送 pending_revoke（如果服务端支持）
+        // ★ 检查并发送 pending_revoke
         if *state.pending_revoke.read() {
-            *state.pending_revoke.write() = false;
             log::info!("[Protocol] Sending client_revoke to server...");
-            if let Err(e) = client.emit("client_revoke", json!({})).await {
-                log::warn!("[Protocol] Failed to emit client_revoke: {}", e);
+            match client.emit("client_revoke", json!({})).await {
+                Ok(_) => *state.pending_revoke.write() = false,
+                Err(e) => log::warn!("[Protocol] Failed to emit client_revoke: {}", e),
             }
         }
 
-        // 心跳（降低频率，不需要每 3 秒都发）
-        static HEARTBEAT_COUNTER: AtomicU32 = AtomicU32::new(0);
-        let count = HEARTBEAT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        // ★ v0.8.0 发送待处理的中断请求(pause/resume/takeover/abort/steer)——
+        //   这是此前完全缺失的一环:main.rs 把中断塞进队列,但没有任何代码发给服务端。
+        let pending: Vec<ClientInterruptRequest> = {
+            let mut q = state.pending_interrupts.write();
+            std::mem::take(&mut *q)
+        };
+        if !pending.is_empty() {
+            let mut sent = 0usize;
+            for it in &pending {
+                let payload = json!({
+                    "kind": it.kind,
+                    "text": it.text,
+                    "requestedAt": it.requested_at,
+                });
+                match client.emit("client_interrupt", payload).await {
+                    Ok(_) => {
+                        log::info!("[Protocol] Sent client_interrupt: {}", it.kind);
+                        sent += 1;
+                    }
+                    Err(e) => {
+                        log::warn!("[Protocol] Failed to emit client_interrupt {}: {}", it.kind, e);
+                        break;
+                    }
+                }
+            }
+            // 未发送成功的放回队列头,下一 tick 重试(保持原顺序)
+            if sent < pending.len() {
+                let mut q = state.pending_interrupts.write();
+                for (i, it) in pending[sent..].iter().cloned().enumerate() {
+                    q.insert(i, it);
+                }
+            }
+        }
+
+        // ★ v0.8.0 发送"交还控制"
+        if *state.pending_handback.read() {
+            match client.emit("client_handback", json!({})).await {
+                Ok(_) => {
+                    *state.pending_handback.write() = false;
+                    log::info!("[Protocol] Sent client_handback");
+                }
+                Err(e) => log::warn!("[Protocol] Failed to emit client_handback: {}", e),
+            }
+        }
+
+        // 心跳(按配置间隔发,不必每 tick 都发)
         let interval_mod = (heartbeat_interval as u32 / 3000).max(1);
-        if count % interval_mod == 0 {
+        if hb_count % interval_mod == 0 {
             if let Err(e) = client.emit("client_heartbeat", json!({})).await {
                 log::warn!("[Protocol] Heartbeat failed: {}", e);
                 break;
             }
         }
+        hb_count = hb_count.wrapping_add(1);
     }
 
     Ok(())
@@ -216,6 +382,9 @@ async fn handle_server_message(
         "execute_action" => {
             if let Some(action_id) = msg.action_id {
                 handle_execute_action(action_id, msg.payload, client, &state).await;
+            } else {
+                // ★ v0.8.0 此前静默丢弃,服务端会一直等结果 → 至少落日志
+                log::warn!("[Protocol] execute_action without actionId — dropped (server would hang)");
             }
         }
         "cancel" => {
@@ -230,19 +399,16 @@ async fn handle_server_message(
         "permission_update" => {
             if let Some(payload) = &msg.payload {
                 let authorized = payload.get("authorized").and_then(|v| v.as_bool()).unwrap_or(false);
-                *state.authorized.write() = authorized;
-                log::info!("[Protocol] Permission updated: authorized={}", authorized);
+                // ★ v0.8.0 走安全同步:服务端可撤销,但不能在无本地意图时把控制权升回来
+                apply_server_authorized(&state, authorized);
             }
         }
         // ★ 心跳应答（携带 authorized 状态，自愈同步）
         "heartbeat_ack" => {
             if let Some(payload) = &msg.payload {
                 if let Some(authorized) = payload.get("authorized").and_then(|v| v.as_bool()) {
-                    let current = *state.authorized.read();
-                    if current != authorized {
-                        *state.authorized.write() = authorized;
-                        log::info!("[Protocol] Heartbeat sync: authorized {} → {}", current, authorized);
-                    }
+                    // ★ v0.8.0 同上:防止 kill/revoke 后被 heartbeat 悄悄重新授权
+                    apply_server_authorized(&state, authorized);
                 }
             }
         }
@@ -343,6 +509,9 @@ async fn handle_server_message(
                      if goal.is_empty() { "AI 操作执行失败".into() } else { format!("「{}」执行失败", goal) },
                      "error".to_string())
                 };
+                // ★ v0.8.0 直接通过 notification 插件推送系统通知(此前只塞进队列,
+                //   而前端从不读取,通知实际从未弹出)。
+                notify(&state, &title, &body);
                 state.pending_notifications.write().push(crate::state::PendingNotification {
                     title, body, level,
                     timestamp: chrono::Utc::now().timestamp_millis(),
@@ -443,10 +612,20 @@ async fn handle_execute_action(
     client: &rust_socketio::asynchronous::Client,
     state: &AppState,
 ) {
+    // ★ v0.8.0 幂等:同一 action_id 已执行过 → 直接重发缓存结果,绝不重复执行。
+    //   防止服务端在 ack 丢失后重试导致点击/输入/删文件被执行两次。
+    if let Some(cached) = state.executed_actions.read().get(&action_id).cloned() {
+        log::warn!("[Protocol] Duplicate action_id {} — re-sending cached result (no re-exec)", action_id);
+        if let Err(e) = client.emit("client_action_result", cached).await {
+            log::error!("[Protocol] Failed to re-send cached result: {}", e);
+        }
+        return;
+    }
+
     let payload = match payload {
         Some(p) => p,
         None => {
-            send_action_result(client, &action_id, false, Some("缺少 payload")).await;
+            send_action_result(client, state, &action_id, false, Some("缺少 payload")).await;
             return;
         }
     };
@@ -458,7 +637,7 @@ async fn handle_execute_action(
     if tool == "desktop.shell_exec" {
         // 还需要基本的连接授权(否则未授权用户就能弹审批框)
         if !*state.authorized.read() {
-            send_action_result(client, &action_id, false, Some("未授权,请先在客户端点'授权控制'")).await;
+            send_action_result(client, state, &action_id, false, Some("未授权,请先在客户端点'授权控制'")).await;
             return;
         }
         let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -467,7 +646,7 @@ async fn handle_execute_action(
         let timeout_ms = params.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30_000);
 
         if command.is_empty() {
-            send_action_result(client, &action_id, false, Some("command 为空")).await;
+            send_action_result(client, state, &action_id, false, Some("command 为空")).await;
             return;
         }
 
@@ -487,7 +666,7 @@ async fn handle_execute_action(
             Ok(r) => {
                 // success=true 仅当用户允许且命令真跑了(可能 exit_code != 0,但那是用户命令的事)。
                 // 用户拒绝/超时 → success=false 让 LLM 看 error 字段知情;不是 infra 失败。
-                let payload = json!({
+                let result = json!({
                     "actionId": action_id,
                     "success": r.approved,
                     "error": r.denial_reason,
@@ -497,12 +676,16 @@ async fn handle_execute_action(
                     "durationMs": r.duration_ms,
                     "timedOut": r.timed_out,
                 });
-                if let Err(e) = client.emit("client_action_result", payload).await {
+                // ★ v0.8.0 命令真的跑过 → 缓存结果,防止重试重复执行
+                if r.approved {
+                    remember_action(state, &action_id, &result);
+                }
+                if let Err(e) = client.emit("client_action_result", result).await {
                     log::error!("[Protocol] Failed to send shell_exec result: {}", e);
                 }
             }
             Err(e) => {
-                send_action_result(client, &action_id, false, Some(&format!("shell_exec 内部错误: {}", e))).await;
+                send_action_result(client, state, &action_id, false, Some(&format!("shell_exec 内部错误: {}", e))).await;
             }
         }
         return;
@@ -510,7 +693,16 @@ async fn handle_execute_action(
 
     // ★ P3 结构化数据工具优先处理（不需要屏幕交互，不需要安全检查坐标）
     if is_p3_tool(tool) {
-        // P3 工具不需要 GUI 授权，但仍需基本连接授权
+        // ★ v0.8.0 会改动本地文件系统的 P3 工具(move/organize/rename/trash/group/archive/rollback)
+        //   必须已授权。此前它们在授权检查之前就返回,未授权用户即可触发删/移文件——严重信任缺口。
+        //   只读 P3 工具(list/search/app_info/window_bounds/taskbar 等)仍无需授权。
+        if is_mutating_p3_tool(tool) && !*state.authorized.read() {
+            send_action_result(
+                client, state, &action_id, false,
+                Some("该文件操作会改动本地文件,需先授权。请在客户端点「授权控制」后重试。"),
+            ).await;
+            return;
+        }
         let p3_result = handle_p3_tool(tool, &params).await;
         if let Some(result_json) = p3_result {
             let mut data = result_json;
@@ -518,11 +710,15 @@ async fn handle_execute_action(
             if data.get("success").is_none() {
                 data["success"] = json!(true);
             }
+            // ★ v0.8.0 缓存成功的 P3 结果(失败不缓存,允许纠错后重试)
+            if data.get("success").and_then(|v| v.as_bool()) != Some(false) {
+                remember_action(state, &action_id, &data);
+            }
             if let Err(e) = client.emit("client_action_result", data).await {
                 log::error!("[Protocol] Failed to send P3 result: {}", e);
             }
         } else {
-            send_action_result(client, &action_id, false, Some(&format!("P3 工具 {} 处理失败", tool))).await;
+            send_action_result(client, state, &action_id, false, Some(&format!("P3 工具 {} 处理失败", tool))).await;
         }
         return;
     }
@@ -532,7 +728,7 @@ async fn handle_execute_action(
         // 截图和等待始终允许（不涉及 GUI 输入）
         if tool != "desktop.screenshot" && tool != "desktop.wait" {
             send_action_result(
-                client, &action_id, false,
+                client, state, &action_id, false,
                 Some("桌面控制未授权。请在网页端点击「授权」按钮，或在桌面客户端中授权。")
             ).await;
             return;
@@ -557,7 +753,7 @@ async fn handle_execute_action(
         "desktop.wait" => safety::ActionType::Wait,
         "desktop.clipboard_read" | "desktop.clipboard_write" => safety::ActionType::Clipboard,
         _ => {
-            send_action_result(client, &action_id, false, Some(&format!("未知工具: {}", tool))).await;
+            send_action_result(client, state, &action_id, false, Some(&format!("未知工具: {}", tool))).await;
             return;
         }
     };
@@ -577,7 +773,7 @@ async fn handle_execute_action(
 
     if !safety_check.allowed {
         let reason = safety_check.reason.unwrap_or_else(|| "安全限制".into());
-        send_action_result(client, &action_id, false, Some(&reason)).await;
+        send_action_result(client, state, &action_id, false, Some(&reason)).await;
         return;
     }
 
@@ -651,16 +847,17 @@ async fn handle_execute_action(
                     "error": serde_json::Value::Null,
                     "clipboardText": clip_text,
                 });
+                remember_action(state, &action_id, &result); // ★ v0.8.0 幂等缓存
                 if let Err(e) = client.emit("client_action_result", result).await {
                     log::error!("[Protocol] Failed to send action result: {}", e);
                 }
                 return;
             }
-            send_action_result(client, &action_id, true, None).await;
+            send_action_result(client, state, &action_id, true, None).await;
         }
         Err(e) => {
             log::error!("[Protocol] Action {} failed: {}", tool, e);
-            send_action_result(client, &action_id, false, Some(&e)).await;
+            send_action_result(client, state, &action_id, false, Some(&e)).await;
         }
     }
 }
@@ -762,8 +959,11 @@ async fn execute_tool(tool: &str, params: &serde_json::Value) -> Result<(), Stri
 }
 
 /// 发送操作结果
+/// ★ v0.8.0 新增 state 参数:成功的结果写入幂等缓存,供服务端重试时重发(而非重复执行)。
+///   失败结果不缓存,以便纠错后(如用户补授权)重试能真正重跑。
 async fn send_action_result(
     client: &rust_socketio::asynchronous::Client,
+    state: &AppState,
     action_id: &str,
     success: bool,
     error: Option<&str>,
@@ -773,6 +973,9 @@ async fn send_action_result(
         "success": success,
         "error": error,
     });
+    if success {
+        remember_action(state, action_id, &result);
+    }
     if let Err(e) = client.emit("client_action_result", result).await {
         log::error!("[Protocol] Failed to send action result: {}", e);
     }
@@ -782,17 +985,18 @@ async fn send_action_result(
 fn handle_config(payload: serde_json::Value, state: &AppState) {
     let mut config = state.server_config.write();
 
+    // ★ v0.8.0 全部 clamp,避免服务端下发异常值(quality=0 / heartbeat=0 等)导致行为异常
     if let Some(q) = payload.get("screenshotQuality").and_then(|v| v.as_u64()) {
-        config.screenshot_quality = q as u8;
+        config.screenshot_quality = (q as u8).clamp(1, 100);
     }
     if let Some(f) = payload.get("screenshotFormat").and_then(|v| v.as_str()) {
         config.screenshot_format = f.into();
     }
     if let Some(m) = payload.get("maxSteps").and_then(|v| v.as_u64()) {
-        config.max_steps = m as u32;
+        config.max_steps = (m as u32).clamp(1, 1000);
     }
     if let Some(h) = payload.get("heartbeatInterval").and_then(|v| v.as_u64()) {
-        config.heartbeat_interval = h;
+        config.heartbeat_interval = h.clamp(1000, 120_000);
     }
 
     // ★ 权限级别（从服务端同步）

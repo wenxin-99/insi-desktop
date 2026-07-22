@@ -101,6 +101,26 @@
     .status-text { font-size: 14px; font-weight: 500; }
     .status-detail { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
 
+    /* ★ 接管/暂停态横幅 */
+    .agent-banner {
+      margin-top: 12px;
+      border-radius: 12px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+    .agent-banner.takeover { border-color: var(--warning); background: rgba(245,158,11,0.08); }
+    .agent-banner.paused   { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .agent-banner .ab-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .agent-banner .ab-desc  { font-size: 12px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+    .agent-banner .ab-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .agent-banner .ab-actions .btn { margin-top: 0; flex: 1; padding: 9px; font-size: 13px; }
+    .agent-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .agent-dot.takeover { background: var(--warning); box-shadow: 0 0 8px rgba(245,158,11,0.5); animation: pulse 1.5s infinite; }
+    .agent-dot.paused   { background: var(--primary); box-shadow: 0 0 8px rgba(99,102,241,0.5); }
+    .btn-warning { background: var(--warning); color: #1a1a24; }
+    .btn-warning:hover { filter: brightness(1.1); }
+
     /* 表单 */
     .form-group {
       display: flex;
@@ -243,7 +263,23 @@
 
     <!-- 已连接状态 -->
     <div id="connectedPanel" class="hidden">
-      <button id="disconnectBtn" class="btn btn-danger">
+      <!-- ★ 接管/暂停态横幅（由 updateStatus 控制显隐） -->
+      <div id="agentBanner" class="agent-banner hidden">
+        <div class="ab-title">
+          <span id="agentDot" class="agent-dot"></span>
+          <span id="agentBannerTitle">AI 正在控制桌面</span>
+        </div>
+        <div id="agentBannerDesc" class="ab-desc"></div>
+        <div class="ab-actions">
+          <button id="handbackBtn" class="btn btn-warning hidden">↩ 交还控制</button>
+          <button id="resumeBtn" class="btn btn-primary hidden">▶ 恢复</button>
+          <button id="takeoverBtn" class="btn btn-warning hidden">🕹 接管</button>
+          <button id="pauseBtn" class="btn btn-primary hidden">⏸ 暂停</button>
+          <button id="abortBtn" class="btn btn-danger hidden">🛑 中止</button>
+        </div>
+      </div>
+
+      <button id="disconnectBtn" class="btn btn-danger" style="margin-top: 12px;">
         断开连接
       </button>
       <p style="font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 8px;">
@@ -323,7 +359,8 @@
   </div>
 
   <div class="footer">
-    v<span id="version">0.1.0</span> · insights.ren
+    v<span id="version">0.1.0</span> · insights.ren ·
+    <a id="checkUpdateLink" href="#" style="color: var(--primary); text-decoration: none;">检查更新</a>
   </div>
 
   <script>
@@ -386,9 +423,101 @@
         }
 
         $("version").textContent = status.clientVersion || "0.1.0";
+
+        // ★ 接管/暂停态横幅
+        updateAgentBanner(status);
       } catch (e) {
         console.error("Status update failed:", e);
       }
+    }
+
+    // ★ 根据 status 驱动接管/暂停横幅与按钮显隐
+    function updateAgentBanner(status) {
+      const banner = $("agentBanner");
+      const taskActive = !!(status.task && status.task.active);
+      const inTakeover = !!status.inTakeover;
+      const paused = !!status.agentAwaiting && !inTakeover;
+
+      // 未连接或无活跃 agent 任务且非接管/暂停态 → 隐藏整个横幅
+      if (!status.connected || (!taskActive && !inTakeover && !paused)) {
+        banner.classList.add("hidden");
+        return;
+      }
+      banner.classList.remove("hidden");
+
+      const dot = $("agentDot");
+      const title = $("agentBannerTitle");
+      const desc = $("agentBannerDesc");
+      const show = (id, on) => $(id).classList.toggle("hidden", !on);
+
+      if (inTakeover) {
+        banner.className = "agent-banner takeover";
+        dot.className = "agent-dot takeover";
+        title.textContent = "你正在手动接管";
+        desc.textContent = "AI 已暂停下发操作。完成你的手动操作后，点「交还控制」让 AI 重新观察屏幕并继续。";
+        show("handbackBtn", true);
+        show("resumeBtn", false);
+        show("takeoverBtn", false);
+        show("pauseBtn", false);
+        show("abortBtn", true);
+      } else if (paused) {
+        banner.className = "agent-banner paused";
+        dot.className = "agent-dot paused";
+        title.textContent = "任务已暂停";
+        desc.textContent = "AI 桌面任务已暂停，等待你恢复、接管或中止。";
+        show("handbackBtn", false);
+        show("resumeBtn", true);
+        show("takeoverBtn", true);
+        show("pauseBtn", false);
+        show("abortBtn", true);
+      } else {
+        // 任务运行中
+        banner.className = "agent-banner";
+        dot.className = "agent-dot takeover";
+        const goal = (status.task && status.task.goal) ? status.task.goal : "";
+        const stepInfo = (status.task && status.task.total_steps)
+          ? ` · 第 ${status.task.current_step}/${status.task.total_steps} 步` : "";
+        title.textContent = "AI 正在控制桌面";
+        desc.textContent = (goal ? `目标：${goal}` : "AI 正在执行桌面操作") + stepInfo;
+        show("handbackBtn", false);
+        show("resumeBtn", false);
+        show("takeoverBtn", true);
+        show("pauseBtn", true);
+        show("abortBtn", true);
+      }
+    }
+
+    // ★ v0.8.0 检查更新
+    //   托盘菜单 "Check Update" 会 eval `checkForUpdate()`——此前这个函数根本不存在,
+    //   整条更新链是死的。这里补上:调用 Rust check_update(走 tauri-plugin-updater)。
+    //   若有新版本,Rust 侧会下载+安装并自动重启,一般不返回;返回则通常是"已是最新"。
+    window.checkForUpdate = async function () {
+      const link = $("checkUpdateLink");
+      const prev = link ? link.textContent : "";
+      if (link) link.textContent = "检查中…";
+      try {
+        const r = await invoke("check_update");
+        if (link) {
+          link.textContent = (r && r.updated === false) ? "已是最新" : prev;
+          setTimeout(() => { if (link) link.textContent = prev; }, 2500);
+        }
+      } catch (e) {
+        console.error("check_update failed:", e);
+        if (link) {
+          link.textContent = "检查失败";
+          setTimeout(() => { if (link) link.textContent = prev; }, 2500);
+        }
+      }
+    };
+
+    // ★ 中断按钮：调用 Rust command，由协议循环下一 tick 发给服务端
+    async function sendInterrupt(kind) {
+      try {
+        await invoke("desktop_interrupt", { kind, text: null });
+      } catch (e) {
+        console.error("desktop_interrupt failed:", kind, e);
+      }
+      updateStatus();
     }
 
     // 登录
@@ -421,6 +550,25 @@
     $("disconnectBtn").addEventListener("click", async () => {
       await invoke("disconnect");
       localStorage.removeItem("insi_token");
+    });
+
+    // ★ v0.8.0 底部"检查更新"链接
+    $("checkUpdateLink").addEventListener("click", (e) => {
+      e.preventDefault();
+      window.checkForUpdate();
+    });
+
+    // ★ 接管/暂停/中止 按钮
+    $("takeoverBtn").addEventListener("click", () => sendInterrupt("takeover"));
+    $("pauseBtn").addEventListener("click", () => sendInterrupt("pause"));
+    $("resumeBtn").addEventListener("click", () => sendInterrupt("resume"));
+    $("abortBtn").addEventListener("click", () => {
+      if (confirm("确定中止当前 AI 桌面任务？此操作不可撤销。")) sendInterrupt("abort");
+    });
+    // 交还走专用 command（与 desktop_interrupt('handback') 等价，语义更清晰）
+    $("handbackBtn").addEventListener("click", async () => {
+      try { await invoke("desktop_handback"); } catch (e) { console.error("handback failed:", e); }
+      updateStatus();
     });
 
     // 自动登录（从 localStorage 恢复）

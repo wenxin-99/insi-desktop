@@ -27,7 +27,10 @@ fn get_status(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     let status = state.connection_status.read().clone();
     let screen = state.screen_info.read().clone();
     let task = state.current_task.read().clone();
-    let notifications: Vec<_> = state.pending_notifications.write().drain(..).collect();
+    // ★ v0.8.0: 不再在这个"读状态"命令里破坏性 drain 通知。
+    //   系统通知现在由协议层直接通过 notification 插件推送(见 protocol::notify),
+    //   前端无需再从 get_status 里取——避免多处轮询互相吞掉通知。
+    let notifications: Vec<crate::state::PendingNotification> = Vec::new();
     serde_json::json!({
         "connected": matches!(status, ConnectionStatus::Connected),
         "status": format!("{:?}", status),
@@ -36,6 +39,8 @@ fn get_status(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
         "clientVersion": state.client_version,
         "screen": screen.map(|s| serde_json::json!({"width":s.width,"height":s.height,"scale":s.scale})),
         "authorized": *state.authorized.read(),
+        "inTakeover": *state.in_takeover.read(),
+        "agentAwaiting": *state.agent_awaiting.read(),
         "task": task,
         "notifications": notifications,
         "onboardingDone": *state.onboarding_done.read(),
@@ -57,6 +62,11 @@ fn disconnect(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.connection_status.write() = ConnectionStatus::Disconnected;
     *state.auth_token.write() = None;
     *state.authorized.write() = false;
+    *state.authorize_intent.write() = false; // ★ v0.8.0 清授权意图,防止重连后被服务端悄悄回灌
+    *state.in_takeover.write() = false;
+    *state.agent_awaiting.write() = false;
+    state.pending_interrupts.write().clear();
+    *state.pending_handback.write() = false;
     *state.current_task.write() = state::TaskPreview::default();
     // ★ v0.7.0: 断开时清掉所有未响应的 shell_exec 审批
     // server 那边已经断了,oneshot 等到 5min timeout 也是浪费,直接 send(false) 让 protocol 协程立刻退出
@@ -83,12 +93,16 @@ fn authorize(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     }
     *state.pending_authorize.write() = true;
     *state.authorized.write() = true;
+    *state.authorize_intent.write() = true; // ★ v0.8.0 记录用户显式授权意图
     serde_json::json!({"success":true})
 }
 
 #[tauri::command]
 fn revoke(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.authorized.write() = false;
+    *state.authorize_intent.write() = false; // ★ v0.8.0 撤销授权意图
+    *state.in_takeover.write() = false;
+    *state.agent_awaiting.write() = false;
     *state.pending_revoke.write() = true;
     // ★ v0.7.0: 同 disconnect,撤权时也拒掉所有 pending 审批
     {
@@ -104,7 +118,15 @@ fn revoke(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
 #[tauri::command]
 fn kill_switch(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
     *state.authorized.write() = false;
+    *state.authorize_intent.write() = false; // ★ v0.8.0 kill 后必须显式重新授权才能恢复控制
+    *state.in_takeover.write() = false;
+    *state.agent_awaiting.write() = false;
     *state.pending_revoke.write() = true;
+    state.pending_interrupts.write().push(state::ClientInterruptRequest {
+        kind: "abort".into(),
+        text: None,
+        requested_at: chrono::Utc::now().timestamp_millis(),
+    });
     { let mut t = state.current_task.write(); if t.active { t.active = false; t.status = "failed".into(); } }
     // ★ v0.7.0: kill switch 必须最强力,所有审批立刻拒绝
     {
@@ -221,6 +243,69 @@ fn respond_shell_approval(
     }
 }
 
+/// 桌面端主动中断：插话/暂停/恢复/接管/中止。协议循环会在下一次 tick 发给服务端。
+#[tauri::command]
+fn desktop_interrupt(
+    kind: String,
+    text: Option<String>,
+    state: tauri::State<Arc<AppState>>,
+) -> serde_json::Value {
+    if !matches!(kind.as_str(), "steer" | "pause" | "resume" | "takeover" | "handback" | "abort") {
+        return serde_json::json!({"success": false, "error": "invalid interrupt kind"});
+    }
+    if kind == "handback" {
+        *state.in_takeover.write() = false;
+        *state.agent_awaiting.write() = false;
+        *state.pending_handback.write() = true;
+    } else {
+        if kind == "takeover" { *state.in_takeover.write() = true; }
+        if kind == "pause" { *state.agent_awaiting.write() = true; }
+        if kind == "resume" { *state.agent_awaiting.write() = false; }
+        if kind == "abort" {
+            *state.in_takeover.write() = false;
+            *state.agent_awaiting.write() = false;
+        }
+        state.pending_interrupts.write().push(state::ClientInterruptRequest {
+            kind: kind.clone(),
+            text,
+            requested_at: chrono::Utc::now().timestamp_millis(),
+        });
+    }
+    serde_json::json!({"success": true, "kind": kind})
+}
+
+/// 桌面端交还控制权给 agent。等价于 desktop_interrupt("handback")，集中到一处逻辑。
+#[tauri::command]
+fn desktop_handback(state: tauri::State<Arc<AppState>>) -> serde_json::Value {
+    desktop_interrupt("handback".to_string(), None, state)
+}
+
+/// ★ v0.8.0 检查并安装更新。
+/// 托盘 "Check Update" 菜单与前端"检查更新"按钮都通过它触发(前者 eval `checkForUpdate()`
+/// → 前端再 invoke('check_update'))。使用 tauri-plugin-updater;发现新版本则下载安装并自动重启。
+///
+/// 注:此前 tray 直接 eval 一个不存在的 `checkForUpdate` 函数,整条自动更新链是死的——
+/// 现在补上真正的 Rust 侧实现 + 前端包装。
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| format!("更新器初始化失败: {}", e))?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let version = update.version.clone();
+            log::info!("[Update] New version available: {}", version);
+            update
+                .download_and_install(|_downloaded, _total| {}, || {})
+                .await
+                .map_err(|e| format!("下载/安装更新失败: {}", e))?;
+            log::info!("[Update] Installed {}, restarting…", version);
+            app.restart();
+        }
+        Ok(None) => Ok(serde_json::json!({ "updated": false, "message": "已是最新版本" })),
+        Err(e) => Err(format!("检查更新失败: {}", e)),
+    }
+}
+
 /// 初始化崩溃日志
 fn init_crash_logging() {
     let log_dir = dirs::data_local_dir()
@@ -322,8 +407,17 @@ fn main() {
             check_network, complete_onboarding, get_history, clear_history, get_settings, set_permission_level,
             // ★ v0.7.0 shell_exec 审批流
             get_pending_shell_approvals, respond_shell_approval,
+            // ★ 双向中断 / 接管交还
+            desktop_interrupt, desktop_handback,
+            // ★ v0.8.0 自动更新
+            check_update,
         ])
         .setup(move |app| {
+            // ★ v0.8.0 注入 AppHandle,供协议层弹窗/发通知/检查更新
+            {
+                let st = app.state::<Arc<AppState>>();
+                *st.app_handle.write() = Some(app.handle().clone());
+            }
             let si = MenuItem::with_id(app, "status", "Status: Disconnected", false, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "Open Panel", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", "Pause Control", true, None::<&str>)?;
@@ -342,8 +436,15 @@ fn main() {
                         "show" => { if let Some(w) = app.get_webview_window("main") { let _ = w.show(); let _ = w.set_focus(); } }
                         "pause" => {
                             let st = app.state::<Arc<AppState>>();
-                            if *st.authorized.read() { *st.authorized.write() = false; *st.pending_revoke.write() = true; }
-                            else if matches!(*st.connection_status.read(), ConnectionStatus::Connected) { *st.pending_authorize.write() = true; *st.authorized.write() = true; }
+                            if *st.authorized.read() {
+                                *st.authorized.write() = false;
+                                *st.authorize_intent.write() = false; // ★ v0.8.0
+                                *st.pending_revoke.write() = true;
+                            } else if matches!(*st.connection_status.read(), ConnectionStatus::Connected) {
+                                *st.pending_authorize.write() = true;
+                                *st.authorized.write() = true;
+                                *st.authorize_intent.write() = true; // ★ v0.8.0
+                            }
                         }
                         "check_update" => { if let Some(w) = app.get_webview_window("main") { let _ = w.show(); let _ = w.set_focus(); let _ = w.eval("if(typeof checkForUpdate==='function')checkForUpdate()"); } }
                         _ => {}

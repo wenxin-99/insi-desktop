@@ -1,22 +1,20 @@
-# Insi Desktop release workflow
+# Insi Desktop release workflow —— ★ v0.8.0 手动备用管线(tauri-action 版)
 #
-# 触发: push tag v* (例如 git tag v0.5.0 && git push origin v0.5.0)
-# 产物: Win .msi/.exe + macOS aarch64/x64 .dmg + Linux .deb/.AppImage
-# 自动: 创建 GitHub Release 并上传安装包
+# ⚠ 规范化说明:
+#   仓库里原本有两个都在 `push: tags v*` 上触发的工作流(build.yml + 本文件),
+#   会同时抢着为同一个 tag 创建 GitHub Release,产生竞态与重复资产。
+#   现在把"发布"的唯一正式管线定为 build.yml(它会生成 update-manifest.json,
+#   与 tauri.conf.json 里配置的 updater endpoint 对应)。本文件降级为「手动备用」:
+#   仅支持 workflow_dispatch,不再监听 tag,避免竞态。
 #
 # 必需 secrets:
-#   TAURI_SIGNING_PRIVATE_KEY   — Tauri updater 签名私钥(用于自动更新)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — 私钥密码
-#
-# (可选) APPLE_CERTIFICATE / APPLE_ID / APPLE_PASSWORD — macOS 公证
-# (可选) WINDOWS_CERT_BASE64 / WINDOWS_CERT_PASSWORD — Windows 代码签名
+#   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD — updater 签名
+# (可选,尚未接线) APPLE_CERTIFICATE / APPLE_ID / APPLE_PASSWORD — macOS 公证
+# (可选,尚未接线) WINDOWS_CERT_BASE64 / WINDOWS_CERT_PASSWORD — Windows 代码签名
 
-name: Release Insi Desktop
+name: Release Insi Desktop (manual fallback)
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch: {}
 
 jobs:
@@ -88,31 +86,12 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Insi Desktop ${{ github.ref_name }}"
+          # ★ v0.8.0 移除写死的 v0.5.0 时代文案(会被每个未来 tag 复用);
+          #   手动发布时在 GitHub Release 页面补充说明,或改用 build.yml 的自动 notes。
           releaseBody: |
-            ## Insi Desktop ${{ github.ref_name }}
+            Insi Desktop ${{ github.ref_name }}
 
-            **新增**:
-            - `desktop.file_organize` — 一键智能分类整理(替代手动操作)
-            - `desktop.file_rename_batch` — 模板批量重命名
-            - `desktop.file_trash` — 跨平台移入回收站
-            - `desktop.file_group` — 按相似性聚类
-            - `desktop.file_rollback` — 回滚整理操作
-
-            **改进**:
-            - 桌面整理任务成功率从 ~10% 跃升到 >85%
-            - 所有文件操作支持 dry-run 预览
-            - 路径安全护栏: 禁止操作系统目录
-            - Transaction log: 整理操作可一键撤销
-
-            ## 升级指南
-            自动更新会推送给已安装 v0.4.x 的用户。
-            手动下载: 见下方资产 (assets)。
-
-            **平台**:
-            - Windows: `.msi` (推荐) 或 `.exe`
-            - macOS Apple Silicon: `aarch64.dmg`
-            - macOS Intel: `x64.dmg`
-            - Linux: `.deb` 或 `.AppImage`
+            安装包见下方 assets。变更说明请参见仓库 CHANGELOG.md。
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}

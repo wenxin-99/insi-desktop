@@ -5,7 +5,7 @@
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
@@ -147,6 +147,49 @@ pub struct AppState {
     /// ★ v0.7.0 等待用户响应的 oneshot 发送端
     /// 当前端调 respond_shell_approval 时,通过此 channel 把结果送回 protocol 循环
     pub shell_approval_responders: RwLock<HashMap<String, oneshot::Sender<bool>>>,
+
+    // ═══════════════════════════════════════════
+    // ★ v0.8.0 双向中断 / 接管交还
+    //   main.rs 的 desktop_interrupt / desktop_handback / kill_switch 写入这些字段,
+    //   protocol tick 循环消费 pending_interrupts / pending_handback 并发给服务端。
+    // ═══════════════════════════════════════════
+    /// 用户是否处于手动接管态(AI 暂停下发操作)
+    pub in_takeover: RwLock<bool>,
+    /// agent 是否在等待用户(暂停态)
+    pub agent_awaiting: RwLock<bool>,
+    /// 待发送给服务端的中断请求队列(协议 tick 循环消费后清空)
+    pub pending_interrupts: RwLock<Vec<ClientInterruptRequest>>,
+    /// 待发送的"交还控制"标记
+    pub pending_handback: RwLock<bool>,
+
+    // ═══════════════════════════════════════════
+    // ★ v0.8.0 安全与可靠性
+    // ═══════════════════════════════════════════
+    /// 用户的授权意图(true = 用户在本地点了"授权控制")。
+    /// 用于阻止 heartbeat_ack / permission_update 把 authorized 从 false 悄悄升为 true——
+    /// 服务端只能"降级"(撤销)本地授权,"升级"必须用户显式操作。
+    pub authorize_intent: RwLock<bool>,
+    /// 动作幂等缓存:action_id → 已发送过的结果 JSON。
+    /// 防止服务端在 ack 丢失后重试同一 action_id 导致点击/输入被重复执行。
+    pub executed_actions: RwLock<HashMap<String, serde_json::Value>>,
+    /// 幂等缓存的 FIFO 淘汰顺序(上限见 protocol::ACTION_CACHE_CAP)
+    pub executed_order: RwLock<VecDeque<String>>,
+
+    /// ★ v0.8.0 Tauri AppHandle(在 setup 中注入)。
+    /// 供协议层在收到 shell 审批时把窗口弹到前台、发系统通知、触发检查更新。
+    pub app_handle: RwLock<Option<tauri::AppHandle>>,
+}
+
+/// ★ v0.8.0 桌面端主动中断请求(插话 / 暂停 / 恢复 / 接管 / 中止)。
+/// 由 IPC 命令 desktop_interrupt 产生,协议循环下一 tick 通过 client_interrupt 事件发给服务端。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientInterruptRequest {
+    /// steer | pause | resume | takeover | abort
+    pub kind: String,
+    /// steer(插话)时携带的文本
+    pub text: Option<String>,
+    /// 请求时间戳(ms)
+    pub requested_at: i64,
 }
 
 /// 系统通知（供前端轮询取出并推送）
@@ -227,6 +270,16 @@ impl AppState {
             permission_level: RwLock::new("standard".into()),
             pending_shell_approvals: RwLock::new(Vec::new()),
             shell_approval_responders: RwLock::new(HashMap::new()),
+            // ★ v0.8.0 中断 / 接管
+            in_takeover: RwLock::new(false),
+            agent_awaiting: RwLock::new(false),
+            pending_interrupts: RwLock::new(Vec::new()),
+            pending_handback: RwLock::new(false),
+            // ★ v0.8.0 安全与可靠性
+            authorize_intent: RwLock::new(false),
+            executed_actions: RwLock::new(HashMap::new()),
+            executed_order: RwLock::new(VecDeque::new()),
+            app_handle: RwLock::new(None),
         })
     }
 }

@@ -70,6 +70,9 @@ pub async fn run_with_approval_ref(
         state.pending_shell_approvals.write().push(req);
         state.shell_approval_responders.write().insert(action_id.clone(), tx);
     }
+    // ★ v0.8.0 把主窗口弹到前台并请求用户注意——否则审批模态可能藏在托盘里的后台窗口,
+    //   用户根本看不到,5 分钟后静默自动拒绝,任务莫名失败。
+    crate::protocol::surface_main_window(state);
     log::info!("[shell_exec] approval requested: action={}, cmd={}", action_id, &command.chars().take(80).collect::<String>());
 
     // 2. Wait for response or timeout
@@ -182,22 +185,27 @@ async fn execute_command(
     cmd.current_dir(&cwd);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    // ★ v0.8.0 kill_on_drop:超时/取消时,持有子进程的 future 被 drop → tokio 自动 SIGKILL,
+    //   不再泄漏孤儿进程(此前 output() 超时后进程仍在后台跑,句柄丢失无法回收)。
+    cmd.kill_on_drop(true);
 
-    // Spawn with timeout
-    let child_fut = cmd.output();
-    match tokio::time::timeout(timeout, child_fut).await {
+    // Spawn, then wait under a timeout. On timeout the wait future is dropped,
+    // which drops the Child and (via kill_on_drop) terminates the process.
+    let child = cmd.spawn().map_err(|e| format!("启动命令失败: {}", e))?;
+    match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(out)) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
             let code = out.status.code().unwrap_or(-1);
             Ok((stdout, stderr, code, false))
         }
-        Ok(Err(e)) => Err(format!("启动命令失败: {}", e)),
-        Err(_) => {
-            // Timeout — process likely still running, but we can't easily kill it
-            // from `output()` after timeout. Ack the timeout to caller.
-            Ok(("".into(), format!("命令执行超过 {}ms 超时", timeout.as_millis()), -1, true))
-        }
+        Ok(Err(e)) => Err(format!("等待命令结束失败: {}", e)),
+        Err(_) => Ok((
+            "".into(),
+            format!("命令执行超过 {}ms 超时(子进程已被终止)", timeout.as_millis()),
+            -1,
+            true,
+        )),
     }
 }
 

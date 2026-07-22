@@ -162,18 +162,20 @@ jobs:
           MAC_X64_FILE=$(find macos-x64 -maxdepth 1 -type f -name '*.app.tar.gz' -printf '%f\n' | head -1)
           LINUX_FILE=$(find linux-x64 -maxdepth 1 -type f -name '*.AppImage.tar.gz' -printf '%f\n' | head -1)
 
-          test -n "$WIN_FILE"
-          test -n "$MAC_ARM_FILE"
-          test -n "$MAC_X64_FILE"
-          test -n "$LINUX_FILE"
+          test -n "$WIN_SIG" && test -n "$MAC_ARM_SIG" && test -n "$MAC_X64_SIG" && test -n "$LINUX_SIG"
+          test -n "$WIN_FILE" && test -n "$MAC_ARM_FILE" && test -n "$MAC_X64_FILE" && test -n "$LINUX_FILE"
+
+          export VERSION BASE_URL DATE NOTES
+          export WIN_SIG MAC_ARM_SIG MAC_X64_SIG LINUX_SIG
+          export WIN_FILE MAC_ARM_FILE MAC_X64_FILE LINUX_FILE
 
           python3 - <<'PY'
-          import json, os
+          import json
+          import os
 
-          version = os.environ['VERSION']
           base_url = os.environ['BASE_URL']
           data = {
-              'version': version,
+              'version': os.environ['VERSION'],
               'notes': os.environ['NOTES'],
               'pub_date': os.environ['DATE'],
               'platforms': {
@@ -198,19 +200,9 @@ jobs:
           with open('update-manifest.json', 'w', encoding='utf-8') as f:
               json.dump(data, f, ensure_ascii=False, indent=2)
           PY
-        env:
-          VERSION: ${{ github.ref_name }}
-          BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
-          DATE: ${{ github.event.repository.updated_at }}
-          NOTES: Insi Desktop ${{ github.ref_name }}
-          WIN_SIG: ${{ '' }}
-          MAC_ARM_SIG: ${{ '' }}
-          MAC_X64_SIG: ${{ '' }}
-          LINUX_SIG: ${{ '' }}
-          WIN_FILE: ${{ '' }}
-          MAC_ARM_FILE: ${{ '' }}
-          MAC_X64_FILE: ${{ '' }}
-          LINUX_FILE: ${{ '' }}
+
+          python3 -m json.tool update-manifest.json >/dev/null
+          cat update-manifest.json
 
       - uses: softprops/action-gh-release@v2
         with:

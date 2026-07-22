@@ -1,6 +1,6 @@
 [package]
 name = "insi-desktop"
-version = "0.8.1"
+version = "0.8.2"
 description = "Insi Desktop Agent — AI 桌面控制客户端"
 authors = ["insights.ren"]
 edition = "2021"

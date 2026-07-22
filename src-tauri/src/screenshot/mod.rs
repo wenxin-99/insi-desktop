@@ -126,7 +126,9 @@ pub fn capture_region(region: &CaptureRegion, quality: u8) -> Result<CaptureResu
 }
 
 /// 编码为 WebP 并转 base64
-fn encode_to_webp_base64(image: &DynamicImage, quality: u8) -> Result<String, String> {
+fn encode_to_webp_base64(image: &DynamicImage, _quality: u8) -> Result<String, String> {
+    // 注: image crate 的 WebPEncoder 仅支持无损编码,quality 暂无处可用(保留参数以兼容调用方);
+    //     体积控制改由 >500KB 时降采样重编码来近似(见下方分支)。
     let rgba = image.to_rgba8();
     let (w, h) = rgba.dimensions();
 

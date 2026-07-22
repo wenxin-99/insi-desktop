@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # ★ 缓存 Cargo registry + target,避免每次从零重编 500+ 依赖(单平台可省数分钟)
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -38,6 +43,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: aarch64-apple-darwin
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -61,6 +71,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: x86_64-apple-darwin
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -82,6 +97,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - uses: actions/setup-node@v4
         with:
           node-version: 20

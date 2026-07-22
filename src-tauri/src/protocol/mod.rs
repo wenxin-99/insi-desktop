@@ -614,7 +614,13 @@ async fn handle_execute_action(
 ) {
     // ★ v0.8.0 幂等:同一 action_id 已执行过 → 直接重发缓存结果,绝不重复执行。
     //   防止服务端在 ack 丢失后重试导致点击/输入/删文件被执行两次。
-    if let Some(cached) = state.executed_actions.read().get(&action_id).cloned() {
+    // ★ 修复(构建失败根因):必须先用独立 let 绑定把 RwLockReadGuard 释放,再 await。
+    //   若写成 `if let Some(cached) = state.executed_actions.read()...cloned() { ... .await }`,
+    //   parking_lot 的 read guard 会因 `if let` 临时值生命周期延长被跨 `.await` 持有;
+    //   该 guard 不是 Send,导致 socketio 回调要求的 Send future 无法满足,
+    //   报 "future cannot be sent between threads safely",四个平台全部编译失败。
+    let cached_result = state.executed_actions.read().get(&action_id).cloned();
+    if let Some(cached) = cached_result {
         log::warn!("[Protocol] Duplicate action_id {} — re-sending cached result (no re-exec)", action_id);
         if let Err(e) = client.emit("client_action_result", cached).await {
             log::error!("[Protocol] Failed to re-send cached result: {}", e);

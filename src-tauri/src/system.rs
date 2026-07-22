@@ -51,7 +51,7 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
 }
 
 /// 在指定显示器上截图
-pub fn capture_monitor(index: usize, quality: u8) -> Result<crate::screenshot::CaptureResult, String> {
+pub fn capture_monitor(index: usize, _quality: u8) -> Result<crate::screenshot::CaptureResult, String> {
     use xcap::Monitor;
     use base64::Engine;
     use image::{DynamicImage, codecs::webp::WebPEncoder, ImageEncoder};
@@ -159,10 +159,10 @@ pub fn list_windows() -> Result<Vec<WindowListItem>, String> {
 /// 通过 app_name 模糊匹配，使用平台命令切换
 pub fn focus_window(app_name: &str, window_title: Option<&str>) -> Result<(), String> {
     use std::process::Command;
-    let app_lower = app_name.to_lowercase();
 
     #[cfg(target_os = "windows")]
     {
+        let app_lower = app_name.to_lowercase();
         // 使用 PowerShell 激活窗口
         let script = if let Some(title) = window_title {
             format!(

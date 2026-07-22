@@ -2,12 +2,14 @@ name: Build & Release Insi Desktop
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 concurrency:
-  group: desktop-release-${{ github.ref }}
+  group: desktop-build-${{ github.ref }}
   cancel-in-progress: false
 
 env:

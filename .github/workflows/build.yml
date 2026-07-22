@@ -1,6 +1,9 @@
 name: Build & Release Insi Desktop
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -8,9 +11,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: desktop-build-${{ github.ref }}
-  cancel-in-progress: false
+  group: desktop-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -31,10 +37,10 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install
-      - run: npx tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Configure updater artifacts
+        run: node .github/scripts/prepare-updater.mjs
+      - name: Build Windows installer
+        run: npx tauri build --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
@@ -60,10 +66,10 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install
-      - run: npx tauri build --target aarch64-apple-darwin
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Configure updater artifacts
+        run: node .github/scripts/prepare-updater.mjs
+      - name: Build macOS Apple Silicon installer
+        run: npx tauri build --target aarch64-apple-darwin --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: macos-aarch64
@@ -90,10 +96,10 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install
-      - run: npx tauri build --target x86_64-apple-darwin
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Configure updater artifacts
+        run: node .github/scripts/prepare-updater.mjs
+      - name: Build macOS Intel installer
+        run: npx tauri build --target x86_64-apple-darwin --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: macos-x64
@@ -116,15 +122,24 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Install Linux deps
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev libgbm-dev libegl1-mesa-dev
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libpipewire-0.3-dev \
+            libgbm-dev \
+            libegl1-mesa-dev
       - run: npm install
-      - run: npx tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Configure updater artifacts
+        run: node .github/scripts/prepare-updater.mjs
+      - name: Build Linux installers
+        run: npx tauri build --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
@@ -132,8 +147,7 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz
-            src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz.sig
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
 
   release:
     needs: [build-windows, build-mac-aarch64, build-mac-x64, build-linux]
@@ -145,7 +159,24 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
 
+      - name: Detect signed updater artifacts
+        id: updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G 'windows-x64/*.exe.sig' >/dev/null \
+            && compgen -G 'macos-aarch64/*.app.tar.gz.sig' >/dev/null \
+            && compgen -G 'macos-x64/*.app.tar.gz.sig' >/dev/null \
+            && compgen -G 'linux-x64/*.AppImage.sig' >/dev/null; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+            echo 'Signed updater artifacts detected.'
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::Updater signing secrets are unavailable. Publishing installers without update-manifest.json.'
+          fi
+
       - name: Generate updater manifest
+        if: steps.updater.outputs.enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -157,12 +188,12 @@ jobs:
           WIN_SIG=$(cat windows-x64/*.exe.sig)
           MAC_ARM_SIG=$(cat macos-aarch64/*.app.tar.gz.sig)
           MAC_X64_SIG=$(cat macos-x64/*.app.tar.gz.sig)
-          LINUX_SIG=$(cat linux-x64/*.AppImage.tar.gz.sig)
+          LINUX_SIG=$(cat linux-x64/*.AppImage.sig)
 
           WIN_FILE=$(find windows-x64 -maxdepth 1 -type f -name '*.exe' ! -name '*.sig' -printf '%f\n' | head -1)
           MAC_ARM_FILE=$(find macos-aarch64 -maxdepth 1 -type f -name '*.app.tar.gz' -printf '%f\n' | head -1)
           MAC_X64_FILE=$(find macos-x64 -maxdepth 1 -type f -name '*.app.tar.gz' -printf '%f\n' | head -1)
-          LINUX_FILE=$(find linux-x64 -maxdepth 1 -type f -name '*.AppImage.tar.gz' -printf '%f\n' | head -1)
+          LINUX_FILE=$(find linux-x64 -maxdepth 1 -type f -name '*.AppImage' -printf '%f\n' | head -1)
 
           test -n "$WIN_SIG" && test -n "$MAC_ARM_SIG" && test -n "$MAC_X64_SIG" && test -n "$LINUX_SIG"
           test -n "$WIN_FILE" && test -n "$MAC_ARM_FILE" && test -n "$MAC_X64_FILE" && test -n "$LINUX_FILE"
@@ -199,16 +230,19 @@ jobs:
                   },
               },
           }
-          with open('update-manifest.json', 'w', encoding='utf-8') as f:
-              json.dump(data, f, ensure_ascii=False, indent=2)
+          with open('update-manifest.json', 'w', encoding='utf-8') as file:
+              json.dump(data, file, ensure_ascii=False, indent=2)
           PY
 
           python3 -m json.tool update-manifest.json >/dev/null
           cat update-manifest.json
 
-      - uses: softprops/action-gh-release@v2
+      - name: Publish signed release
+        if: steps.updater.outputs.enabled == 'true'
+        uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             windows-x64/*.exe
             macos-aarch64/*.dmg
@@ -218,3 +252,16 @@ jobs:
             linux-x64/*.deb
             linux-x64/*.AppImage
             update-manifest.json
+
+      - name: Publish installer-only release
+        if: steps.updater.outputs.enabled != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            windows-x64/*.exe
+            macos-aarch64/*.dmg
+            macos-x64/*.dmg
+            linux-x64/*.deb
+            linux-x64/*.AppImage

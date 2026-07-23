@@ -159,20 +159,95 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
 
+      - name: Inventory downloaded artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          find windows-x64 macos-aarch64 macos-x64 linux-x64 \
+            -type f -printf '%p\n' | sort
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release-assets
+          mkdir -p release-assets
+
+          collect_required() {
+            local platform="$1"
+            shift
+            local matched=0
+            local pattern
+            local file
+
+            for pattern in "$@"; do
+              while IFS= read -r -d '' file; do
+                cp "$file" "release-assets/${platform}-$(basename "$file")"
+                matched=1
+              done < <(find "$platform" -type f -name "$pattern" -print0)
+            done
+
+            if [[ "$matched" -ne 1 ]]; then
+              echo "::error::No releasable installer found for ${platform}."
+              find "$platform" -type f -printf '%p\n' | sort || true
+              exit 1
+            fi
+          }
+
+          collect_optional() {
+            local platform="$1"
+            shift
+            local pattern
+            local file
+
+            for pattern in "$@"; do
+              while IFS= read -r -d '' file; do
+                cp "$file" "release-assets/${platform}-$(basename "$file")"
+              done < <(find "$platform" -type f -name "$pattern" -print0)
+            done
+          }
+
+          collect_required windows-x64 '*.exe'
+          collect_required macos-aarch64 '*.dmg' '*.app.tar.gz'
+          collect_required macos-x64 '*.dmg' '*.app.tar.gz'
+          collect_required linux-x64 '*.deb' '*.AppImage'
+
+          collect_optional windows-x64 '*.exe.sig'
+          collect_optional macos-aarch64 '*.app.tar.gz.sig'
+          collect_optional macos-x64 '*.app.tar.gz.sig'
+          collect_optional linux-x64 '*.AppImage.sig'
+
+          echo 'Release assets:'
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
+
       - name: Detect signed updater artifacts
         id: updater
         shell: bash
         run: |
           set -euo pipefail
-          if compgen -G 'windows-x64/*.exe.sig' >/dev/null \
-            && compgen -G 'macos-aarch64/*.app.tar.gz.sig' >/dev/null \
-            && compgen -G 'macos-x64/*.app.tar.gz.sig' >/dev/null \
-            && compgen -G 'linux-x64/*.AppImage.sig' >/dev/null; then
+
+          first_match() {
+            find "$1" -type f -name "$2" -print -quit
+          }
+
+          WIN_INSTALLER=$(first_match windows-x64 '*.exe')
+          WIN_SIGNATURE=$(first_match windows-x64 '*.exe.sig')
+          MAC_ARM_INSTALLER=$(first_match macos-aarch64 '*.app.tar.gz')
+          MAC_ARM_SIGNATURE=$(first_match macos-aarch64 '*.app.tar.gz.sig')
+          MAC_X64_INSTALLER=$(first_match macos-x64 '*.app.tar.gz')
+          MAC_X64_SIGNATURE=$(first_match macos-x64 '*.app.tar.gz.sig')
+          LINUX_INSTALLER=$(first_match linux-x64 '*.AppImage')
+          LINUX_SIGNATURE=$(first_match linux-x64 '*.AppImage.sig')
+
+          if [[ -n "$WIN_INSTALLER" && -n "$WIN_SIGNATURE" \
+            && -n "$MAC_ARM_INSTALLER" && -n "$MAC_ARM_SIGNATURE" \
+            && -n "$MAC_X64_INSTALLER" && -n "$MAC_X64_SIGNATURE" \
+            && -n "$LINUX_INSTALLER" && -n "$LINUX_SIGNATURE" ]]; then
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
             echo 'Signed updater artifacts detected.'
           else
             echo 'enabled=false' >> "$GITHUB_OUTPUT"
-            echo '::warning::Updater signing secrets are unavailable. Publishing installers without update-manifest.json.'
+            echo '::warning::Signed updater artifacts are incomplete. Publishing platform installers without update-manifest.json.'
           fi
 
       - name: Generate updater manifest
@@ -185,18 +260,33 @@ jobs:
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           NOTES="Insi Desktop v${VERSION}"
 
-          WIN_SIG=$(cat windows-x64/*.exe.sig)
-          MAC_ARM_SIG=$(cat macos-aarch64/*.app.tar.gz.sig)
-          MAC_X64_SIG=$(cat macos-x64/*.app.tar.gz.sig)
-          LINUX_SIG=$(cat linux-x64/*.AppImage.sig)
+          first_match() {
+            find "$1" -type f -name "$2" -print -quit
+          }
 
-          WIN_FILE=$(find windows-x64 -maxdepth 1 -type f -name '*.exe' ! -name '*.sig' -printf '%f\n' | head -1)
-          MAC_ARM_FILE=$(find macos-aarch64 -maxdepth 1 -type f -name '*.app.tar.gz' -printf '%f\n' | head -1)
-          MAC_X64_FILE=$(find macos-x64 -maxdepth 1 -type f -name '*.app.tar.gz' -printf '%f\n' | head -1)
-          LINUX_FILE=$(find linux-x64 -maxdepth 1 -type f -name '*.AppImage' -printf '%f\n' | head -1)
+          WIN_SOURCE=$(first_match windows-x64 '*.exe')
+          WIN_SIG_SOURCE=$(first_match windows-x64 '*.exe.sig')
+          MAC_ARM_SOURCE=$(first_match macos-aarch64 '*.app.tar.gz')
+          MAC_ARM_SIG_SOURCE=$(first_match macos-aarch64 '*.app.tar.gz.sig')
+          MAC_X64_SOURCE=$(first_match macos-x64 '*.app.tar.gz')
+          MAC_X64_SIG_SOURCE=$(first_match macos-x64 '*.app.tar.gz.sig')
+          LINUX_SOURCE=$(first_match linux-x64 '*.AppImage')
+          LINUX_SIG_SOURCE=$(first_match linux-x64 '*.AppImage.sig')
 
-          test -n "$WIN_SIG" && test -n "$MAC_ARM_SIG" && test -n "$MAC_X64_SIG" && test -n "$LINUX_SIG"
-          test -n "$WIN_FILE" && test -n "$MAC_ARM_FILE" && test -n "$MAC_X64_FILE" && test -n "$LINUX_FILE"
+          WIN_SIG=$(cat "$WIN_SIG_SOURCE")
+          MAC_ARM_SIG=$(cat "$MAC_ARM_SIG_SOURCE")
+          MAC_X64_SIG=$(cat "$MAC_X64_SIG_SOURCE")
+          LINUX_SIG=$(cat "$LINUX_SIG_SOURCE")
+
+          WIN_FILE="windows-x64-$(basename "$WIN_SOURCE")"
+          MAC_ARM_FILE="macos-aarch64-$(basename "$MAC_ARM_SOURCE")"
+          MAC_X64_FILE="macos-x64-$(basename "$MAC_X64_SOURCE")"
+          LINUX_FILE="linux-x64-$(basename "$LINUX_SOURCE")"
+
+          test -f "release-assets/$WIN_FILE"
+          test -f "release-assets/$MAC_ARM_FILE"
+          test -f "release-assets/$MAC_X64_FILE"
+          test -f "release-assets/$LINUX_FILE"
 
           export VERSION BASE_URL DATE NOTES
           export WIN_SIG MAC_ARM_SIG MAC_X64_SIG LINUX_SIG
@@ -244,13 +334,7 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            windows-x64/*.exe
-            macos-aarch64/*.dmg
-            macos-aarch64/*.app.tar.gz
-            macos-x64/*.dmg
-            macos-x64/*.app.tar.gz
-            linux-x64/*.deb
-            linux-x64/*.AppImage
+            release-assets/*
             update-manifest.json
 
       - name: Publish installer-only release
@@ -260,8 +344,4 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            windows-x64/*.exe
-            macos-aarch64/*.dmg
-            macos-x64/*.dmg
-            linux-x64/*.deb
-            linux-x64/*.AppImage
+            release-assets/*
